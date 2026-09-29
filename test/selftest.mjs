@@ -307,6 +307,21 @@ check('main entry exists', () => {
   assert.ok(existsSync(join(root, manifest.main)), 'main missing');
 });
 
+check('the patch disables the official brand row', () => {
+  // Both this plugin and `ui-brand-official` register sidebar.brand.mark /
+  // sidebar.brand.name. The official row is earlier in the bundle list and its
+  // apply runs first, so without disabling it the sidebar keeps showing the
+  // official wordmark while every other feature works — which is exactly what a
+  // real boot looked like.
+  const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8');
+  const disabled = [...patch.matchAll(/- id:\s*(\S+)\s*\n\s*disabled:\s*true/g)]
+    .map((m) => m[1]);
+  assert.ok(
+    disabled.includes('ui-brand-official'),
+    'ui-brand-official must be disabled or the official brand wins the slot',
+  );
+});
+
 check('cordis rows resolve to this package', () => {
   // Discipline: a row whose name is a subpath needs a matching exports entry,
   // otherwise the host fails to load it at startup.

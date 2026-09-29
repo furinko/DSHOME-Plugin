@@ -12,3 +12,14 @@
     # 宿主半区是空插件——本行只为让 roster 能发现包里的 dsh.client 段。
     - id: dshome-plugin
       name: dshome-plugin
+
+# 官方品牌（ui-brand-official）与我们的品牌槽争同一组槽位
+# （sidebar.brand.mark / sidebar.brand.name）。
+#
+# 两者都往同一槽注册时，官方包在 `bundles` 里排在前面、且它的 apply 先跑
+# ⇒ 实测表现为「主题色生效了、卡片和缩略图也在，唯独侧栏仍是官方
+# deepseek HARNESS」。禁用官方这一行，品牌槽就归本插件。
+#
+# 只压视觉与槽位，不动 React 树：删掉本行，官方品牌立刻回来。
+- id: ui-brand-official
+  disabled: true
