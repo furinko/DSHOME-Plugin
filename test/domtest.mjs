@@ -90,7 +90,28 @@ class El {
   querySelector(sel) { return walk(this).find((n) => matches(n, sel)) ?? null; }
   querySelectorAll(sel) { return walk(this).filter((n) => matches(n, sel)); }
   matches() { return false; }
-  getContext() { return null; }
+  /**
+   * A recording 2d context. The plugin's paint path returns early when the
+   * context is missing, so a null-returning stub made every canvas assertion
+   * vacuous — "is anything actually drawn?" was never asked.
+   */
+  getContext(kind) {
+    if (kind !== '2d') return null;
+    if (!this._ctx) {
+      const calls = [];
+      this._ctx = {
+        calls,
+        globalAlpha: 1,
+        fillStyle: '',
+        setTransform() {},
+        clearRect() { calls.push({ op: 'clear' }); },
+        fillRect(x, y, w, h) {
+          calls.push({ op: 'rect', x, y, w, h, alpha: this.globalAlpha, fill: this.fillStyle });
+        },
+      };
+    }
+    return this._ctx;
+  }
 }
 
 /** Walk the tree and return every element. */
@@ -181,8 +202,14 @@ function installGlobals() {
  * rather than printed.
  */
 let expectedWarnings = 0;
+const capturedWarnings = [];
 const realWarn = console.warn;
-console.warn = () => { expectedWarnings += 1; };
+const record = (...args) => {
+  capturedWarnings.push(args.map((a) => (a && a.stack ? a.stack : String(a))).join(' '));
+};
+console.warn = (...args) => { expectedWarnings += 1; record(...args); };
+// `safe()` may report through error, not warn; missing that made the swallow invisible.
+console.error = (...args) => { expectedWarnings += 1; record(...args); };
 process.on('exit', () => {
   realWarn(`  (captured ${expectedWarnings} expected degradation warning(s))`);
 });
@@ -441,9 +468,18 @@ function mountSession({ total = TOTAL_H, view = VIEW_H, turns = TURN_COUNT, step
   return { doc, scroller, shell };
 }
 
+/**
+ * The strip's canvas, found by walking rather than by a fixed child index: the
+ * canvas moved inside the clipping window, and a positional lookup would silently
+ * compare the wrong element across revisions.
+ */
+function canvasOf(shell) {
+  return shell ? (walk(shell).find((n) => n.tagName === 'CANVAS') ?? null) : null;
+}
+
 /** The canvas offset the bundle wrote, read back out of the transform. */
 function offsetOf(shell) {
-  const canvas = shell.children[0].children[0];
+  const canvas = canvasOf(shell);
   const m = /translateY\((-?\d+(?:\.\d+)?)px\)/.exec(canvas.style.transform || '');
   return m ? -Number(m[1]) : null;
 }
@@ -463,6 +499,35 @@ check('re-applying tears the previous pass down instead of stacking shells', () 
   const { doc } = mountSession({ applies: 3 });
   const shells = doc.body.children.filter((c) => c.className === 'dshome-plugin-minimap');
   assert.equal(shells.length, 1, `expected one shell after three applies, found ${shells.length}`);
+});
+
+// The two painting checks below are the regression lock for "draw() calls a
+// paint routine that no longer exists": that threw inside safe(), which
+// swallowed it, so the strip still mounted while the canvas stayed blank.
+check('the canvas is actually painted', () => {
+  const { shell } = mountSession();
+  const canvas = canvasOf(shell);
+  const ctx = canvas.getContext('2d');
+  const rects = ctx.calls.filter((c) => c.op === 'rect');
+  assert.ok(rects.length > 0,
+    `calls=${ctx.calls.length} canvas.width=${canvas.width} shellH=${shell.style.height} `
+    + `probe=${JSON.stringify(globalThis.window.__probe || [])}`);
+  for (const r of rects) {
+    assert.ok([r.x, r.y, r.w, r.h].every(Number.isFinite), 'rect coordinates must be finite');
+    assert.ok(r.w > 0 && r.h > 0, 'rect must have a positive size');
+  }
+});
+
+check('painted rects land inside the visible window at the top of the document', () => {
+  const { scroller, shell } = mountSession();
+  const canvas = canvasOf(shell);
+  const rects = canvas.getContext('2d').calls.filter((c) => c.op === 'rect');
+  const H = shell.clientHeight;
+  const offset = offsetOf(shell);              // 0 at the top of the document
+  assert.equal(scroller.scrollTop, 0, 'the mount must start at the top');
+  const visible = rects.filter((r) => r.y + r.h >= offset && r.y <= offset + H);
+  assert.ok(visible.length > 0,
+    `no rect intersects the window [${offset}, ${offset + H}] out of ${rects.length} drawn`);
 });
 
 check('a session that fits on one screen hides the whole strip', () => {
