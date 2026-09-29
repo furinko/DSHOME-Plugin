@@ -156,6 +156,7 @@ function installGlobals() {
     innerHeight: 1080,
     devicePixelRatio: 1,
     addEventListener: () => {},
+    removeEventListener: () => {},
     setTimeout: (fn) => { void fn; return 0; },   // timers never fire: no async
     clearTimeout: () => {},
     setInterval: () => 0,
@@ -414,7 +415,7 @@ const zoomFor = (total, view) => (THUMB_RATIO * total) / view;
  * TURN_COUNT turn blocks. Heights are supplied by hand because the DOM double
  * has no layout engine.
  */
-function mountSession({ total = TOTAL_H, view = VIEW_H, turns = TURN_COUNT, step = TURN_STEP } = {}) {
+function mountSession({ total = TOTAL_H, view = VIEW_H, turns = TURN_COUNT, step = TURN_STEP, applies = 1 } = {}) {
   const doc = installGlobals();
   const scroller = doc.createElement('div');
   scroller.className = 'session_scrollBody';
@@ -434,7 +435,8 @@ function mountSession({ total = TOTAL_H, view = VIEW_H, turns = TURN_COUNT, step
     scroller.appendChild(block);
   }
   doc.body.appendChild(scroller);
-  makePlugin().apply({ get: () => undefined });
+  const plugin = makePlugin();
+  for (let pass = 0; pass < applies; pass += 1) plugin.apply({ get: () => undefined });
   const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
   return { doc, scroller, shell };
 }
@@ -451,6 +453,16 @@ check('the strip mounts and shows for a session taller than the viewport', () =>
   assert.ok(shell, 'strip not attached');
   assert.notEqual(shell.style.display, 'none', 'a scrollable session must show the strip');
   assert.ok(parseFloat(shell.style.height) > 0, 'the strip must have a height');
+});
+
+check('re-applying tears the previous pass down instead of stacking shells', () => {
+  // This bundle hot-reloads, so apply() runs again while the previous shell is
+  // still in the DOM. Without the teardown each pass stacked another shell and
+  // another set of listeners — and the older shells kept drawing with the older
+  // geometry, which is exactly what made a previous fix look broken.
+  const { doc } = mountSession({ applies: 3 });
+  const shells = doc.body.children.filter((c) => c.className === 'dshome-plugin-minimap');
+  assert.equal(shells.length, 1, `expected one shell after three applies, found ${shells.length}`);
 });
 
 check('a session that fits on one screen hides the whole strip', () => {
