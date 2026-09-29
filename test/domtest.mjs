@@ -40,11 +40,23 @@ class El {
     this.textContent = '';
     this.listeners = {};
     this.clientWidth = 900;
-    this.clientHeight = 700;
+    this._clientHeight = 700;
     this.scrollTop = 0;
     this.scrollHeight = 4000;
     this.className = '';
   }
+  /**
+   * Layout-faithful height: a real browser resolves `clientHeight` from the CSS
+   * box, so an element whose `style.height` was just set reports that height.
+   * Without this the double keeps the constructor default and any code that
+   * sizes itself from its own clientHeight computes something a browser never
+   * would.
+   */
+  get clientHeight() {
+    const fromStyle = parseFloat(this.style.height);
+    return Number.isFinite(fromStyle) ? fromStyle : this._clientHeight;
+  }
+  set clientHeight(value) { this._clientHeight = value; }
   setAttribute(n, v) { this.attributes[n] = String(v); }
   getAttribute(n) { return n in this.attributes ? this.attributes[n] : null; }
   hasAttribute(n) { return n in this.attributes; }
@@ -75,8 +87,8 @@ class El {
     }
     return null;
   }
-  querySelector() { return null; }
-  querySelectorAll() { return []; }
+  querySelector(sel) { return walk(this).find((n) => matches(n, sel)) ?? null; }
+  querySelectorAll(sel) { return walk(this).filter((n) => matches(n, sel)); }
   matches() { return false; }
   getContext() { return null; }
 }
@@ -93,10 +105,13 @@ function walk(node, out = []) {
 /**
  * Match the selector forms this plugin emits, so idempotency is genuinely
  * exercised rather than trivially satisfied by a stub returning null.
- * Supported: `tag[attr='value']` and `tag[attr]`.
+ * Supported: `tag[attr='value']`, `tag[attr]` and `[class*="value"]` (the
+ * scroll-container selector is a class substring match).
  */
 function matches(node, selector) {
-  const m = /^([a-z]+)?(?:\[([^=\]]+)(?:='([^']*)')?\])?$/.exec(selector);
+  const star = /^\[class\*=["']([^"']+)["']\]$/.exec(selector);
+  if (star) return node.className.includes(star[1]);
+  const m = /^([a-z]+)?(?:\[([^=\]]+)(?:=['"]([^'"]*)['"])?\])?$/.exec(selector);
   if (!m) return false;
   const [, tag, attr, value] = m;
   if (tag && node.tagName !== tag.toUpperCase()) return false;
@@ -110,6 +125,7 @@ function matches(node, selector) {
 function makeDocument() {
   const head = new El('head');
   const body = new El('body');
+  const listeners = {};
   const doc = {
     head,
     body,
@@ -117,8 +133,14 @@ function makeDocument() {
     createElement: (t) => new El(t),
     querySelector: (sel) => walk(doc.documentElement).find((n) => matches(n, sel)) ?? null,
     querySelectorAll: (sel) => walk(doc.documentElement).filter((n) => matches(n, sel)),
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (t, fn) => { (listeners[t] ||= []).push(fn); },
+    removeEventListener: (t, fn) => {
+      listeners[t] = (listeners[t] || []).filter((f) => f !== fn);
+    },
+    dispatch(type, event = {}) {
+      (listeners[type] || []).forEach((fn) => fn({ type, ...event }));
+      return true;
+    },
   };
   doc.documentElement.appendChild(head);
   doc.documentElement.appendChild(body);
@@ -367,6 +389,137 @@ check('apply() tolerates a theme service that throws', () => {
 check('apply() tolerates a missing slots service', () => {
   installGlobals();
   loaded.factory(provide).apply({ get: () => undefined });
+});
+
+// ── minimap geometry, executed ──────────────────────────────────────────────
+//
+// The selftest locks the formulas by reading the source; these checks run the
+// real bundle against a fake session and read the resulting numbers off the DOM.
+// That is the only way to catch "the formulas are right but they are wired to
+// the wrong element", which is exactly what the clipping-window and zoom bugs
+// were.
+console.log('\n== minimap geometry (runtime) ==');
+
+const THUMB_RATIO = 0.08;
+const TURN_STEP = 600;
+const TURN_COUNT = 40;
+const VIEW_H = 800;
+const TOTAL_H = TURN_COUNT * TURN_STEP + VIEW_H;
+
+/** The bundle's own zoom rule, restated so the test can predict the numbers. */
+const zoomFor = (total, view) => (THUMB_RATIO * total) / view;
+
+/**
+ * Mount the real bundle against a fake session: one scroll container holding
+ * TURN_COUNT turn blocks. Heights are supplied by hand because the DOM double
+ * has no layout engine.
+ */
+function mountSession({ total = TOTAL_H, view = VIEW_H, turns = TURN_COUNT, step = TURN_STEP } = {}) {
+  const doc = installGlobals();
+  const scroller = doc.createElement('div');
+  scroller.className = 'session_scrollBody';
+  scroller.clientHeight = view;
+  scroller.scrollHeight = total;
+  scroller.scrollTop = 0;
+  scroller.getBoundingClientRect = () => ({
+    top: 0, bottom: view, left: 0, right: 900, width: 900, height: view,
+  });
+  for (let i = 0; i < turns; i += 1) {
+    const block = doc.createElement('div');
+    block.setAttribute('data-chat-turn', '');
+    block.textContent = `turn ${i} `.repeat(8);
+    block.getBoundingClientRect = () => ({
+      top: i * step, bottom: (i + 1) * step, height: step, left: 0, right: 800, width: 800,
+    });
+    scroller.appendChild(block);
+  }
+  doc.body.appendChild(scroller);
+  makePlugin().apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  return { doc, scroller, shell };
+}
+
+/** The canvas offset the bundle wrote, read back out of the transform. */
+function offsetOf(shell) {
+  const canvas = shell.children[0].children[0];
+  const m = /translateY\((-?\d+(?:\.\d+)?)px\)/.exec(canvas.style.transform || '');
+  return m ? -Number(m[1]) : null;
+}
+
+check('the strip mounts and shows for a session taller than the viewport', () => {
+  const { shell } = mountSession();
+  assert.ok(shell, 'strip not attached');
+  assert.notEqual(shell.style.display, 'none', 'a scrollable session must show the strip');
+  assert.ok(parseFloat(shell.style.height) > 0, 'the strip must have a height');
+});
+
+check('a session that fits on one screen hides the whole strip', () => {
+  const { shell } = mountSession({ total: 400, turns: 1, step: 100 });
+  assert.equal(shell.style.display, 'none');
+});
+
+check('a long session zooms the canvas past the window', () => {
+  const { shell } = mountSession();
+  const zoom = zoomFor(TOTAL_H, VIEW_H);
+  assert.ok(zoom > 1, `zoom must exceed 1 for a long session, got ${zoom}`);
+  assert.ok(parseFloat(shell.style.height) > 0, 'the window keeps the standard band');
+});
+
+check('the thumb covers exactly the viewport slice of the canvas', () => {
+  // The invariant that makes the picture trustworthy, at every scroll position:
+  // the thumb's top and height must equal the on-screen position and height of
+  // the viewport's span of the canvas.
+  const { doc, scroller, shell } = mountSession();
+  const thumb = shell.children[1];
+  const band = parseFloat(shell.style.height);
+  const canvasLen = band * zoomFor(TOTAL_H, VIEW_H);
+  const scale = canvasLen / TOTAL_H;
+
+  for (const fraction of [0, 0.25, 0.5, 1]) {
+    scroller.scrollTop = fraction * (TOTAL_H - VIEW_H);
+    doc.dispatch('scroll');
+    const offset = offsetOf(shell);
+    const sliceTop = scroller.scrollTop * scale - offset;
+    const sliceHeight = VIEW_H * scale;
+    assert.ok(
+      Math.abs(parseFloat(thumb.style.top) - sliceTop) <= 1.5,
+      `at ${fraction}: thumb top ${thumb.style.top} must equal slice top ${sliceTop}`,
+    );
+    assert.ok(
+      Math.abs(parseFloat(thumb.style.height) - sliceHeight) <= 1.5,
+      `at ${fraction}: thumb height ${thumb.style.height} must equal slice height ${sliceHeight}`,
+    );
+  }
+});
+
+check('at the document bottom the canvas bottom meets the window bottom', () => {
+  const { doc, scroller, shell } = mountSession();
+  const band = parseFloat(shell.style.height);
+  const canvasLen = band * zoomFor(TOTAL_H, VIEW_H);
+  scroller.scrollTop = TOTAL_H - VIEW_H;
+  doc.dispatch('scroll');
+  assert.ok(
+    Math.abs(offsetOf(shell) - (canvasLen - band)) <= 1.5,
+    `offset ${offsetOf(shell)} must be canvasLen - window = ${canvasLen - band}`,
+  );
+});
+
+check('clicking centres the clicked content instead of top-aligning it', () => {
+  const { scroller, shell } = mountSession();
+  const band = parseFloat(shell.style.height);
+  const canvasLen = band * zoomFor(TOTAL_H, VIEW_H);
+  const scale = canvasLen / TOTAL_H;
+  scroller.scrollTop = 0;
+  const rect = shell.getBoundingClientRect();
+  const local = band / 2;
+  const expected = local / scale - VIEW_H / 2;   // offset is 0 at the top of the document
+  (shell.listeners.pointerdown || []).forEach((fn) => fn({
+    type: 'pointerdown', button: 0, clientY: rect.top + local, pointerId: 1, preventDefault() {},
+  }));
+  assert.ok(
+    Math.abs(scroller.scrollTop - expected) <= 2,
+    `click must centre: scrollTop ${scroller.scrollTop}, expected ${expected}`,
+  );
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);
