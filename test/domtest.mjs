@@ -291,11 +291,15 @@ check('apply() attaches the minimap strip to the body', () => {
   assert.ok(shell, 'strip not attached');
   // The canvas must sit inside the clipping window, not directly in the shell:
   // the shell is the fixed window and the canvas is the long scroll behind it.
-  assert.deepEqual(shell.children.map((c) => c.tagName), ['DIV', 'DIV']);
-  const view = shell.children[0];
-  assert.equal(view.className, 'dshome-plugin-minimap-view');
+  // Every part is looked up by name rather than by index, because the canvas
+  // moved into the window once and positional lookups silently compared the
+  // wrong element from then on.
+  assert.equal(shell.children.length, 3, 'shell holds window + thumb + tip');
+  const view = shell.children.find((c) => c.className === 'dshome-plugin-minimap-view');
+  assert.ok(view, 'clipping window missing');
+  assert.ok(shell.children.find((c) => c.className === 'dshome-plugin-minimap-thumb'), 'thumb missing');
+  assert.ok(shell.children.find((c) => c.className === 'dshome-plugin-minimap-tip'), 'hover tip missing');
   assert.deepEqual(view.children.map((c) => c.tagName), ['CANVAS']);
-  assert.equal(shell.children[1].className, 'dshome-plugin-minimap-thumb');
 });
 
 check('strip starts hidden when there is no conversation', () => {
@@ -477,6 +481,16 @@ function canvasOf(shell) {
   return shell ? (walk(shell).find((n) => n.tagName === 'CANVAS') ?? null) : null;
 }
 
+/** The viewport box, by name: the shell's third child is now the hover tip. */
+function thumbOf(shell) {
+  return shell ? (shell.children.find((c) => c.className === 'dshome-plugin-minimap-thumb') ?? null) : null;
+}
+
+/** The hover tip, by name. */
+function tipOf(shell) {
+  return shell ? (shell.children.find((c) => c.className === 'dshome-plugin-minimap-tip') ?? null) : null;
+}
+
 /** The canvas offset the bundle wrote, read back out of the transform. */
 function offsetOf(shell) {
   const canvas = canvasOf(shell);
@@ -547,7 +561,7 @@ check('the thumb covers exactly the viewport slice of the canvas', () => {
   // the thumb's top and height must equal the on-screen position and height of
   // the viewport's span of the canvas.
   const { doc, scroller, shell } = mountSession();
-  const thumb = shell.children[1];
+  const thumb = thumbOf(shell);
   const band = parseFloat(shell.style.height);
   const canvasLen = band * zoomFor(TOTAL_H, VIEW_H);
   const scale = canvasLen / TOTAL_H;
@@ -597,6 +611,358 @@ check('clicking centres the clicked content instead of top-aligning it', () => {
     Math.abs(scroller.scrollTop - expected) <= 2,
     `click must centre: scrollTop ${scroller.scrollTop}, expected ${expected}`,
   );
+});
+
+// ── hover tip · right sidebar · layout gate · change-driven redraw ──────────
+//
+// All four are timer- or observer-driven, and the double's timers never fire. So
+// the instruments below record what the bundle *scheduled* and pin the clock,
+// and each check drives the recorded callback by hand where it needs to. Every
+// claim about the picture is still read off the DOM afterwards — "the callback
+// was invoked" is never the assertion.
+console.log('\n== minimap behaviour (runtime) ==');
+
+/**
+ * Add one conversation column. `left`/`top` place it in the viewport, which is
+ * what findScroller has to judge. `laidOut` decides which blocks report a real
+ * height: the double has no layout engine, so heights are supplied by hand.
+ */
+function addColumn(doc, { turns, step, total, view = VIEW_H, left = 0, top = 0, laidOut = null, kinds = null }) {
+  const scroller = doc.createElement('div');
+  scroller.className = 'session_scrollBody';
+  scroller.clientHeight = view;
+  scroller.scrollHeight = total;
+  scroller.scrollTop = 0;
+  scroller.getBoundingClientRect = () => ({
+    top, bottom: top + view, left, right: left + 900, width: 900, height: view,
+  });
+  for (let i = 0; i < turns; i += 1) {
+    const block = doc.createElement('div');
+    block.setAttribute('data-chat-turn', String(i + 1));
+    if (kinds) block.setAttribute('data-chat-flow-kind', kinds[i % kinds.length]);
+    block.textContent = `hello from turn ${i}`;
+    const ready = laidOut === null || laidOut(i);
+    block.getBoundingClientRect = () => ({
+      top: i * step,
+      bottom: (i + 1) * step,
+      height: ready ? step : 0,
+      left: 0,
+      right: 800,
+      width: 800,
+    });
+    scroller.appendChild(block);
+  }
+  doc.body.appendChild(scroller);
+  return scroller;
+}
+
+/**
+ * Make a mount observable.
+ *
+ * Records every timer the bundle schedules — the double's timers never fire, so
+ * the request itself is the only evidence — captures MutationObservers so their
+ * callback can be invoked by hand, and pins `Date.now` to a clock the check can
+ * advance: the hover tip is deliberately throttled, so a real clock would make
+ * that assertion flaky.
+ */
+function instrument() {
+  const log = { timeouts: [], intervals: [], observers: [], now: 1000000 };
+  const win = globalThis.window;
+  win.setTimeout = (fn, delay) => { log.timeouts.push({ fn, delay }); return log.timeouts.length; };
+  win.clearTimeout = () => {};
+  win.setInterval = (fn, delay) => { log.intervals.push({ fn, delay }); return log.intervals.length; };
+  win.clearInterval = () => {};
+  globalThis.MutationObserver = class {
+    constructor(cb) { this.cb = cb; log.observers.push(this); }
+    observe(target, options) { this.target = target; this.options = options; }
+    disconnect() { this.disconnected = true; }
+  };
+  Date.now = () => log.now;
+  return log;
+}
+
+/** Build a session, instrument the scheduling, then apply the real bundle. */
+function mountWith({
+  turns = TURN_COUNT, step = TURN_STEP, total = TOTAL_H, view = VIEW_H,
+  laidOut = null, kinds = null, left = 0, top = 0, setup = null,
+} = {}) {
+  const doc = installGlobals();
+  const scroller = addColumn(doc, { turns, step, total, view, left, top, laidOut, kinds });
+  const log = instrument();
+  if (setup) setup(doc, log);
+  makePlugin().apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  const ctx = canvasOf(shell).getContext('2d');
+  // The recording context accumulates across paints, and every paint begins
+  // with a clear(). So "how many passes ran" is the number of clears, and "what
+  // the picture is now" is the rects after the last clear — counting all
+  // recorded rects would treat a redraw as extra blocks.
+  const passes = () => ctx.calls.filter((c) => c.op === 'clear').length;
+  const rects = () => {
+    let start = 0;
+    for (let i = ctx.calls.length - 1; i >= 0; i -= 1) {
+      if (ctx.calls[i].op === 'clear') { start = i; break; }
+    }
+    return ctx.calls.slice(start).filter((c) => c.op === 'rect');
+  };
+  /** The observer watching the conversation column, not the style guard. */
+  const contentWatcher = () => log.observers.find((o) => o.target === scroller && o.options.childList);
+  return { doc, scroller, shell, log, ctx, passes, rects, contentWatcher };
+}
+
+/** Drive the strip's own hover path with a client Y that lands on `canvasY`. */
+function hover(shell, canvasY) {
+  const rect = shell.getBoundingClientRect();
+  const clientY = rect.top + (canvasY - offsetOf(shell));
+  (shell.listeners.pointermove || []).forEach((fn) => fn({ type: 'pointermove', clientY, buttons: 0 }));
+}
+
+/** A right-sidebar panel, visible at `left`, with the expand attribute set. */
+function sidebarPanel(doc, left) {
+  const panel = doc.createElement('div');
+  panel.className = 'sidebar_panel';
+  panel.setAttribute('data-sidebar-right-open', '');
+  panel.getBoundingClientRect = () => ({
+    top: 0, bottom: 1080, left, right: left + 400, width: 400, height: 1080,
+  });
+  doc.body.appendChild(panel);
+  return panel;
+}
+
+check('the tip is invisible until it has something to say', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap').textContent;
+  // Without opacity:0 the tip is a label permanently visible over the
+  // conversation — that is the failure mode worth locking out.
+  assert.match(css, /\.dshome-plugin-minimap-tip\{[^}]*opacity:0/);
+  assert.match(css, /\.dshome-plugin-minimap-tip\[data-show\]\{opacity:1\}/);
+  // Avoidance is done by position, never by raising the strip above the panel.
+  assert.match(css, /\.dshome-plugin-minimap\{[^}]*z-index:6/);
+});
+
+check('findScroller skips a column parked outside the window', () => {
+  const doc = installGlobals();
+  // Parked to the right of the window: positive height and vertical overlap, so
+  // only a horizontal test can tell it apart from the live column. Its content
+  // fits one screen, so picking it would also hide the strip outright.
+  addColumn(doc, { turns: 1, step: 100, total: 400, left: 1500 });
+  addColumn(doc, { turns: TURN_COUNT, step: TURN_STEP, total: TOTAL_H });
+  instrument();
+  makePlugin().apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  assert.notEqual(shell.style.display, 'none', 'the on-screen column must be the one picked');
+  const rects = canvasOf(shell).getContext('2d').calls.filter((c) => c.op === 'rect');
+  assert.equal(rects.length, TURN_COUNT, `drew ${rects.length} blocks; the parked column has 1`);
+});
+
+check('findScroller still returns a column when nothing intersects the viewport yet', () => {
+  // Below the fold: laid out, but with no overlap at all. Without the fallback
+  // the strip stayed hidden until the layout happened to finish.
+  const doc = installGlobals();
+  addColumn(doc, { turns: TURN_COUNT, step: TURN_STEP, total: TOTAL_H, top: 5000 });
+  instrument();
+  makePlugin().apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  assert.notEqual(shell.style.display, 'none', 'the only candidate must still be used');
+  assert.ok(parseFloat(shell.style.height) > 0, 'and it must be sized');
+});
+
+check('the hover tip names the block whose painted rectangle is under the pointer', () => {
+  const { shell, rects } = mountWith();
+  const tip = tipOf(shell);
+  const drawn = rects();
+  const offset = offsetOf(shell);
+  // Strictly inside the 13th painted rectangle, and inside the visible window.
+  const target = 12;
+  const canvasY = drawn[target].y + drawn[target].h / 2;
+  assert.ok(canvasY >= offset && canvasY <= offset + shell.clientHeight,
+    'the target rect must be visible for this check to mean anything');
+  hover(shell, canvasY);
+  assert.ok(tip.hasAttribute('data-show'), 'the tip must show');
+  // The block is identified by its own text, so this locks "the tip names the
+  // message the pointer is over" and not merely "the tip has some text".
+  assert.match(tip.textContent, /hello from turn 12/,
+    `tip named the wrong block: ${JSON.stringify(tip.textContent)}`);
+  assert.ok(Math.abs(parseFloat(tip.style.top) - (canvasY - offset)) <= 1,
+    `tip top ${tip.style.top} must follow the pointer, not the block's edge`);
+});
+
+check('the tip labels the block kind read off the block', () => {
+  for (const [kind, label] of [['user', 'You'], ['assistant', 'Assistant'], ['tool-call', 'Tool call'], ['', 'Content']]) {
+    const { shell, rects } = mountWith({
+      turns: 3, total: 3 * TURN_STEP + VIEW_H, kinds: [kind, kind, kind],
+    });
+    const drawn = rects();
+    hover(shell, drawn[0].y + drawn[0].h / 2);
+    // `.` is a wildcard for the separator, so this stays exact without betting
+    // the assertion on how a middle dot survives an editor round-trip.
+    assert.match(tipOf(shell).textContent.split('\n')[0], new RegExp(`^Turn 1 . ${label}$`),
+      `kind ${JSON.stringify(kind)} should be labelled ${label}`);
+  }
+});
+
+check('the tip hides when the pointer leaves the strip', () => {
+  const { shell, rects } = mountWith();
+  const drawn = rects();
+  const tip = tipOf(shell);
+  hover(shell, drawn[5].y + drawn[5].h / 2);
+  assert.ok(tip.hasAttribute('data-show'), 'the tip must show first');
+  (shell.listeners.pointerleave || []).forEach((fn) => fn({ type: 'pointerleave', buttons: 0 }));
+  assert.ok(!tip.hasAttribute('data-show'), 'the tip must hide on pointerleave');
+});
+
+check('the tip is throttled, so a fast sweep does not re-read the DOM per pixel', () => {
+  const { shell, rects, log } = mountWith();
+  const tip = tipOf(shell);
+  const drawn = rects();
+  hover(shell, drawn[5].y + drawn[5].h / 2);
+  assert.match(tip.textContent, /hello from turn 5/);
+  hover(shell, drawn[20].y + drawn[20].h / 2);
+  assert.match(tip.textContent, /hello from turn 5/, 'a move inside the throttle window must be dropped');
+  log.now += 1000;
+  hover(shell, drawn[20].y + drawn[20].h / 2);
+  assert.match(tip.textContent, /hello from turn 20/, 'past the window the tip must follow the pointer');
+});
+
+check('the strip gives way to the right sidebar instead of hiding under it', () => {
+  const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 1000); } });
+  const width = globalThis.window.innerWidth;
+  // Default is right:8. A visible panel pushes the strip's right edge to
+  // (panelLeft - 8), i.e. right = width - panelLeft + 8.
+  const expected = width - 1000 + 8;
+  assert.ok(Math.abs(parseFloat(shell.style.right) - expected) <= 1,
+    `strip right ${shell.style.right}, expected ${expected}`);
+  // Stated as the thing that is actually visible: no overlap with the panel.
+  const stripRight = width - parseFloat(shell.style.right);
+  assert.ok(stripRight <= 1000 - 8, `strip right edge ${stripRight} overlaps the panel at 1000`);
+});
+
+check('a fullscreen right sidebar hides the strip entirely', () => {
+  const { shell } = mountWith({
+    setup: (doc) => {
+      const full = doc.createElement('div');
+      full.className = 'sidebar_full';
+      full.setAttribute('data-sidebar-right-panel', 'fullscreen');
+      doc.body.appendChild(full);
+    },
+  });
+  assert.equal(shell.style.display, 'none');
+});
+
+check('the sidebar is watched by attribute, and closing gives way back at once', () => {
+  const { doc, shell, log } = mountWith({ setup: (d) => { sidebarPanel(d, 1000); } });
+  // The conversation feature installs an attribute observer of its own, so name
+  // the attribute the sidebar watcher has to carry.
+  const watcher = log.observers.find((o) => o.options && Array.isArray(o.options.attributeFilter)
+    && o.options.attributeFilter.includes('data-sidebar-right-open'));
+  assert.ok(watcher, 'no attribute observer installed for the sidebar');
+  assert.deepEqual(watcher.options.attributeFilter,
+    ['data-sidebar-right-open', 'data-sidebar-right-panel']);
+  assert.equal(watcher.target, doc.body, 'the panel can appear anywhere, so body is the right root');
+  assert.ok(parseFloat(shell.style.right) > 8, 'an already-open sidebar must be avoided at mount');
+  // Closing: the attribute is gone, so the first read already has the final
+  // position and the strip must come back without waiting for the animation.
+  doc.body.children.find((c) => c.className === 'sidebar_panel').removeAttribute('data-sidebar-right-open');
+  log.timeouts.length = 0;
+  watcher.cb();
+  assert.ok(Math.abs(parseFloat(shell.style.right) - 8) <= 1,
+    `closing must give way back immediately, right=${shell.style.right}`);
+  // Opening reads the rect mid-slide, so a settle re-read is scheduled.
+  assert.deepEqual(log.timeouts.map((t) => t.delay), [320],
+    'the settle re-read must be scheduled after the slide');
+});
+
+check('the layout gate is a ratio: 23/40 paints nothing, 24/40 paints', () => {
+  const below = mountWith({ laidOut: (i) => i < 23 });
+  assert.equal(below.rects().length, 0, 'a not-ready pass must paint nothing at all');
+  assert.ok(below.log.timeouts.some((t) => t.delay === 60), 'and it must queue a retry');
+  const above = mountWith({ laidOut: (i) => i < 24 });
+  assert.ok(above.rects().length > 0, 'a pass that clears the ratio must paint');
+});
+
+check('the queued retry paints once layout has finished', () => {
+  const { scroller, rects, log } = mountWith({ laidOut: (i) => i < 1 });
+  assert.equal(rects().length, 0, 'nothing is painted while layout is unready');
+  // Layout finishes: every block now reports its real height.
+  scroller.children.forEach((block, i) => {
+    block.getBoundingClientRect = () => ({
+      top: i * TURN_STEP, bottom: (i + 1) * TURN_STEP, height: TURN_STEP, left: 0, right: 800, width: 800,
+    });
+  });
+  const retry = log.timeouts.find((t) => t.delay === 60);
+  assert.ok(retry, 'a retry must have been queued');
+  retry.fn();
+  assert.ok(rects().length > 0, `the retry must paint, got ${rects().length} rects`);
+});
+
+check('an idle sync tick does not repaint', () => {
+  const { rects, passes, log } = mountWith();
+  const drawn = rects().length;
+  const painted = passes();
+  assert.equal(drawn, TURN_COUNT, 'the mount must paint every block');
+  const tick = log.intervals.find((t) => t.delay === 250);
+  assert.ok(tick, 'the fallback tick must still be installed');
+  for (let i = 0; i < 5; i += 1) tick.fn();
+  assert.equal(passes(), painted, 'five idle ticks must not repaint at all');
+  assert.equal(rects().length, drawn, 'and the picture must be untouched');
+});
+
+check('a content mutation drives a redraw', () => {
+  const { rects, passes, log, contentWatcher } = mountWith();
+  const drawn = rects().length;
+  const painted = passes();
+  const watcher = contentWatcher();
+  // The style-guard observer also watches for childList, so this has to be the
+  // one attached to the conversation column.
+  assert.ok(watcher, 'the scroll container must be watched for content changes');
+  log.timeouts.length = 0;
+  watcher.cb();
+  // The mutation must schedule its own coalesced redraw (120ms) rather than
+  // waiting for the 250ms tick: that wait is what "it still feels slow" was.
+  assert.ok(log.timeouts.some((t) => t.delay === 120),
+    'a mutation must schedule a coalesced redraw, not wait for the tick');
+  // The mutation only marks the picture stale; a sync is what draws it.
+  // (Nothing here waits on a real timer: the recorded callback is invoked.)
+  log.intervals.find((t) => t.delay === 250).fn();
+  assert.ok(passes() > painted, 'a mutation must drive a redraw');
+  assert.equal(rects().length, drawn, 'the same content still paints the same number of blocks');
+});
+
+check('a scrollHeight change alone still triggers a redraw (the fallback path)', () => {
+  const { scroller, rects, passes, log } = mountWith();
+  const drawn = rects().length;
+  const painted = passes();
+  // No DOM mutation at all: a block that grew in place. Only the total reveals
+  // it, which is why the cheap total comparison has to stay.
+  scroller.scrollHeight = TOTAL_H + TURN_STEP;
+  log.intervals.find((t) => t.delay === 250).fn();
+  assert.ok(passes() > painted, 'a redraw must happen when the total moves');
+  assert.equal(rects().length, drawn, 'and it must measure the same blocks');
+});
+
+check('a window resize re-scales the picture even when the column does not change', () => {
+  const { shell, passes, rects, log } = mountWith();
+  const painted = passes();
+  const before = canvasOf(shell).style.height;
+  // A shorter window lowers the standard band, so the canvas has to be rebuilt
+  // at the new scale. The scroll container's own height is untouched here, which
+  // is exactly the case its ResizeObserver cannot see.
+  globalThis.window.innerHeight = 700;
+  log.intervals.find((t) => t.delay === 250).fn();
+  assert.ok(passes() > painted, 'the band change must drive a redraw');
+  const after = canvasOf(shell).style.height;
+  assert.notEqual(after, before, `the canvas must follow the new band (still ${after})`);
+  assert.ok(rects().length > 0, 'and the picture must still be drawn');
+});
+
+check('the tip stays quiet while the layout gate is withholding the picture', () => {
+  const { shell, rects } = mountWith({ laidOut: (i) => i < 1 });
+  assert.equal(rects().length, 0, 'nothing is painted in this state');
+  hover(shell, shell.clientHeight / 2);
+  assert.ok(!tipOf(shell).hasAttribute('data-show'),
+    'the tip must not name a block that is not on the canvas');
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);
