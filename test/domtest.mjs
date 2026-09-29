@@ -239,7 +239,12 @@ check('apply() attaches the minimap strip to the body', () => {
   loaded.factory(provide).apply({ get: () => undefined });
   const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
   assert.ok(shell, 'strip not attached');
-  assert.deepEqual(shell.children.map((c) => c.tagName), ['CANVAS', 'DIV']);
+  // The canvas must sit inside the clipping window, not directly in the shell:
+  // the shell is the fixed window and the canvas is the long scroll behind it.
+  assert.deepEqual(shell.children.map((c) => c.tagName), ['DIV', 'DIV']);
+  const view = shell.children[0];
+  assert.equal(view.className, 'dshome-plugin-minimap-view');
+  assert.deepEqual(view.children.map((c) => c.tagName), ['CANVAS']);
   assert.equal(shell.children[1].className, 'dshome-plugin-minimap-thumb');
 });
 

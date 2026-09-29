@@ -134,7 +134,7 @@ check('card selector covers tool calls and system injections', () => {
   }
 });
 
-// ── minimap geometry: the two-height rule ───────────────────────────────────
+// ── minimap geometry: the filmstrip rule ────────────────────────────────────
 console.log('\n== minimap geometry ==');
 
 const MAX_HEIGHT_PX = 760;
@@ -142,44 +142,87 @@ const COMPOSER_RESERVE_PX = 152;
 const THUMB_RATIO = 0.08;
 const MIN_THUMB_PX = 8;
 
-const computeBand = (innerHeight) =>
-  Math.max(120, Math.min(MAX_HEIGHT_PX, innerHeight - COMPOSER_RESERVE_PX));
-const thumbHeight = (band) => Math.max(MIN_THUMB_PX, band * THUMB_RATIO);
-
-check('band is driven by viewport, not by content length', () => {
-  // Same viewport must yield the same band for a 2-message and a 2000-message
-  // session; otherwise the thumb changes size between conversations.
-  assert.equal(computeBand(1080), computeBand(1080));
-  assert.equal(computeBand(1080), 760, 'capped at MAX_HEIGHT_PX for a tall viewport');
+// These checks read the bundle's *source text*. The earlier version of this
+// section re-implemented the formulas locally and asserted the local copies, so
+// all of them stayed green while the bundle computed something else — which is
+// exactly how the dropped zoom shipped.
+check('band is driven by the viewport, not by content length', () => {
+  assert.match(code, /var available = window\.innerHeight - COMPOSER_RESERVE_PX;/, 'band input');
+  assert.match(code, /Math\.max\(120, Math\.min\(MAX_HEIGHT_PX, available\)\)/, 'band formula');
 });
 
-check('band never collapses below a usable floor', () => {
-  assert.equal(computeBand(240), 120);
+check('zoom is derived from the thumb ratio, not fixed at 1', () => {
+  // thumb = (view/total) * (band * zoom) must equal THUMB_RATIO * band, which is
+  // only possible when the zoom scales with the document.
+  assert.match(code, /\(THUMB_RATIO \* total\) \/ view/, 'zoom formula missing');
 });
 
-check('thumb is a constant fraction of the band', () => {
-  for (const height of [400, 800, 1200]) {
-    const band = computeBand(height);
-    assert.equal(thumbHeight(band), Math.max(MIN_THUMB_PX, band * THUMB_RATIO));
-  }
+check('thumb height stays a constant fraction of the standard band', () => {
+  const band = 760;
+  const total = 50000;
+  const view = 800;
+  const zoom = (THUMB_RATIO * total) / view;
+  const content = band * zoom;
+  const thumb = (view / total) * content;
+  assert.ok(Math.abs(thumb - band * THUMB_RATIO) < 1e-9, 'thumb must stay 8% of the band');
+  assert.match(code, /\(view \/ total\) \* contentOf\(total\)/, 'thumb must derive from the canvas');
 });
 
-check('short content pins travel to zero', () => {
-  const total = 500;   // document
-  const view = 800;    // viewport taller than document
-  assert.equal(total > view ? 1 : 0, 0, 'content fits => the box must not move');
+check('the canvas is translated inside a clipping window', () => {
+  assert.match(
+    code,
+    /\.dshome-plugin-minimap-view\{position:absolute;inset:0;overflow:hidden/,
+    'clipping window CSS missing',
+  );
+  assert.match(code, /view\.appendChild\(canvas\)/, 'canvas must live inside the view');
+  assert.match(code, /shell\.appendChild\(view\)/, 'view must live inside the shell');
 });
 
-check('at zoom 1 the two rulers are identical', () => {
-  // Clicking must land the clicked content under the pointer. That holds only
-  // when (band-thumb)/(total-view) === band/total, i.e. thumb = band*view/total.
-  const total = 5000;
-  const view = 700;
-  const band = 600;
-  const thumb = band * (view / total);
-  const left = (band - thumb) / (total - view);
-  const right = band / total;
-  assert.ok(Math.abs(left - right) < 1e-12, 'ratios must agree exactly at zoom 1');
+check('the thumb covers exactly the viewport slice of the canvas', () => {
+  // NOT the (band-thumb)/(total-view) === band/total identity: that one only
+  // holds at zoom 1. At any zoom the thumb's top and height must equal the
+  // on-screen position and height of the viewport's span of the canvas.
+  const band = 760;
+  const total = 50000;
+  const view = 800;
+  const H = band;
+  const p = 0.37;
+  const zoom = (THUMB_RATIO * total) / view;
+  const content = band * zoom;
+  const scale = content / total;
+  const thumb = (view / total) * content;
+  const scrollTop = p * (total - view);
+  const offset = scrollTop * scale - p * Math.max(0, H - thumb);
+  const spanTop = scrollTop * scale - offset;
+  assert.ok(Math.abs(spanTop - p * (H - thumb)) < 1e-9, 'thumb top must match the span top');
+  assert.ok(Math.abs(thumb - view * scale) < 1e-9, 'thumb height must match the span height');
+  assert.ok(Math.abs((view / total) * content - band * THUMB_RATIO) < 1e-9, 'thumb stays 8%');
+});
+
+check('at the document bottom the window is exactly filled', () => {
+  const band = 760;
+  const total = 50000;
+  const view = 800;
+  const H = band;
+  const zoom = (THUMB_RATIO * total) / view;
+  const content = band * zoom;
+  const thumb = (view / total) * content;
+  // scrollTop at the bottom is (total - view), and p is 1 there.
+  const offset = (total - view) * (content / total) - Math.max(0, H - thumb);
+  assert.ok(Math.abs(offset - (content - H)) < 1e-9, 'canvas bottom must meet the window bottom');
+});
+
+check('content that fits is never translated', () => {
+  assert.match(code, /if \(content <= H \+ 1\) return 0;/, 'fits branch must keep the canvas still');
+});
+
+check('clicking centres the clicked content', () => {
+  assert.match(code, /contentY - viewH\(\) \/ 2/, 'click must centre, not top-align');
+});
+
+check('the old two-ruler mapping is gone', () => {
+  assert.ok(!code.includes('stripThumb'), 'stripThumb must be gone');
+  assert.ok(!code.includes('fractionAt'), 'fractionAt must be gone');
 });
 
 check('a zero-height block is not admitted to the cache', () => {
