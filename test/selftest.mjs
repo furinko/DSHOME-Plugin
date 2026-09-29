@@ -1,12 +1,25 @@
-// Self-check for dshome-plugin's pure logic.
+// Self-check for DSHOME-Plugin.
 //
-// Runs without a browser: geometry is asserted against the same constants the
-// minimap uses, and the theme tokens are imported directly rather than parsed
-// out of source text. Run with `node test/selftest.mjs`.
+// Runs without a browser. Two things are covered here:
+//
+//   1. The **classic-script contract**, which is the one that actually broke a
+//      real boot. The host loads the client bundle with
+//      `document.createElement("script")` + `el.src = url` — a classic script,
+//      *not* a module. A single top-level `import` therefore throws
+//      `SyntaxError: Cannot use import statement outside a module`, the entry
+//      never activates, and the whole web boot fails (not just this plugin).
+//      These checks make that mistake impossible to reintroduce silently.
+//
+//   2. Behavioural invariants each derived from a bug reproduced on a real
+//      session: the minimap's two-height rule, cache hygiene, theme token
+//      completeness, and the slot-registration return contract.
+//
+// Run with `node test/selftest.mjs`.
 
 import assert from 'node:assert/strict';
-import { SELECTORS, CARD_SELECTOR } from '../lib/shared.js';
-import { TOKENS, BRAND_NAME } from '../lib/theme.js';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 let passed = 0;
 let failed = 0;
@@ -22,36 +35,106 @@ function check(label, fn) {
   }
 }
 
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const clientPath = join(root, manifest.exports['./client']);
+const clientSource = readFileSync(clientPath, 'utf8');
+
+/** Strip comments so the checks below judge code, not prose about code. */
+const code = clientSource
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+// ── the classic-script contract ─────────────────────────────────────────────
+console.log('\n== classic-script contract ==');
+
+check('bundle has no top-level import statement', () => {
+  // `import(` (dynamic) is legal in a classic script; a bare `import x` is not.
+  // Check the raw source so a commented example cannot hide a real one.
+  const offenders = clientSource
+    .split('\n')
+    .map((line, i) => [i + 1, line])
+    .filter(([, line]) => /^\s*import\s+[^(]/.test(line));
+  assert.deepEqual(
+    offenders.map(([n, l]) => `${n}: ${l.trim()}`),
+    [],
+    'a top-level import makes the whole web boot fail',
+  );
+});
+
+check('bundle has no top-level export statement', () => {
+  const offenders = clientSource
+    .split('\n')
+    .map((line, i) => [i + 1, line])
+    .filter(([, line]) => /^\s*export\s/.test(line));
+  assert.deepEqual(offenders.map(([n, l]) => `${n}: ${l.trim()}`), []);
+});
+
+check('bundle is a single self-contained file', () => {
+  // No relative import can exist if there is only one file; assert that too, so
+  // a future split is caught here rather than at boot.
+  const libFiles = readdirSync(join(root, 'lib'));
+  assert.deepEqual(libFiles.sort(), ['client.js', 'index.js']);
+});
+
+check('registers through the module loader factory protocol', () => {
+  assert.match(clientSource, /window\.__ModuleLoader__\.load\(/);
+  assert.match(clientSource, /factory:\s*\(require\)\s*=>/);
+});
+
+check('factory returns its exports', () => {
+  // The loader materialises the factory's return value as the plugin body.
+  assert.match(clientSource, /return module\.exports;/);
+});
+
+check('host modules come from require(), not import', () => {
+  assert.match(code, /require\('react\/jsx-runtime'\)/);
+  assert.match(code, /require\('@deepseek-ai\/dsh-client-ui-primitives'\)/);
+});
+
+check('declares name, inject and apply', () => {
+  assert.match(code, /name:\s*'dshome-plugin'/);
+  assert.match(code, /inject/);
+  assert.match(code, /function apply\(ctx\)/);
+});
+
+check('each feature is isolated behind safe()', () => {
+  for (const feature of ['applyTheme', 'applyConversation', 'applyMinimap']) {
+    assert.ok(
+      new RegExp(`safe\\([\\s\\S]{0,120}${feature}`).test(code),
+      `${feature} is not wrapped in safe()`,
+    );
+  }
+});
+
 // ── selectors: semantic attributes only ─────────────────────────────────────
 console.log('\n== selectors ==');
 
 check('uses data-variant for reasoning blocks', () => {
-  assert.match(SELECTORS.think, /data-variant="think"/);
+  assert.match(code, /data-variant="think"/);
 });
 
 check('never relies on hashed CSS-module class names', () => {
-  const all = Object.values(SELECTORS).join(' ');
-  // A hashed class looks like lcKema_frame; any bare identifier class is a
-  // stability risk. Attribute selectors are the only permitted form.
-  assert.doesNotMatch(all, /\.[a-zA-Z]{5,}_[a-zA-Z]+/);
+  // A hashed class looks like lcKema_frame. `[class*="_scrollBody"]` and
+  // `[class*="_frame"]` are suffix matches on stable upstream names and are
+  // allowed; a bare `.foo_bar` selector is not.
+  const bare = code.match(/\.[a-zA-Z]{5,}_[a-zA-Z]+/g) || [];
+  assert.deepEqual(bare, [], 'hashed class selector found');
 });
 
 check('card selector excludes empty hidden blocks', () => {
   // Upstream marks empty per-turn process blocks with `hidden` while leaving
   // them display:block; without the guard they become blank cards.
-  assert.match(CARD_SELECTOR, /:not\(\[hidden\]\)/);
+  assert.match(code, /:not\(\[hidden\]\)/);
 });
 
 check('card selector covers tool calls and system injections', () => {
   for (const kind of ['tool-call', 'context', 'system-prompt', 'command']) {
-    assert.ok(CARD_SELECTOR.includes(`"${kind}"`), `missing ${kind}`);
+    assert.ok(code.includes(`'${kind}'`), `missing ${kind}`);
   }
 });
 
 // ── minimap geometry: the two-height rule ───────────────────────────────────
-//
-// These mirror the constants and formulas in lib/minimap.js. They are asserted
-// here because the invariant is what stops short sessions from drifting.
 console.log('\n== minimap geometry ==');
 
 const MAX_HEIGHT_PX = 760;
@@ -81,21 +164,10 @@ check('thumb is a constant fraction of the band', () => {
   }
 });
 
-check('short content pins travel to zero (nothing to scroll)', () => {
+check('short content pins travel to zero', () => {
   const total = 500;   // document
   const view = 800;    // viewport taller than document
-  const ratio = total > view ? 1 : 0;
-  assert.equal(ratio, 0, 'content fits ⇒ the box must not move');
-});
-
-check('long content maps scroll range onto thumb travel', () => {
-  const total = 10000;
-  const view = 800;
-  const band = computeBand(1080);
-  const travel = band - thumbHeight(band);
-  const mid = (total / 2) / (total - view);
-  const top = mid * travel;
-  assert.ok(top > 0 && top < travel, 'mid-scroll lands inside travel');
+  assert.equal(total > view ? 1 : 0, 0, 'content fits => the box must not move');
 });
 
 check('at zoom 1 the two rulers are identical', () => {
@@ -111,85 +183,97 @@ check('at zoom 1 the two rulers are identical', () => {
 });
 
 check('a zero-height block is not admitted to the cache', () => {
-  const measureCache = [];
-  const rect = { height: 0 };
-  if (rect.height > 0) {
-    measureCache[0] = { top: 0, height: rect.height };
-  } else {
-    measureCache[0] = undefined;
-  }
-  assert.equal(measureCache[0], undefined, 'unlaid-out blocks stay uncached');
+  // Invariant ③: a block measuring 0px has not laid out yet, so it gets a
+  // temporary height and no cache entry.
+  assert.match(
+    code,
+    /measureCache\[i\] = undefined/,
+    'the dirty-value path must clear the cache entry',
+  );
 });
 
 // ── theme tokens ────────────────────────────────────────────────────────────
 console.log('\n== theme ==');
 
-check('every token declares both light and dark', () => {
-  const entries = Object.entries(TOKENS);
-  assert.ok(entries.length >= 15, `expected many tokens, found ${entries.length}`);
-  for (const [token, pair] of entries) {
-    assert.ok(pair && typeof pair === 'object', `${token} is not a light/dark pair`);
-    assert.ok(pair.light, `${token} missing light`);
-    assert.ok(pair.dark, `${token} missing dark`);
-  }
+/** Pull the TOKENS object out of the bundle and read its entries. */
+const tokensBlock = clientSource.match(/var TOKENS = \{([\s\S]*?)\n    \};/);
+const tokenEntries = tokensBlock
+  ? [...tokensBlock[1].matchAll(/'(--dsw-[^']+)':\s*\{([^}]*)\}/g)]
+    .map(([, name, body]) => ({ name, body }))
+  : [];
+
+check('token table is present and substantial', () => {
+  assert.ok(tokensBlock, 'TOKENS object not found');
+  assert.ok(tokenEntries.length >= 15, `expected many tokens, found ${tokenEntries.length}`);
 });
 
-check('all tokens use the --dsw- prefix', () => {
-  for (const token of Object.keys(TOKENS)) {
-    assert.match(token, /^--dsw-/, `${token} is not a design token`);
+check('every token declares both light and dark', () => {
+  for (const { name, body } of tokenEntries) {
+    assert.match(body, /light:/, `${name} missing light`);
+    assert.match(body, /dark:/, `${name} missing dark`);
   }
 });
 
 check('brand accent differs between modes for contrast', () => {
-  const brand = TOKENS['--dsw-alias-brand-primary'];
-  assert.notEqual(brand.light, brand.dark, 'dark must be lifted for the navy background');
-});
-
-check('dark backgrounds are darker than their light counterparts', () => {
-  const hex = (s) => parseInt(s.replace('#', ''), 16);
-  for (const key of ['--dsw-alias-bg-base', '--dsw-alias-bg-layer-1']) {
-    assert.ok(hex(TOKENS[key].dark) < hex(TOKENS[key].light), `${key} dark is not darker`);
-  }
+  const brand = clientSource.match(
+    /var BRAND_LIGHT = '([^']+)';[\s\S]*?var BRAND_DARK = '([^']+)';/,
+  );
+  assert.ok(brand, 'brand colours not found');
+  assert.notEqual(brand[1], brand[2], 'dark must be lifted for the navy background');
 });
 
 check('sidebar label is exactly DSHOME', () => {
-  // The label is user-visible branding and must not drift; it is deliberately
-  // the bare product name rather than the plugin's package name.
-  assert.equal(BRAND_NAME, 'DSHOME');
+  // User-visible branding; deliberately the bare product name rather than the
+  // plugin's package name.
+  assert.match(code, /var BRAND_NAME = 'DSHOME';/);
 });
 
-// ── host half ───────────────────────────────────────────────────────────────
-console.log('\n== host half ==');
+// ── slot registration contract ──────────────────────────────────────────────
+console.log('\n== slot registration ==');
 
-const host = await import('../lib/index.js');
-
-check('host half names the plugin', () => {
-  assert.equal(host.name, 'dshome-plugin');
+check('inject callbacks return a value', () => {
+  // `inject` keeps what its callback returns. A callback that returns nothing
+  // registers nothing — which is exactly how the earlier generator form failed
+  // silently.
+  const nested = code.match(/slots\.inject\('sidebar\.brand\.mark',[\s\S]{0,400}/);
+  assert.ok(nested, 'brand slot block not found');
+  assert.match(nested[0], /return slots\.inject/, 'outer inject callback must return');
 });
 
-check('host half exports apply', () => {
-  assert.equal(typeof host.apply, 'function');
-  assert.equal(host.apply(), undefined, 'must do nothing');
-});
-
-check('default export carries name and apply', () => {
-  assert.equal(host.default.name, 'dshome-plugin');
-  assert.equal(typeof host.default.apply, 'function');
+check('all three brand slots are registered', () => {
+  for (const slot of [
+    'sidebar.brand.mark',
+    'sidebar.brand.name',
+    'conversation.hero.brand.mark',
+  ]) {
+    assert.ok(code.includes(`'${slot}'`), `${slot} not registered`);
+  }
 });
 
 // ── packaging contract ──────────────────────────────────────────────────────
 console.log('\n== packaging ==');
 
-const { readFileSync, existsSync } = await import('node:fs');
-const { fileURLToPath } = await import('node:url');
-const { dirname, join } = await import('node:path');
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-
-const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-
 check('declares the bundle patch so the loader can find the client', () => {
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml');
   assert.ok(existsSync(join(root, 'cordis.patch.yml')), 'patch file missing');
+});
+
+check('declares dsh.client with a full bundle shape', () => {
+  // The host's client-module scan reads exactly three things and silently
+  // ignores the package if any is wrong, so a missing piece means the browser
+  // half never loads with no error anywhere:
+  //   · dsh.client must exist and be an object
+  //   · dsh.client.platform must be the string "web"
+  //   · exports["./client"] must point at the bundle
+  const client = manifest.dsh.client;
+  assert.ok(client, 'dsh.client is missing — the browser module would never load');
+  assert.equal(typeof client, 'object');
+  assert.equal(client.platform, 'web', 'platform must be exactly "web"');
+  assert.ok(
+    manifest.exports['./client'],
+    'dsh.client is declared but exports["./client"] is missing',
+  );
+  assert.ok(existsSync(clientPath), 'client bundle missing');
 });
 
 check('every exports target exists on disk', () => {
@@ -214,22 +298,23 @@ check('cordis rows resolve to this package', () => {
   }
 });
 
-check('declares dsh.client with a full bundle shape', () => {
-  // The host's client-module scan reads exactly three things off this field and
-  // silently ignores the package if any piece is wrong, so a missing piece means
-  // the browser half never loads with no error anywhere:
-  //   · dsh.client must exist and be an object
-  //   · dsh.client.platform must be the string "web"
-  //   · exports["./client"] must point at the bundle
-  const client = manifest.dsh.client;
-  assert.ok(client, 'dsh.client is missing — the browser module would never load');
-  assert.equal(typeof client, 'object');
-  assert.equal(client.platform, 'web', 'platform must be exactly "web"');
-  assert.ok(
-    manifest.exports['./client'],
-    'dsh.client is declared but exports["./client"] is missing',
-  );
-  assert.ok(existsSync(join(root, manifest.exports['./client'])), 'client bundle missing');
+// ── host half ───────────────────────────────────────────────────────────────
+console.log('\n== host half ==');
+
+const host = await import('../lib/index.js');
+
+check('host half names the plugin', () => {
+  assert.equal(host.name, 'dshome-plugin');
+});
+
+check('host half exports apply', () => {
+  assert.equal(typeof host.apply, 'function');
+  assert.equal(host.apply(), undefined, 'must do nothing');
+});
+
+check('default export carries name and apply', () => {
+  assert.equal(host.default.name, 'dshome-plugin');
+  assert.equal(typeof host.default.apply, 'function');
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);

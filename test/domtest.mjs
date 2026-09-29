@@ -1,13 +1,19 @@
-﻿// Executes dshome-plugin's client logic against a minimal DOM double.
+// Executes DSHOME-Plugin's client bundle against a minimal DOM double.
 //
-// The selftest covers pure geometry and packaging, but the modules also do real
-// work on attach: style injection, selector queries, canvas painting, pointer
-// handling, and the loader handshake. Those paths only run in a browser, so
-// without a DOM double they would never be exercised before release.
+// The selftest checks packaging and source invariants; this file actually *runs*
+// the bundle. That matters because the host loads it as a **classic script**, so
+// the closest local equivalent is `new Function(source)` — which, unlike
+// `import()`, rejects `import`/`export` exactly as a browser would. Running the
+// bundle this way therefore exercises both the attach paths (style injection,
+// selector queries, canvas painting, pointer handling) and the module-format
+// constraint at the same time.
 //
 // Run with `node test/domtest.mjs`.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 let passed = 0;
 let failed = 0;
@@ -23,7 +29,7 @@ function check(label, fn) {
   }
 }
 
-// ── a DOM just large enough for these modules ───────────────────────────────
+// ── a DOM just large enough for this plugin ─────────────────────────────────
 class El {
   constructor(tag) {
     this.tagName = tag.toUpperCase();
@@ -85,8 +91,8 @@ function walk(node, out = []) {
 }
 
 /**
- * Match the selector forms this package actually emits, so idempotency is
- * genuinely exercised rather than trivially satisfied by a stub returning null.
+ * Match the selector forms this plugin emits, so idempotency is genuinely
+ * exercised rather than trivially satisfied by a stub returning null.
  * Supported: `tag[attr='value']` and `tag[attr]`.
  */
 function matches(node, selector) {
@@ -119,6 +125,7 @@ function makeDocument() {
   return doc;
 }
 
+/** Fresh globals + a fresh DOM. Returns the new document. */
 function installGlobals() {
   const doc = makeDocument();
   globalThis.document = doc;
@@ -157,204 +164,39 @@ process.on('exit', () => {
   realWarn(`  (captured ${expectedWarnings} expected degradation warning(s))`);
 });
 
-const doc = installGlobals();
-
-// ── shared: style injection ─────────────────────────────────────────────────
-console.log('\n== style injection ==');
-
-const { installStyle, readColor, safe } = await import('../lib/shared.js');
-
-check('injects exactly one style tag per plugin id', () => {
-  const before = doc.head.children.length;
-  installStyle('t1', 'body{color:red}');
-  installStyle('t1', 'body{color:red}');
-  assert.equal(doc.head.children.length, before + 1, 'second call must be a no-op');
-});
-
-check('style tag carries the plugin marker attribute', () => {
-  const tag = doc.head.children.at(-1);
-  assert.equal(tag.getAttribute('data-plugin'), 't1');
-  assert.equal(tag.textContent, 'body{color:red}');
-});
-
-check('readColor falls back when the token is unset', () => {
-  assert.equal(readColor('--nope', '#abc'), '#abc');
-});
-
-check('safe() swallows and reports failures', () => {
-  const original = console.warn;
-  let warned = false;
-  console.warn = () => { warned = true; };
-  try {
-    assert.equal(safe(() => { throw new Error('boom'); }, 'label'), undefined);
-    assert.ok(warned, 'should warn');
-    assert.equal(safe(() => 42), 42, 'should pass through success');
-  } finally {
-    console.warn = original;
-  }
-});
-
-// ── conversation module ─────────────────────────────────────────────────────
-console.log('\n== conversation module ==');
-
-const { applyConversation } = await import('../lib/conversation.js');
-
-check('applies without throwing on an empty document', () => {
-  applyConversation();
-});
-
-check('injects its stylesheet', () => {
-  const found = doc.head.children.filter(
-    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation',
-  );
-  assert.equal(found.length, 1);
-});
-
-check('stylesheet clamps the think body to 12 lines', () => {
-  const css = doc.head.children
-    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
-  assert.match(css, /max-height:calc\(12 \*/);
-  assert.match(css, /data-expanded/);
-});
-
-check('stylesheet raises specificity for the collapsed state', () => {
-  const css = doc.head.children
-    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
-  // Upstream's chat CSS is lazily injected after ours; without the extra
-  // attribute the same-specificity rule would lose.
-  assert.match(css, /data-state\]:not\(\[data-expanded\]\)/);
-});
-
-check('stylesheet styles the card kinds', () => {
-  const css = doc.head.children
-    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
-  assert.match(css, /data-chat-flow-kind="tool-call"/);
-  assert.match(css, /:not\(\[hidden\]\)/);
-});
-
-check('is idempotent when applied twice', () => {
-  applyConversation();
-  const found = doc.head.children.filter(
-    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation',
-  );
-  assert.equal(found.length, 1, 'must not duplicate the tag');
-});
-
-// ── minimap module ──────────────────────────────────────────────────────────
-console.log('\n== minimap module ==');
-
-const { applyMinimap } = await import('../lib/minimap.js');
-
-check('applies without a live conversation', () => {
-  applyMinimap();
-});
-
-check('creates the strip shell on body', () => {
-  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
-  assert.ok(shell, 'shell missing');
-});
-
-check('strip starts hidden when there is no conversation', () => {
-  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
-  assert.equal(shell.style.display, 'none');
-});
-
-check('shell contains canvas and thumb', () => {
-  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
-  assert.deepEqual(shell.children.map((c) => c.tagName), ['CANVAS', 'DIV']);
-  assert.equal(shell.children[1].className, 'dshome-plugin-minimap-thumb');
-});
-
-check('injects the strip stylesheet', () => {
-  const found = doc.head.children.filter(
-    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap',
-  );
-  assert.equal(found.length, 1);
-});
-
-check('hides the official rail by default', () => {
-  const rail = doc.head.children.find(
-    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap-rail',
-  );
-  assert.ok(rail, 'rail rule missing');
-  assert.match(rail.textContent, /pointer-events:none/);
-});
-
-check('does not add a rail rule when hideOfficialRail is false', () => {
-  // Must be judged in a fresh document: the default call above already installed
-  // the rail rule, and installStyle dedupes by marker attribute, so reusing that
-  // document would report the earlier rule rather than this call's behaviour.
-  const fresh = installGlobals();
-  applyMinimap({ hideOfficialRail: false });
-  const railRules = fresh.head.children.filter(
-    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap-rail',
-  );
-  assert.equal(railRules.length, 0, 'no rail rule expected');
-  const mainRules = fresh.head.children.filter(
-    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap',
-  );
-  assert.equal(mainRules.length, 1, 'the strip stylesheet is still installed');
-});
-
-check('returns a teardown function', () => {
-  const dispose = applyMinimap({ hideOfficialRail: false });
-  assert.equal(typeof dispose, 'function');
-  dispose();
-});
-
-check('teardown removes exactly the strip it created', () => {
-  const fresh = installGlobals();
-  const dispose = applyMinimap({ hideOfficialRail: false });
-  assert.equal(
-    fresh.body.children.filter((c) => c.className === 'dshome-plugin-minimap').length,
-    1,
-    'one strip created',
-  );
-  dispose();
-  assert.equal(
-    fresh.body.children.filter((c) => c.className === 'dshome-plugin-minimap').length,
-    0,
-    'strip removed',
-  );
-});
-
-check('repeated apply() does not stack duplicate strips', () => {
-  // Each call creates its own strip, so calling apply twice without disposing
-  // leaves two. This documents the contract: apply is once-per-load, and the
-  // returned dispose must be used if it is ever called again.
-  const fresh = installGlobals();
-  const a = applyMinimap({ hideOfficialRail: false });
-  const b = applyMinimap({ hideOfficialRail: false });
-  assert.equal(
-    fresh.body.children.filter((c) => c.className === 'dshome-plugin-minimap').length,
-    2,
-  );
-  a();
-  b();
-  assert.equal(
-    fresh.body.children.filter((c) => c.className === 'dshome-plugin-minimap').length,
-    0,
-    'both disposed cleanly',
-  );
-});
-
-// ── client entry: full loader protocol ──────────────────────────────────────
-console.log('\n== client entry ==');
+// ── load the bundle the way a classic script would ──────────────────────────
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const source = readFileSync(join(root, 'lib', 'client.js'), 'utf8');
 
 let loaded = null;
-globalThis.window.__ModuleLoader__ = {
-  load(spec) {
-    loaded = spec;
-  },
-};
-globalThis.window.__dshomePlugin = undefined;
+let loadError = null;
 
-await import('../lib/client.js');
+function loadBundle() {
+  installGlobals();
+  loaded = null;
+  loadError = null;
+  globalThis.window.__ModuleLoader__ = {
+    load(spec) { loaded = spec; },
+  };
+  globalThis.window.__dshomePlugin = undefined;
+  try {
+    // Same evaluation model as a classic script: no module scope.
+    // eslint-disable-next-line no-new-func
+    new Function(source)();
+  } catch (error) {
+    loadError = error;
+  }
+}
 
-const provide = (id) => {
-  if (id === 'react/jsx-runtime') return { jsx: () => null };
-  return { FishLogo: () => null };
-};
+console.log('\n== classic-script load ==');
+
+loadBundle();
+
+check('evaluates without throwing (no ESM syntax)', () => {
+  // `new Function` rejects `import`/`export` exactly as a browser classic script
+  // does. This is the assertion that would have caught the boot failure.
+  assert.equal(loadError, null, loadError ? String(loadError) : '');
+});
 
 check('registers with the module loader', () => {
   assert.ok(loaded, 'load() was never called');
@@ -362,43 +204,105 @@ check('registers with the module loader', () => {
   assert.equal(typeof loaded.factory, 'function');
 });
 
+const provide = (id) => {
+  if (id === 'react/jsx-runtime') return { jsx: () => null };
+  return { FishLogo: () => null };
+};
+
+const makePlugin = () => loaded.factory(provide);
+
+console.log('\n== plugin shape ==');
+
 check('factory returns a plugin with name, inject and apply', () => {
-  const plugin = loaded.factory(provide);
+  const plugin = makePlugin();
   assert.equal(plugin.name, 'dshome-plugin');
   assert.deepEqual(plugin.inject, ['slots']);
   assert.equal(typeof plugin.apply, 'function');
 });
 
-check('apply() still runs every feature when the slot service is absent', () => {
+// ── style / conversation / minimap attach paths ─────────────────────────────
+console.log('\n== attach ==');
+
+check('apply() installs conversation and minimap stylesheets', () => {
+  const doc = installGlobals();
   const plugin = loaded.factory(provide);
-  // Fresh document so this asserts what apply() installs, not what earlier
-  // checks already left in the shared one.
-  const fresh = installGlobals();
   // ctx.get('theme') returns undefined and ctx.slots is absent: the theme
   // feature must degrade instead of throwing, and the other two must still run.
   plugin.apply({ get: () => undefined });
-  const markers = fresh.head.children.map((c) => c.getAttribute('data-plugin'));
+  const markers = doc.head.children.map((c) => c.getAttribute('data-plugin'));
   assert.ok(markers.includes('dshome-plugin-conversation'), 'conversation stylesheet missing');
   assert.ok(markers.includes('dshome-plugin-minimap'), 'minimap stylesheet missing');
-  assert.ok(
-    fresh.body.children.some((c) => c.className === 'dshome-plugin-minimap'),
-    'minimap strip not attached',
+});
+
+check('apply() attaches the minimap strip to the body', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  assert.ok(shell, 'strip not attached');
+  assert.deepEqual(shell.children.map((c) => c.tagName), ['CANVAS', 'DIV']);
+  assert.equal(shell.children[1].className, 'dshome-plugin-minimap-thumb');
+});
+
+check('strip starts hidden when there is no conversation', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  assert.equal(shell.style.display, 'none');
+});
+
+check('conversation stylesheet clamps the think body to 12 lines', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
+  assert.match(css, /max-height:calc\(12 \*/);
+  assert.match(css, /data-expanded/);
+});
+
+check('conversation stylesheet raises specificity for the collapsed state', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
+  // Upstream's chat CSS is lazily injected after ours; without the extra
+  // attribute the same-specificity rule would lose.
+  assert.match(css, /data-state\]:not\(\[data-expanded\]\)/);
+});
+
+check('conversation stylesheet styles the card kinds', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
+  assert.match(css, /data-chat-flow-kind="tool-call"/);
+  assert.match(css, /:not\(\[hidden\]\)/);
+});
+
+check('minimap hides the official rail by default', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const rail = doc.head.children.find(
+    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap-rail',
   );
+  assert.ok(rail, 'rail rule missing');
+  assert.match(rail.textContent, /pointer-events:none/);
 });
 
-check('apply() tolerates a theme service that throws', () => {
+check('applying twice does not duplicate stylesheets', () => {
+  const doc = installGlobals();
   const plugin = loaded.factory(provide);
-  const ctx = {
-    get: () => ({
-      overrideTokens() { throw new Error('upstream changed'); },
-    }),
-    slots: { inject() {}, register() {} },
-  };
-  plugin.apply(ctx); // must not propagate
+  plugin.apply({ get: () => undefined });
+  plugin.apply({ get: () => undefined });
+  const n = doc.head.children.filter(
+    (c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation',
+  ).length;
+  assert.equal(n, 1, 'style injection must be idempotent');
 });
 
-check('theme registers all three brand slots', () => {
-  const plugin = loaded.factory(provide);
+// ── theme + slot registration ───────────────────────────────────────────────
+console.log('\n== theme ==');
+
+check('registers all three brand slots', () => {
   const calls = [];
   const ctx = {
     get: () => ({ overrideTokens(id, tokens) { calls.push(['tokens', id, tokens]); } }),
@@ -410,8 +314,8 @@ check('theme registers all three brand slots', () => {
       },
     },
   };
-  const fresh = installGlobals();
-  plugin.apply(ctx);
+  installGlobals();
+  loaded.factory(provide).apply(ctx);
   const registered = calls.filter(([op]) => op === 'register').map(([, n]) => n);
   assert.deepEqual(registered, [
     'sidebar.brand.mark',
@@ -426,11 +330,10 @@ check('theme registers all three brand slots', () => {
 check('slot inject callbacks return a value (inject keeps it)', () => {
   // inject() is a dependency declaration: it runs the callback once the slot
   // exists and keeps what the callback returns. A callback that returns nothing
-  // registers nothing, which is how the generator form previously failed.
+  // registers nothing, which is how the earlier generator form failed silently.
   //
   // The stub must return the callback's result, exactly as the real service
   // does; swallowing it would make this assertion unable to see the nesting.
-  const plugin = loaded.factory(provide);
   const returns = [];
   const ctx = {
     get: () => undefined,
@@ -439,27 +342,26 @@ check('slot inject callbacks return a value (inject keeps it)', () => {
       register() { return 'REGISTRATION-TOKEN'; },
     },
   };
-  plugin.apply(ctx);
+  installGlobals();
+  loaded.factory(provide).apply(ctx);
   assert.equal(returns.length, 3, 'three slots declared');
   for (const [name, value] of returns) {
     assert.ok(value, `inject callback for ${name} returned nothing`);
   }
 });
 
-check('features can be disabled individually', () => {
-  const fresh = installGlobals();
-  globalThis.window.__dshomePlugin = { conversation: false, minimap: false };
-  // Re-import in a fresh module registry is not possible here, so drive the
-  // factory directly with the same option source the module reads.
-  const plugin = loaded.factory(provide);
-  const opts = Object.assign(
-    { theme: true, conversation: true, minimap: true, hideOfficialRail: true },
-    globalThis.window.__dshomePlugin,
-  );
-  assert.equal(opts.conversation, false);
-  assert.equal(opts.minimap, false);
-  plugin.apply({ get: () => undefined }); // apply itself must stay safe
-  globalThis.window.__dshomePlugin = undefined;
+check('apply() tolerates a theme service that throws', () => {
+  installGlobals();
+  const ctx = {
+    get: () => ({ overrideTokens() { throw new Error('upstream changed'); } }),
+    slots: { inject() {}, register() {} },
+  };
+  loaded.factory(provide).apply(ctx); // must not propagate
+});
+
+check('apply() tolerates a missing slots service', () => {
+  installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);

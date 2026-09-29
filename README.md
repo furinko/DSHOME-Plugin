@@ -59,7 +59,31 @@ window.__dshomePlugin = {
 
 ## Design notes
 
+### The client bundle is a classic script, not an ES module
+
+This is the single most important constraint, and getting it wrong is not a small mistake — it **fails the entire web boot**, not just this plugin:
+
+```
+Error: web boot: 1 entry did not activate
+dshome-plugin: import failed
+  Uncaught SyntaxError: Cannot use import statement outside a module
+```
+
+The host loads the client bundle with `document.createElement("script")` plus `el.src = url` (see `@deepseek-ai/dsh-client-modules/lib/client.js`: *"Default bundle-load hook: same-origin external classic script"*). A classic script has no module scope, so a single top-level `import` throws, the entry never activates, and the boot fails.
+
+Consequences for anyone editing this plugin:
+
+- **No top-level `import` or `export`.** Author everything as one self-contained file.
+- **Host modules come from `require`**, the argument the loader hands to the factory: `require('react/jsx-runtime')`, `require('@deepseek-ai/dsh-client-ui-primitives')`.
+- `npm test` enforces this, including a check that `lib/` contains exactly the two expected files.
+
+Note the asymmetry with the host half: `lib/index.js` **is** a normal ES module (it is imported by the loader, not injected as a script), so `export` is correct there. Only the `./client` bundle is a classic script.
+
+### Selectors
+
 Written against official **semantic attributes** — `data-variant`, `data-chat-flow-kind`, `data-chat-turn`, `data-disclosure-row`, `data-state`, `data-expanded`, `data-chat-flow-key`. CSS-Module hash class names are never used, so an upstream rebuild does not break the plugin.
+
+### Minimap invariants
 
 Three invariants keep the minimap accurate, each fixing a bug reproduced on a real session:
 
@@ -83,10 +107,10 @@ Every feature is a progressive enhancement, invoked inside an error boundary. A 
 npm test
 ```
 
-- `test/selftest.mjs` — 23 checks: selector stability, minimap geometry, theme token completeness, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 27 checks: style injection idempotency, module attach and teardown, the loader factory protocol, and slot registration.
+- `test/selftest.mjs` — 32 checks: the classic-script contract, selector stability, minimap geometry, theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
+- `test/domtest.mjs` — 15 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, and slot registration against a DOM double.
 
-Both run without a browser.
+Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
 
 ## License
 
