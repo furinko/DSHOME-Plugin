@@ -1,4 +1,4 @@
-﻿// Self-check for dshome-plugin's pure logic.
+// Self-check for dshome-plugin's pure logic.
 //
 // Runs without a browser: geometry is asserted against the same constants the
 // minimap uses, and the theme tokens are imported directly rather than parsed
@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { SELECTORS, CARD_SELECTOR } from '../lib/shared.js';
-import { TOKENS } from '../lib/theme.js';
+import { TOKENS, BRAND_NAME } from '../lib/theme.js';
 
 let passed = 0;
 let failed = 0;
@@ -150,6 +150,12 @@ check('dark backgrounds are darker than their light counterparts', () => {
   for (const key of ['--dsw-alias-bg-base', '--dsw-alias-bg-layer-1']) {
     assert.ok(hex(TOKENS[key].dark) < hex(TOKENS[key].light), `${key} dark is not darker`);
   }
+});
+
+check('sidebar label is exactly DSHOME', () => {
+  // The label is user-visible branding and must not drift; it is deliberately
+  // the bare product name rather than the plugin's package name.
+  assert.equal(BRAND_NAME, 'DSHOME');
 });
 
 // ── host half ───────────────────────────────────────────────────────────────
