@@ -276,6 +276,27 @@ check('declares dsh.client with a full bundle shape', () => {
   assert.ok(existsSync(clientPath), 'client bundle missing');
 });
 
+check('a client with no inject must set immediately', () => {
+  // A row with an empty `inject` has nothing to pull it in: it is neither a
+  // dependency of another row nor required by one, so nothing triggers it at
+  // startup. It then stays dormant until something forces a re-composition
+  // (toggling the plugin in the panel does exactly that), which looks like
+  // "works only after I toggle it".
+  //
+  // `immediately: true` is what makes the host activate it on a cold start.
+  // This was observed on a real boot: the plugin applied only after a manual
+  // toggle, never on launch.
+  const client = manifest.dsh.client;
+  const inject = client.inject ?? [];
+  if (inject.length === 0) {
+    assert.equal(
+      client.immediately,
+      true,
+      'empty inject needs immediately: true, or the plugin only loads after a toggle',
+    );
+  }
+});
+
 check('every exports target exists on disk', () => {
   for (const [key, value] of Object.entries(manifest.exports)) {
     assert.ok(existsSync(join(root, value)), `exports["${key}"] -> ${value} missing`);

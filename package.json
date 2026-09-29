@@ -23,7 +23,8 @@
     },
     "client": {
       "platform": "web",
-      "inject": []
+      "inject": [],
+      "immediately": true
     }
   },
   "files": [
