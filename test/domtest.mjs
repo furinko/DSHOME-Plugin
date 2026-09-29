@@ -130,6 +130,10 @@ function walk(node, out = []) {
  * scroll-container selector is a class substring match).
  */
 function matches(node, selector) {
+  // A comma list is any-of, exactly as the DOM treats it. The sidebar surface
+  // selector is such a list, and without this it would match nothing at all —
+  // which would make every sidebar check vacuously pass as "no sidebar".
+  if (selector.includes(',')) return selector.split(',').some((part) => matches(node, part.trim()));
   const star = /^\[class\*=["']([^"']+)["']\]$/.exec(selector);
   if (star) return node.className.includes(star[1]);
   const m = /^([a-z]+)?(?:\[([^=\]]+)(?:=['"]([^'"]*)['"])?\])?$/.exec(selector);
@@ -826,17 +830,60 @@ check('the tip is throttled, so a fast sweep does not re-read the DOM per pixel'
   assert.match(tip.textContent, /hello from turn 20/, 'past the window the tip must follow the pointer');
 });
 
-check('the strip gives way to the right sidebar instead of hiding under it', () => {
+check('the strip stands down while the right sidebar covers its column', () => {
   const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 1000); } });
-  const width = globalThis.window.innerWidth;
-  // Default is right:8. A visible panel pushes the strip's right edge to
-  // (panelLeft - 8), i.e. right = width - panelLeft + 8.
-  const expected = width - 1000 + 8;
-  assert.ok(Math.abs(parseFloat(shell.style.right) - expected) <= 1,
-    `strip right ${shell.style.right}, expected ${expected}`);
-  // Stated as the thing that is actually visible: no overlap with the panel.
-  const stripRight = width - parseFloat(shell.style.right);
-  assert.ok(stripRight <= 1000 - 8, `strip right edge ${stripRight} overlaps the panel at 1000`);
+  // The sidebar is an overlay — it reserves no layout space — so while it is
+  // open the column the strip lives in *is* the sidebar. Sliding the strip to
+  // the panel's edge would park it on top of the conversation being read; the
+  // honest answer is to stand down and come back when the space is free.
+  assert.equal(shell.style.display, 'none', 'the strip must stand down while covered');
+});
+
+check('a sidebar surface away from the strip column does not hide it', () => {
+  // A floating pane can sit anywhere. One that never reaches the right margin
+  // must not take the strip down with it — the rule is the rect, not the name.
+  const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 100); } });
+  assert.notEqual(shell.style.display, 'none', 'a sidebar nowhere near the strip must not hide it');
+  assert.ok(Math.abs(parseFloat(shell.style.right) - 8) <= 1,
+    `with nothing covering it the strip sits at the window edge, right=${shell.style.right}`);
+});
+
+check('a floating sidebar pane hides the strip even with no open attribute', () => {
+  // Upstream's own rule is "a pane is visible when it is floating OR its owner is
+  // open". A float is on screen with no `data-sidebar-right-open` anywhere, so
+  // watching that attribute alone would leave the strip underneath it.
+  const { shell } = mountWith({
+    setup: (doc) => {
+      const float = doc.createElement('div');
+      float.className = 'sidebar_float';
+      float.setAttribute('data-dockkit-float', 'pane-1');
+      float.getBoundingClientRect = () => ({
+        top: 0, bottom: 1080, left: 1000, right: 1400, width: 400, height: 1080,
+      });
+      doc.body.appendChild(float);
+    },
+  });
+  assert.equal(shell.style.display, 'none', 'a floating pane over the column must hide the strip');
+});
+
+check('a stale fullscreen owner in an inactive session does not hide the strip', () => {
+  // `data-sidebar-right-panel` is a permanent attribute, not a switch, and every
+  // mounted session renders its own owner. Reading it without upstream's own
+  // visibility test (`[hidden]` / `aria-hidden`) hid the strip in every session,
+  // permanently, as soon as any session had ever gone fullscreen.
+  const { shell } = mountWith({
+    setup: (doc) => {
+      const wrapper = doc.createElement('div');
+      wrapper.setAttribute('hidden', '');
+      const stale = doc.createElement('div');
+      stale.setAttribute('data-sidebar-right-panel', 'fullscreen');
+      // The double hands every element a real box, so the hidden-subtree test is
+      // the only thing that can reject this owner — which is the point.
+      wrapper.appendChild(stale);
+      doc.body.appendChild(wrapper);
+    },
+  });
+  assert.notEqual(shell.style.display, 'none', 'a hidden owner is not a fullscreen sidebar');
 });
 
 check('a fullscreen right sidebar hides the strip entirely', () => {
@@ -851,7 +898,7 @@ check('a fullscreen right sidebar hides the strip entirely', () => {
   assert.equal(shell.style.display, 'none');
 });
 
-check('the sidebar is watched by attribute, and closing gives way back at once', () => {
+check('the sidebar is watched by attribute, and closing brings the strip back', () => {
   const { doc, shell, log } = mountWith({ setup: (d) => { sidebarPanel(d, 1000); } });
   // The conversation feature installs an attribute observer of its own, so name
   // the attribute the sidebar watcher has to carry.
@@ -861,14 +908,15 @@ check('the sidebar is watched by attribute, and closing gives way back at once',
   assert.deepEqual(watcher.options.attributeFilter,
     ['data-sidebar-right-open', 'data-sidebar-right-panel']);
   assert.equal(watcher.target, doc.body, 'the panel can appear anywhere, so body is the right root');
-  assert.ok(parseFloat(shell.style.right) > 8, 'an already-open sidebar must be avoided at mount');
+  assert.equal(shell.style.display, 'none', 'an open sidebar must stand the strip down at mount');
   // Closing: the attribute is gone, so the first read already has the final
   // position and the strip must come back without waiting for the animation.
   doc.body.children.find((c) => c.className === 'sidebar_panel').removeAttribute('data-sidebar-right-open');
   log.timeouts.length = 0;
   watcher.cb();
+  assert.notEqual(shell.style.display, 'none', 'closing must bring the strip back immediately');
   assert.ok(Math.abs(parseFloat(shell.style.right) - 8) <= 1,
-    `closing must give way back immediately, right=${shell.style.right}`);
+    `and back to the window edge, right=${shell.style.right}`);
   // Opening reads the rect mid-slide, so a settle re-read is scheduled.
   assert.deepEqual(log.timeouts.map((t) => t.delay), [320],
     'the settle re-read must be scheduled after the slide');
