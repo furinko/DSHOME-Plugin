@@ -1,0 +1,14 @@
+# DSHOME-Plugin bundle patch —— 本插件自带的装载层。
+#
+# 装法：把本包加进某个 profile 的 dependencies + bundles，
+# 或 `dsh plugin --profile <名> add <本包>`。
+#
+# 纪律：**下面每一行都必须有对应的 package.json exports**。
+#   漏 exports ⇒ 宿主按包子路径加载时 ESM 直接拒收 ⇒ 后端启动即崩。
+
+- insert:
+    # DSHOME-Plugin：客户端三项合一（主题 / 会话区 / 缩略导航）。
+    # 全部行为在浏览器侧（./client，由 dsh.client 声明的模块加载器注入），
+    # 宿主半区是空插件——本行只为让 roster 能发现包里的 dsh.client 段。
+    - id: dshome-plugin
+      name: dshome-plugin
