@@ -110,8 +110,13 @@ check('each feature is isolated behind safe()', () => {
 // ── selectors: semantic attributes only ─────────────────────────────────────
 console.log('\n== selectors ==');
 
-check('uses data-variant for reasoning blocks', () => {
-  assert.match(code, /data-variant="think"/);
+check('never anchors on the non-existent data-variant="think"', () => {
+  // Verified in the shipped app.asar: upstream emits no `data-variant="think"`
+  // anywhere. The old reasoning-window feature keyed off it and therefore never
+  // matched a single node. The selector must stay gone, while the anchor that
+  // does exist stays in place.
+  assert.doesNotMatch(code, /data-variant/);
+  assert.ok(code.includes('data-disclosure-row'), 'the real disclosure anchor is missing');
 });
 
 check('never relies on hashed CSS-module class names', () => {
@@ -318,6 +323,38 @@ check('every token declares both light and dark', () => {
   for (const { name, body } of tokenEntries) {
     assert.match(body, /light:/, `${name} missing light`);
     assert.match(body, /dark:/, `${name} missing dark`);
+  }
+});
+
+check('the code plates and inline chips are brand-tinted, not upstream neutral grey', () => {
+  // Upstream paints these with neutral greys: `--dsw-static-neutral-bluish-50`
+  // (#f9fafb) for the code-block plates/banner, and `--dsw-static-neutral-50`
+  // (#fafafa) for the inline-code chip. The chip is a single global token, so
+  // leaving it alone is what kept a snippet grey in replies *and* in reasoning
+  // blocks no matter what we did to the plates. This plugin overrides all three
+  // with a soft blue tint; a neutral value has blue ≈ red, the tint does not.
+  // The two notEqual guards pin the exact upstream greys, so a revert to the
+  // official value fails loudly instead of slipping through as "still a hex".
+  const UPSTREAM_GREYS = ['#fafafa', '#f9fafb', '#f1f3f5'];
+  const find = (name) => tokenEntries.find((t) => t.name === name);
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  for (const name of [
+    '--dsw-alias-markdown-code-block',
+    '--dsw-alias-markdown-code-block-banner',
+    '--dsw-alias-markdown-inline-code',
+    '--dsw-alias-markdown-tag',
+    '--dsw-alias-markdown-code-segment-unselected',
+  ]) {
+    const entry = find(name);
+    assert.ok(entry, `${name} must be overridden`);
+    const light = /light:\s*'(#[0-9a-fA-F]{6})'/.exec(entry.body);
+    assert.ok(light, `${name} must declare a light value`);
+    const [r, , b] = rgb(light[1]);
+    assert.ok(b - r >= 6, `${name} light ${light[1]} is grey (blue ${b} - red ${r} < 6)`);
+    assert.ok(
+      !UPSTREAM_GREYS.includes(light[1].toLowerCase()),
+      `${name} light is still upstream's grey ${light[1]}`,
+    );
   }
 });
 

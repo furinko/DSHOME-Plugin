@@ -343,24 +343,18 @@ check('strip starts hidden when there is no conversation', () => {
   assert.equal(shell.style.display, 'none');
 });
 
-check('conversation stylesheet clamps the think body to 12 lines', () => {
-  const doc = installGlobals();
-  loaded.factory(provide).apply({ get: () => undefined });
-  const css = doc.head.children
-    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
-  assert.match(css, /max-height:calc\(12 \*/);
-  assert.match(css, /data-expanded/);
-});
-
-check('conversation stylesheet raises specificity for the collapsed state', () => {
-  const doc = installGlobals();
-  loaded.factory(provide).apply({ get: () => undefined });
-  const css = doc.head.children
-    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
-  // Upstream's chat CSS is lazily injected after ours; without the extra
-  // attribute the same-specificity rule would lose.
-  assert.match(css, /data-state\]:not\(\[data-expanded\]\)/);
-});
+// NOTE (2026-10-03): the "think window" that used to be asserted here - reasoning
+// clamped to 12 lines, force-expanded by a synthetic click on the official row,
+// manual collapses remembered in localStorage - has been deleted. Its anchor,
+// `[data-variant="think"]`, does not exist in the shipped client, so neither its
+// CSS nor its ~170 lines of JS had ever run; the two checks that stood here only
+// ever proved that our own stylesheet text was spelled the way we spelled it.
+// Upstream's turn-process disclosure already provides fold/unfold, so nothing
+// user-visible was lost. If a clamped reasoning window is ever wanted, the real
+// anchors are `[data-chat-flow-kind="assistant-step"][data-chat-group-part=
+// "reasoning"]` for the block and `[data-disclosure-row]` for its header - and
+// note that `data-expanded`/`data-state` live on the DisclosureRow, *not* on the
+// flow item, so swapping the selector alone would loop forever trying to expand.
 
 check('conversation stylesheet styles the card kinds', () => {
   const doc = installGlobals();
