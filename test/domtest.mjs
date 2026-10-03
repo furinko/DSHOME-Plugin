@@ -945,6 +945,46 @@ check('the queued retry paints once layout has finished', () => {
   assert.ok(rects().length > 0, `the retry must paint, got ${rects().length} rects`);
 });
 
+check('painted bars are as long as the message really is', () => {
+  // Every block here is laid out and all of them are TURN_STEP tall, so every bar
+  // must be about TURN_STEP of canvas. Without this, a pass that ignored the
+  // measured height — or used a placeholder for everything — would collapse the
+  // whole picture to slivers and nothing else in this file would notice: the
+  // thumb and offset checks read the strip's geometry, never the bar lengths.
+  const { shell, rects } = mountWith();
+  const scale = canvasOf(shell).height / TOTAL_H;
+  const expected = TURN_STEP * scale;
+  const drawn = rects();
+  assert.equal(drawn.length, TURN_COUNT, 'every block must be drawn');
+  const wrong = drawn.findIndex((bar) => Math.abs(bar.h - expected) > 1.5);
+  assert.equal(wrong, -1,
+    `block ${wrong} drawn ${drawn[wrong] && drawn[wrong].h}px; its real height implies ${expected}px`);
+});
+
+check('a block whose layout has not settled is estimated from its text, not drawn as a sliver', () => {
+  // A block that measures 0 still has to be drawn somewhere, and a flat guess is
+  // wrong in both directions. The visible failure of guessing low is this one: a
+  // long message collapses to a few pixels and reads as "that message is not
+  // shown at all".
+  const LINES = 30;
+  const text = 'x'.repeat(45 * LINES);
+  const { shell, rects } = mountWith({
+    laidOut: (i) => i !== 20,
+    setup: (doc) => {
+      const scroller = doc.body.children.find((c) => c.className === 'session_scrollBody');
+      scroller.children[20].textContent = text;
+    },
+  });
+  const canvas = canvasOf(shell);
+  const scale = canvas.height / TOTAL_H;         // canvas px per document px
+  const implied = (36 + LINES * 21) * scale;     // the estimator's own arithmetic
+  const bar = rects()[20];
+  assert.ok(Math.abs(bar.h - implied) <= 1.5,
+    `unmeasured block drawn ${bar.h}px tall; its text implies ${implied}px`);
+  // And stated as the thing that is actually visible: not a sliver.
+  assert.ok(bar.h >= 20, `a long unmeasured block must not collapse to ${bar.h}px`);
+});
+
 check('an idle sync tick does not repaint', () => {
   const { rects, passes, log } = mountWith();
   const drawn = rects().length;
