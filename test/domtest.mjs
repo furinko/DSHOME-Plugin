@@ -985,6 +985,108 @@ check('a block whose layout has not settled is estimated from its text, not draw
   assert.ok(bar.h >= 20, `a long unmeasured block must not collapse to ${bar.h}px`);
 });
 
+// ── which elements count as message rows ────────────────────────────────────
+//
+// Upstream marks two kinds of element with `data-chat-turn`: every message row and
+// the group seat that wraps a run of them. Counting both draws one bar across a
+// group and another for each of its rows — overlapping grey blocks, reported from
+// the running client.
+console.log('\n== message rows ==');
+
+/** One message row, at `top`, `height` tall, as the strip should see it. */
+function rowEl(doc, { top, height, turn = '', kind = '' }) {
+  const el = doc.createElement('div');
+  el.setAttribute('data-chat-turn', turn);
+  if (kind) el.setAttribute('data-chat-flow-kind', kind);
+  el.textContent = `row at ${top}`;
+  el.getBoundingClientRect = () => ({
+    top, bottom: top + height, height, left: 0, right: 800, width: 800,
+  });
+  return el;
+}
+
+/** A scroll container that is genuinely scrollable, so the strip stays shown. */
+function columnEl(doc, { scrollHeight = 1000, view = 200 } = {}) {
+  const scroller = doc.createElement('div');
+  scroller.className = 'session_scrollBody';
+  scroller.clientHeight = view;
+  scroller.scrollHeight = scrollHeight;
+  scroller.getBoundingClientRect = () => ({
+    top: 0, bottom: view, left: 0, right: 900, width: 900, height: view,
+  });
+  doc.body.appendChild(scroller);
+  return scroller;
+}
+
+/** Mount a hand-built column and return what was painted. */
+function mountColumn(build) {
+  const doc = installGlobals();
+  const scroller = columnEl(doc);
+  build(doc, scroller);
+  instrument();
+  makePlugin().apply({ get: () => undefined });
+  const shell = doc.body.children.find((c) => c.className === 'dshome-plugin-minimap');
+  const drawn = canvasOf(shell).getContext('2d').calls.filter((c) => c.op === 'rect');
+  return { shell, drawn };
+}
+
+/** Assert that no painted bar covers another. */
+function assertNoOverlap(drawn) {
+  const sorted = drawn.slice().sort((a, b) => a.y - b.y);
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = sorted[i - 1];
+    assert.ok(sorted[i].y >= prev.y + prev.h - 0.5,
+      `bar ${i} starts at ${sorted[i].y}, inside the previous bar (${prev.y}..${prev.y + prev.h})`);
+  }
+}
+
+check('a group wrapper is not drawn as a message on top of its own rows', () => {
+  const { drawn } = mountColumn((doc, scroller) => {
+    // Exactly what upstream renders: the seat carries data-chat-turn, and so does
+    // each row inside it.
+    const seat = doc.createElement('div');
+    seat.setAttribute('data-chat-turn', '1');
+    seat.setAttribute('data-chat-group-key', 'g1');
+    seat.getBoundingClientRect = () => ({ top: 0, bottom: 300, height: 300, left: 0, right: 800, width: 800 });
+    for (let i = 0; i < 3; i += 1) seat.appendChild(rowEl(doc, { top: i * 100, height: 100, turn: '1' }));
+    scroller.appendChild(seat);
+    scroller.appendChild(rowEl(doc, { top: 300, height: 700, turn: '2' }));
+  });
+  assert.equal(drawn.length, 4, `one bar per row: expected 3 in the group + 1 after, got ${drawn.length}`);
+  assertNoOverlap(drawn);
+});
+
+check('rows inside a hidden subtree never reach the canvas', () => {
+  const { drawn } = mountColumn((doc, scroller) => {
+    // The rows report real heights, so only the hidden-subtree rule can reject
+    // them — which is the point: upstream hides a collapsed group's rows.
+    const hiddenBox = doc.createElement('div');
+    hiddenBox.setAttribute('hidden', '');
+    for (let i = 0; i < 3; i += 1) hiddenBox.appendChild(rowEl(doc, { top: i * 100, height: 100, turn: '1' }));
+    scroller.appendChild(hiddenBox);
+    scroller.appendChild(rowEl(doc, { top: 300, height: 700, turn: '2' }));
+  });
+  assert.equal(drawn.length, 1, `only the visible row may be drawn, got ${drawn.length}`);
+});
+
+check('a collapsed group is represented by its wrapper alone', () => {
+  const { drawn } = mountColumn((doc, scroller) => {
+    // Grouped and closed: the rows are not laid out, so the seat is the only thing
+    // that stands for that stretch of the conversation. Counting the rows as well
+    // used to fill the table with estimated bars piled on the same spot.
+    // The seat itself IS laid out — a closed group still shows its one-line header.
+    const seat = doc.createElement('div');
+    seat.setAttribute('data-chat-turn', '1');
+    seat.setAttribute('data-chat-group-key', 'g1');
+    seat.getBoundingClientRect = () => ({ top: 0, bottom: 40, height: 40, left: 0, right: 800, width: 800 });
+    for (let i = 0; i < 3; i += 1) seat.appendChild(rowEl(doc, { top: 0, height: 0, turn: '1' }));
+    scroller.appendChild(seat);
+    scroller.appendChild(rowEl(doc, { top: 300, height: 700, turn: '2' }));
+  });
+  assert.equal(drawn.length, 2, `expected the wrapper + the next row, got ${drawn.length}`);
+  assertNoOverlap(drawn);
+});
+
 check('an idle sync tick does not repaint', () => {
   const { rects, passes, log } = mountWith();
   const drawn = rects().length;
