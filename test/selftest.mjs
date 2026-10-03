@@ -138,7 +138,7 @@ check('card selector covers tool calls and system injections', () => {
 console.log('\n== minimap geometry ==');
 
 const MAX_HEIGHT_PX = 760;
-const COMPOSER_RESERVE_PX = 152;
+const COMPOSER_FALLBACK_PX = 152;
 const THUMB_RATIO = 0.08;
 const MIN_THUMB_PX = 8;
 
@@ -146,9 +146,73 @@ const MIN_THUMB_PX = 8;
 // section re-implemented the formulas locally and asserted the local copies, so
 // all of them stayed green while the bundle computed something else — which is
 // exactly how the dropped zoom shipped.
-check('band is driven by the viewport, not by content length', () => {
-  assert.match(code, /var available = window\.innerHeight - COMPOSER_RESERVE_PX;/, 'band input');
+check('band is driven by the conversation area, not by the window or the content', () => {
+  // The regression this locks: the band used to be `window.innerHeight - 152`,
+  // which includes the 76px conversation header plus whatever chrome precedes it,
+  // so a short window pushed the strip's top above the conversation. The band now
+  // comes from the conversation column's own box, minus the composer that
+  // upstream parks inside it.
+  assert.match(code, /function columnBox\(\)/, 'the conversation area needs one definition');
+  assert.match(code, /var available = \(box\.bottom - box\.top\) - CONVO_GAP_PX \* 2;/,
+    'band input must be the conversation area');
   assert.match(code, /Math\.max\(120, Math\.min\(MAX_HEIGHT_PX, available\)\)/, 'band formula');
+  assert.ok(!code.includes('window.innerHeight - COMPOSER_RESERVE_PX'),
+    'the window height must not decide the band any more');
+});
+
+check('the composer height comes from the official measurement', () => {
+  // `--dsh-composer-height` is written by upstream after measuring the composer,
+  // so a composer that grows moves the strip's bottom with it. The flat fallback
+  // stays only for environments where the variable cannot be read.
+  assert.match(code, /var COMPOSER_VAR = '--dsh-composer-height';/, 'official variable');
+  assert.match(code, /return readPx\(scroller, COMPOSER_VAR, COMPOSER_FALLBACK_PX\);/,
+    'and it must actually be read, not replaced by the fallback constant');
+  assert.match(code, /rect\.bottom - composerHeight\(\)/,
+    'the conversation area must end above the composer');
+});
+
+check('the strip is top-aligned inside the conversation area', () => {
+  assert.match(code, /shell\.style\.top = Math\.round\(box\.top \+ CONVO_GAP_PX\) \+ 'px';/,
+    'the strip must start where the conversation starts');
+});
+
+check('the strip narrows with the conversation gutter instead of a fixed width', () => {
+  assert.match(code, /function computeStripWidth\(box\)/, 'width must be derived from the column');
+  assert.match(code, /Math\.max\(MIN_WIDTH_PX, Math\.min\(WIDTH_PX, Math\.round\(gutter - 4\)\)\)/,
+    'width must shrink with the gutter, down to the floor');
+  assert.match(code, /var w = stripWidthPx;/, 'the canvas must be rebuilt at the current width');
+});
+
+check('the gutter is measured off message rows, not parsed from a CSS expression', () => {
+  // `--dsh-chat-content-width` is a `clamp()` whose computed value is a token
+  // stream, so parseFloat on it yields NaN. Measuring the rows also keeps the
+  // strip out of hashed CSS-module class names, which this bundle never reads.
+  assert.match(code, /function textColumnRight\(\)/, 'the text column must be measured');
+  assert.match(code, /var textRight = textColumnRight\(\);/, 'and the gutter must use it');
+  assert.match(code, /scroller\.querySelectorAll\(SELECTORS\.flow\)/, 'from semantic rows');
+  assert.match(code, /return Math\.max\(0, box\.right - textRight\);/, 'gutter = column - text');
+});
+
+check('sidebar avoidance asks about the strip itself, not the window edge', () => {
+  // The bug this locks: with three grid tracks the right sidebar sits *outside*
+  // the conversation column, and "covered" measured against the window's right
+  // edge hid the strip whenever the sidebar was open.
+  assert.match(code, /function sidebarCovers\(strip\)/, 'the rule must take the strip box');
+  assert.match(code, /sidebarCovers\(stripBox\(\)\)/, 'and be asked about the strip itself');
+});
+
+check('a column resize re-places the strip at once, and the slide is followed per frame', () => {
+  // The sidebar animates `grid-template-columns`, so the column resizes on every
+  // frame of the slide: redrawing on a coalescing window left the geometry
+  // waiting for the 250ms tick. Motion no resize reports (the panel's own
+  // transform) is followed on animation frames instead.
+  assert.match(code, /new ResizeObserver\(function \(\) \{ safe\(sync\); \}\)/,
+    'a column resize must re-place the strip immediately');
+  assert.match(code, /function followLayout\(\)/, 'a bounded per-frame follow must exist');
+  assert.match(code, /window\.requestAnimationFrame\(fn\)/, 'and it must use animation frames');
+  assert.match(code, /var SIDE_FOLLOW_MS = 450;/, 'bounded, not a permanent loop');
+  assert.match(code, /safe\(function \(\) \{ sync\(\); \}\);\n        followLayout\(\);/,
+    'the sidebar observer must actually start the follow');
 });
 
 check('zoom is derived from the thumb ratio, not fixed at 1', () => {

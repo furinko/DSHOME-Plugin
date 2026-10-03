@@ -134,6 +134,31 @@ function matches(node, selector) {
   // selector is such a list, and without this it would match nothing at all —
   // which would make every sidebar check vacuously pass as "no sidebar".
   if (selector.includes(',')) return selector.split(',').some((part) => matches(node, part.trim()));
+  // A descendant combinator: the official rail is found as `body nav[class*=…]`.
+  // Without this the rail is invisible to the double, and every rail-anchored
+  // assertion would silently test the fallback instead.
+  const parts = selector.trim().split(/\s+/);
+  if (parts.length > 1) {
+    if (!matches(node, parts[parts.length - 1])) return false;
+    let up = node.parent;
+    for (let i = parts.length - 2; i >= 0; i -= 1) {
+      let found = false;
+      while (up) {
+        if (matches(up, parts[i])) { found = true; break; }
+        up = up.parent;
+      }
+      if (!found) return false;
+    }
+    return true;
+  }
+  // A class-substring test with or without a tag: `[class*="x"]` and
+  // `nav[class*="x"]` both reach here (the rail is looked up as the latter).
+  const classMatch = /^([a-z]*)\[class\*=["']([^"']+)["']\]$/.exec(selector);
+  if (classMatch) {
+    const [, tag, sub] = classMatch;
+    if (tag && node.tagName !== tag.toUpperCase()) return false;
+    return node.className.includes(sub);
+  }
   const star = /^\[class\*=["']([^"']+)["']\]$/.exec(selector);
   if (star) return node.className.includes(star[1]);
   const m = /^([a-z]+)?(?:\[([^=\]]+)(?:=['"]([^'"]*)['"])?\])?$/.exec(selector);
@@ -186,6 +211,11 @@ function installGlobals() {
     clearTimeout: () => {},
     setInterval: () => 0,
     clearInterval: () => {},
+    // The frame-by-frame follow goes through `window`, exactly as it does in the
+    // browser. It never runs by itself here (instrument() records it instead), so
+    // a check can decide which frame to deliver and when.
+    requestAnimationFrame: () => 0,
+    cancelAnimationFrame: () => {},
   };
   globalThis.getComputedStyle = () => ({ getPropertyValue: () => '' });
   globalThis.MutationObserver = class { observe() {} disconnect() {} };
@@ -631,18 +661,22 @@ console.log('\n== minimap behaviour (runtime) ==');
  * what findScroller has to judge. `laidOut` decides which blocks report a real
  * height: the double has no layout engine, so heights are supplied by hand.
  */
-function addColumn(doc, { turns, step, total, view = VIEW_H, left = 0, top = 0, laidOut = null, kinds = null }) {
+function addColumn(doc, { turns, step, total, view = VIEW_H, left = 0, top = 0, laidOut = null, kinds = null, width = 900, textRight = 800 }) {
   const scroller = doc.createElement('div');
   scroller.className = 'session_scrollBody';
   scroller.clientHeight = view;
   scroller.scrollHeight = total;
   scroller.scrollTop = 0;
   scroller.getBoundingClientRect = () => ({
-    top, bottom: top + view, left, right: left + 900, width: 900, height: view,
+    top, bottom: top + view, left, right: left + width, width, height: view,
   });
   for (let i = 0; i < turns; i += 1) {
     const block = doc.createElement('div');
     block.setAttribute('data-chat-turn', String(i + 1));
+    // Real rows carry both: `data-chat-turn` for turn boundaries and
+    // `data-chat-flow-key` for the row's identity. The strip measures the text
+    // column's right edge off the latter.
+    if (textRight > 0) block.setAttribute('data-chat-flow-key', `k${i + 1}`);
     if (kinds) block.setAttribute('data-chat-flow-kind', kinds[i % kinds.length]);
     block.textContent = `hello from turn ${i}`;
     const ready = laidOut === null || laidOut(i);
@@ -651,8 +685,8 @@ function addColumn(doc, { turns, step, total, view = VIEW_H, left = 0, top = 0, 
       bottom: (i + 1) * step,
       height: ready ? step : 0,
       left: 0,
-      right: 800,
-      width: 800,
+      right: textRight,
+      width: textRight,
     });
     scroller.appendChild(block);
   }
@@ -670,15 +704,24 @@ function addColumn(doc, { turns, step, total, view = VIEW_H, left = 0, top = 0, 
  * that assertion flaky.
  */
 function instrument() {
-  const log = { timeouts: [], intervals: [], observers: [], now: 1000000 };
+  const log = { timeouts: [], intervals: [], observers: [], raf: [], resizers: [], now: 1000000 };
   const win = globalThis.window;
   win.setTimeout = (fn, delay) => { log.timeouts.push({ fn, delay }); return log.timeouts.length; };
   win.clearTimeout = () => {};
   win.setInterval = (fn, delay) => { log.intervals.push({ fn, delay }); return log.intervals.length; };
   win.clearInterval = () => {};
+  // Animation frames are recorded, never delivered: the follow loop is a loop,
+  // and a real rAF would recurse out of the check's control.
+  win.requestAnimationFrame = (fn) => { log.raf.push(fn); return log.raf.length; };
+  win.cancelAnimationFrame = () => {};
   globalThis.MutationObserver = class {
     constructor(cb) { this.cb = cb; log.observers.push(this); }
     observe(target, options) { this.target = target; this.options = options; }
+    disconnect() { this.disconnected = true; }
+  };
+  globalThis.ResizeObserver = class {
+    constructor(cb) { this.cb = cb; log.resizers.push(this); }
+    observe(target) { this.target = target; }
     disconnect() { this.disconnected = true; }
   };
   Date.now = () => log.now;
@@ -688,10 +731,13 @@ function instrument() {
 /** Build a session, instrument the scheduling, then apply the real bundle. */
 function mountWith({
   turns = TURN_COUNT, step = TURN_STEP, total = TOTAL_H, view = VIEW_H,
-  laidOut = null, kinds = null, left = 0, top = 0, setup = null,
+  laidOut = null, kinds = null, left = 0, top = 0, width = 900, textRight = 800,
+  setup = null,
 } = {}) {
   const doc = installGlobals();
-  const scroller = addColumn(doc, { turns, step, total, view, left, top, laidOut, kinds });
+  const scroller = addColumn(doc, {
+    turns, step, total, view, left, top, laidOut, kinds, width, textRight,
+  });
   const log = instrument();
   if (setup) setup(doc, log);
   makePlugin().apply({ get: () => undefined });
@@ -830,22 +876,59 @@ check('the tip is throttled, so a fast sweep does not re-read the DOM per pixel'
   assert.match(tip.textContent, /hello from turn 20/, 'past the window the tip must follow the pointer');
 });
 
-check('the strip stands down while the right sidebar covers its column', () => {
+check('a sidebar that owns a track beside the column never hides the strip', () => {
+  // The wide-viewport case, and the whole reason the strip used to vanish for no
+  // reason: upstream lays out three grid tracks, so an open right sidebar sits
+  // *outside* the conversation column — it does not overlap the strip, and the
+  // only thing that ever hid the strip here was measuring "covered" against the
+  // window's right edge instead of against the strip itself.
   const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 1000); } });
-  // The sidebar is an overlay — it reserves no layout space — so while it is
-  // open the column the strip lives in *is* the sidebar. Sliding the strip to
-  // the panel's edge would park it on top of the conversation being read; the
-  // honest answer is to stand down and come back when the space is free.
-  assert.equal(shell.style.display, 'none', 'the strip must stand down while covered');
+  assert.notEqual(shell.style.display, 'none',
+    'a sidebar beside the conversation column must not stand the strip down');
 });
 
-check('a sidebar surface away from the strip column does not hide it', () => {
-  // A floating pane can sit anywhere. One that never reaches the right margin
-  // must not take the strip down with it — the rule is the rect, not the name.
-  const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 100); } });
+check('a sidebar that reaches the strip itself stands it down', () => {
+  // The narrow-viewport case: there is no room for a track, so the panel floats
+  // over the centre column and does overlap the strip. Sliding the strip to the
+  // panel's edge — what the reference implementation does — parks it on top of
+  // the conversation being read, so standing down is still right here.
+  const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 700); } });
+  assert.equal(shell.style.display, 'none', 'the strip must stand down while it is covered');
+});
+
+check('the strip anchors inside the conversation column, not the window edge', () => {
+  // The double's column is 900px wide inside a 1400px window. Anchoring to the
+  // window's right edge would put the strip at x≈1334 — outside the conversation
+  // entirely, which is exactly what made it depend on the sidebar for its life.
+  const { shell, log } = mountWith({ setup: (doc) => { sidebarPanel(doc, 100); } });
+  // The double has no layout engine: model the strip where the bundle placed it
+  // (just inside the column's right edge) and ask again.
+  shell.getBoundingClientRect = () => ({
+    top: 116, bottom: 700, left: 838, right: 892, width: 54, height: 584,
+  });
+  log.intervals.find((t) => t.delay === 250).fn();
   assert.notEqual(shell.style.display, 'none', 'a sidebar nowhere near the strip must not hide it');
-  assert.ok(Math.abs(parseFloat(shell.style.right) - 8) <= 1,
-    `with nothing covering it the strip sits at the window edge, right=${shell.style.right}`);
+  const expected = 1400 - 900 + 8;                  // window - column.right + gap
+  assert.ok(Math.abs(parseFloat(shell.style.right) - expected) <= 1,
+    `the strip must sit inside the column: right=${shell.style.right}, expected ${expected}`);
+});
+
+check('the strip aligns to the official rail when the rail is there', () => {
+  // Upstream's rail already sits in the gutter, clear of the scrollbar, so it is
+  // the better anchor whenever it is laid out.
+  const { shell } = mountWith({
+    setup: (doc) => {
+      const nav = doc.createElement('nav');
+      nav.className = 'chat_frame';
+      nav.getBoundingClientRect = () => ({
+        top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
+      });
+      doc.body.appendChild(nav);
+    },
+  });
+  const expected = 1400 - 1028 + (28 - 58) / 2;      // rail-aligned, centred on it
+  assert.ok(Math.abs(parseFloat(shell.style.right) - expected) <= 1,
+    `the rail must win as the anchor: right=${shell.style.right}, expected ${expected}`);
 });
 
 check('a floating sidebar pane hides the strip even with no open attribute', () => {
@@ -857,13 +940,14 @@ check('a floating sidebar pane hides the strip even with no open attribute', () 
       const float = doc.createElement('div');
       float.className = 'sidebar_float';
       float.setAttribute('data-dockkit-float', 'pane-1');
+      // Floating over the centre column, as it does when there is no track.
       float.getBoundingClientRect = () => ({
-        top: 0, bottom: 1080, left: 1000, right: 1400, width: 400, height: 1080,
+        top: 0, bottom: 1080, left: 700, right: 1400, width: 700, height: 1080,
       });
       doc.body.appendChild(float);
     },
   });
-  assert.equal(shell.style.display, 'none', 'a floating pane over the column must hide the strip');
+  assert.equal(shell.style.display, 'none', 'a floating pane over the strip must hide it');
 });
 
 check('a stale fullscreen owner in an inactive session does not hide the strip', () => {
@@ -899,7 +983,7 @@ check('a fullscreen right sidebar hides the strip entirely', () => {
 });
 
 check('the sidebar is watched by attribute, and closing brings the strip back', () => {
-  const { doc, shell, log } = mountWith({ setup: (d) => { sidebarPanel(d, 1000); } });
+  const { doc, shell, log } = mountWith({ setup: (d) => { sidebarPanel(d, 700); } });
   // The conversation feature installs an attribute observer of its own, so name
   // the attribute the sidebar watcher has to carry.
   const watcher = log.observers.find((o) => o.options && Array.isArray(o.options.attributeFilter)
@@ -913,13 +997,51 @@ check('the sidebar is watched by attribute, and closing brings the strip back', 
   // position and the strip must come back without waiting for the animation.
   doc.body.children.find((c) => c.className === 'sidebar_panel').removeAttribute('data-sidebar-right-open');
   log.timeouts.length = 0;
+  log.raf.length = 0;
   watcher.cb();
   assert.notEqual(shell.style.display, 'none', 'closing must bring the strip back immediately');
-  assert.ok(Math.abs(parseFloat(shell.style.right) - 8) <= 1,
-    `and back to the window edge, right=${shell.style.right}`);
-  // Opening reads the rect mid-slide, so a settle re-read is scheduled.
+  const expected = 1400 - 900 + 8;
+  assert.ok(Math.abs(parseFloat(shell.style.right) - expected) <= 1,
+    `and back inside the conversation column, right=${shell.style.right}, expected ${expected}`);
+  // The slide itself is transform-driven: the strip follows it frame by frame
+  // rather than waiting for a timer, so the flip must open a follow run.
+  assert.ok(log.raf.length > 0, 'the attribute flip must start a per-frame follow');
+  // The settle re-read is kept as the fallback for environments with no frames.
   assert.deepEqual(log.timeouts.map((t) => t.delay), [320],
     'the settle re-read must be scheduled after the slide');
+});
+
+check('the strip follows the sidebar slide frame by frame', () => {
+  // The slide is a transform plus an animated grid track: its rect moves every
+  // frame while nothing in the DOM says "still moving". Sampling it once on the
+  // attribute flip and again after a fixed settle left the strip motionless
+  // through the whole slide, then jumping — reported as "it does not keep up".
+  const { doc, shell, log } = mountWith({ setup: (d) => { sidebarPanel(d, 1200); } });
+  const panel = doc.body.children.find((c) => c.className === 'sidebar_panel');
+  const watcher = log.observers.find((o) => o.options && Array.isArray(o.options.attributeFilter)
+    && o.options.attributeFilter.includes('data-sidebar-right-open'));
+  assert.notEqual(shell.style.display, 'none', 'a panel to the right of the strip must not hide it');
+  log.raf.length = 0;
+  // Opening: the attribute flips and the slide begins.
+  panel.setAttribute('data-sidebar-right-open', '');
+  watcher.cb();
+  assert.equal(log.raf.length, 1, 'the slide must open exactly one follow run');
+  // Mid-slide the panel has reached the strip: the very next frame must know,
+  // with no timer involved.
+  panel.getBoundingClientRect = () => ({
+    top: 0, bottom: 1080, left: 700, right: 1400, width: 700, height: 1080,
+  });
+  log.raf[0]();
+  assert.equal(shell.style.display, 'none',
+    'the frame that sees the overlap must stand the strip down');
+  // Sliding back out: the next frame brings it back straight away.
+  panel.getBoundingClientRect = () => ({
+    top: 0, bottom: 1080, left: 1200, right: 1400, width: 200, height: 1080,
+  });
+  assert.ok(log.raf.length >= 2, 'the follow run must keep scheduling frames');
+  log.raf[1]();
+  assert.notEqual(shell.style.display, 'none',
+    'the frame that sees the space free must bring the strip back');
 });
 
 check('the layout gate is a ratio: 23/40 paints nothing, 24/40 paints', () => {
@@ -1132,19 +1254,145 @@ check('a scrollHeight change alone still triggers a redraw (the fallback path)',
   assert.equal(rects().length, drawn, 'and it must measure the same blocks');
 });
 
-check('a window resize re-scales the picture even when the column does not change', () => {
-  const { shell, passes, rects, log } = mountWith();
+// ── the strip belongs to the conversation, not to the window ────────────────
+//
+// The conversation area is the scroll container's box minus the composer, which
+// upstream parks sticky inside that same container. On a real session the window
+// also holds a 76px conversation header, which is why a window-anchored strip
+// starts above the conversation — the reported "the top is too high, and worse
+// in a non-maximised window".
+console.log('\n== conversation anchoring ==');
+
+/** Point getComputedStyle at a fixed set of official variables. */
+function withVars(vars) {
+  globalThis.getComputedStyle = () => ({
+    getPropertyValue: (name) => (name in vars ? vars[name] : ''),
+  });
+}
+
+check('the strip starts inside the conversation area, not above it', () => {
+  // Column at y=120..720: on a real session that 120px is the header plus
+  // whatever chrome precedes it. The old formula centred the strip in
+  // `innerHeight - composer`, which lands near y=8 — above all of it.
+  const { shell } = mountWith({ top: 120, view: 600 });
+  const top = parseFloat(shell.style.top);
+  const height = parseFloat(shell.style.height);
+  assert.ok(top >= 120, `the strip must not start above the conversation: top=${top}`);
+  assert.equal(top, 120 + 8, "and it starts at the conversation's top edge + the gap");
+  assert.ok(top + height <= 720 - 152,
+    `and it must end above the composer: ${top} + ${height} vs 720 - 152`);
+});
+
+check('the composer height is read from the official measurement', () => {
+  // Upstream measures the composer and writes `--dsh-composer-height` onto the
+  // scroll container. A hard-coded 152px is right only until the composer grows
+  // (a multi-line draft, an attachment row) — then the strip's bottom would end
+  // up underneath it.
+  const { shell } = mountWith({
+    top: 120,
+    view: 600,
+    setup: () => withVars({ '--dsh-composer-height': '200px' }),
+  });
+  const top = parseFloat(shell.style.top);
+  const height = parseFloat(shell.style.height);
+  assert.ok(top + height <= 720 - 200,
+    `the strip must respect the measured composer: ${top} + ${height} vs 720 - 200`);
+});
+
+check('the strip narrows with the conversation gutter instead of vanishing', () => {
+  // Official layout: the scroll body pads itself by 32px and the text column
+  // inside it stays 680-920px, so when the sidebar's track takes width from the
+  // conversation column the *gutter* absorbs it. A 460px column leaves 32px for
+  // the strip; a 900px column leaves 110px. The strip must track that, not sit at
+  // a fixed 58px and get covered.
+  const narrow = mountWith({ width: 460, textRight: 428 });
+  assert.equal(parseFloat(narrow.shell.style.width), 28,
+    `a 32px gutter leaves room for a 28px strip, got ${narrow.shell.style.width}`);
+  assert.equal(canvasOf(narrow.shell).width, 28,
+    'and the canvas must be rebuilt at that width, not clipped by the shell');
+
+  const wide = mountWith({ width: 900, textRight: 790 });
+  assert.equal(parseFloat(wide.shell.style.width), 58,
+    `a 110px gutter keeps the full width, got ${wide.shell.style.width}`);
+});
+
+check('the text column is measured, not parsed out of a CSS expression', () => {
+  // Upstream publishes the text column's limit as
+  // `clamp(680px, calc(var(--dsh-conversation-column-width) * .64), 920px)`, and
+  // a custom property keeps its token stream — reading it back gives that
+  // expression, not a number. So the gutter comes from the rows themselves; if it
+  // were parsed instead, this column would silently keep the full strip width.
+  const { shell } = mountWith({
+    width: 700,
+    textRight: 660,                                  // a 40px gutter -> a 36px strip
+    setup: () => withVars({
+      '--dsh-chat-content-width': 'clamp(680px, calc(700px * .64), 920px)',
+    }),
+  });
+  assert.equal(parseFloat(shell.style.width), 36,
+    `the measured gutter must decide, got ${shell.style.width}`);
+});
+
+check('a px width preference is honoured when there are no rows to measure', () => {
+  // Before the first row paints there is nothing to measure, so the published
+  // width is used instead. In the browser `--dsh-chat-content-width` is
+  // `var(--dsh-chat-user-width, clamp(…))` and the custom-property chain resolves
+  // to the px number the preference sets — the double hands over the resolved
+  // value, which is what a computed style returns.
+  const { shell } = mountWith({
+    width: 700,
+    textRight: 0,                                    // nothing measurable
+    setup: () => withVars({ '--dsh-chat-content-width': '600px' }),
+  });
+  assert.equal(parseFloat(shell.style.width), 46,
+    `pad 32 + (636 - 600) / 2 = 50 gutter -> 46px strip, got ${shell.style.width}`);
+});
+
+check('a conversation-column resize moves the strip in the same callback', () => {
+  // The sidebar opening animates `grid-template-columns`, so the column resizes
+  // on every frame. Redrawing on the coalescing window and re-measuring the
+  // geometry only on the 250ms tick is what "it does not keep up" looked like.
+  const { scroller, shell, log, passes } = mountWith();
+  const resizer = log.resizers.find((r) => r.target === scroller);
+  assert.ok(resizer, 'the conversation column must be watched for resizes');
   const painted = passes();
-  const before = canvasOf(shell).style.height;
-  // A shorter window lowers the standard band, so the canvas has to be rebuilt
-  // at the new scale. The scroll container's own height is untouched here, which
-  // is exactly the case its ResizeObserver cannot see.
+  // The sidebar takes a 200px track on the right.
+  scroller.getBoundingClientRect = () => ({
+    top: 0, bottom: VIEW_H, left: 0, right: 700, width: 700, height: VIEW_H,
+  });
+  resizer.cb();
+  assert.equal(parseFloat(shell.style.right), 1400 - 700 + 8,
+    `the strip must follow the column immediately, right=${shell.style.right}`);
+  assert.equal(passes(), painted,
+    'and a width-only change must not repaint the picture');
+});
+
+check('a taller conversation re-scales the picture', () => {
+  const { scroller, shell, log, passes } = mountWith();
+  const painted = passes();
+  const before = canvasOf(shell).height;
+  scroller.clientHeight = 600;
+  scroller.getBoundingClientRect = () => ({
+    top: 0, bottom: 600, left: 0, right: 900, width: 900, height: 600,
+  });
+  log.resizers.find((r) => r.target === scroller).cb();
+  assert.ok(passes() > painted, 'the band change must drive a redraw');
+  assert.notEqual(canvasOf(shell).height, before,
+    'the canvas must follow the conversation area, not the window');
+});
+
+check('the window height alone no longer decides the strip', () => {
+  // Locking the invariant in the direction the bug went: with the column
+  // unchanged, a window resize must not move or rescale the strip — the window
+  // includes chrome that is none of the strip's business.
+  const { shell, log } = mountWith();
+  const top = shell.style.top;
+  const canvasHeight = canvasOf(shell).height;
   globalThis.window.innerHeight = 700;
   log.intervals.find((t) => t.delay === 250).fn();
-  assert.ok(passes() > painted, 'the band change must drive a redraw');
-  const after = canvasOf(shell).style.height;
-  assert.notEqual(after, before, `the canvas must follow the new band (still ${after})`);
-  assert.ok(rects().length > 0, 'and the picture must still be drawn');
+  assert.equal(shell.style.top, top, 'the strip must stay where the conversation is');
+  assert.equal(canvasOf(shell).height, canvasHeight,
+    'and its scale must not follow the window');
 });
 
 check('the tip stays quiet while the layout gate is withholding the picture', () => {

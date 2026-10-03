@@ -85,11 +85,14 @@ Written against official **semantic attributes** — `data-variant`, `data-chat-
 
 ### Minimap invariants
 
-Three invariants keep the minimap accurate, each fixing a bug reproduced on a real session:
+Four invariants keep the minimap accurate, each fixing a bug reproduced on a real session:
 
-1. **Two heights, never mixed.** Strip scale and thumb size come from a standard band height derived from the viewport. The viewport's own height and the thumb's travel come from live measurements. Mixing them makes short sessions drift after everything is already visible.
-2. **Positions come only from the browser.** `fromEnd = scrollHeight − rect.top − rect.height`. Estimating height from character counts uses a different ruler than real layout, so "what I clicked" and "what is on screen" disagree.
-3. **Dirty values are never cached.** A block measuring 0px has not laid out yet; it gets a temporary height and no cache entry.
+1. **It belongs to the conversation, not the window.** Position and size come from the conversation area — the scroll container's box minus the composer upstream parks inside it (`--dsh-composer-height`), top-aligned, and no wider than the gutter left of the text column. The window also holds the conversation header, so a window-anchored strip starts *above* the conversation as soon as the window is short; and while the right sidebar owns a grid track, the window's right edge is the sidebar, not the conversation — measuring against it hid the strip every time the sidebar was open.
+2. **Two heights, never mixed.** Strip scale and thumb size come from a standard band height derived from the conversation area. The viewport's own height and the thumb's travel come from live measurements. Mixing them makes short sessions drift after everything is already visible.
+3. **Positions come only from the browser.** `fromEnd = scrollHeight − rect.top − rect.height`. Estimating height from character counts uses a different ruler than real layout, so "what I clicked" and "what is on screen" disagree.
+4. **Dirty values are never cached.** A block measuring 0px has not laid out yet; it gets a temporary height and no cache entry.
+
+The strip is not fixed-width: it narrows with the gutter between the text column's measured right edge and the conversation column's right edge (58px down to 24px) rather than disappearing, and it stands down only when a sidebar surface actually reaches it.
 
 Zoom is fixed at 1 by design. Above 1, the thumb (moving on the document ratio) and the content (drawn in its own coordinates) only agree near the middle, so clicks land in the wrong place and every measurement error is magnified. At zoom 1 the two relations are identical, which is what makes "click here, land here" exact.
 
@@ -107,8 +110,8 @@ Every feature is a progressive enhancement, invoked inside an error boundary. A 
 npm test
 ```
 
-- `test/selftest.mjs` — 32 checks: the classic-script contract, selector stability, minimap geometry, theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 15 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, and slot registration against a DOM double.
+- `test/selftest.mjs` — 44 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
+- `test/domtest.mjs` — 59 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, and the minimap's real geometry — where it sits, how wide it is, and how it follows a sidebar whose slide is transform-driven — against a DOM double.
 
 Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
 
