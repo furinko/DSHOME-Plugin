@@ -343,18 +343,81 @@ check('strip starts hidden when there is no conversation', () => {
   assert.equal(shell.style.display, 'none');
 });
 
-// NOTE (2026-10-03): the "think window" that used to be asserted here - reasoning
-// clamped to 12 lines, force-expanded by a synthetic click on the official row,
-// manual collapses remembered in localStorage - has been deleted. Its anchor,
-// `[data-variant="think"]`, does not exist in the shipped client, so neither its
-// CSS nor its ~170 lines of JS had ever run; the two checks that stood here only
-// ever proved that our own stylesheet text was spelled the way we spelled it.
-// Upstream's turn-process disclosure already provides fold/unfold, so nothing
-// user-visible was lost. If a clamped reasoning window is ever wanted, the real
-// anchors are `[data-chat-flow-kind="assistant-step"][data-chat-group-part=
-// "reasoning"]` for the block and `[data-disclosure-row]` for its header - and
-// note that `data-expanded`/`data-state` live on the DisclosureRow, *not* on the
-// flow item, so swapping the selector alone would loop forever trying to expand.
+// The "think window" assertions live here again. They were deleted on
+// 2026-10-04 together with the feature itself, on the theory that they only ever
+// proved our own stylesheet was spelled the way we spelled it. That theory came
+// from a failed probe: `data-variant="think"` DOES exist upstream (ui-chat's
+// ReasoningRow, app.asar offset 19312977) — the bundle merely writes it as
+// `"data-variant": "think"`, which the literal search missed. Deleting a feature
+// and the locks that guarded it in the same commit is exactly how a removal goes
+// green: there is nothing left to turn red. These stay until the feature does.
+
+check('conversation stylesheet clamps the think body to 12 lines', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
+  assert.match(css, /max-height:calc\(12 \*/);
+  assert.match(css, /data-variant="think"/);
+  assert.match(css, /data-expanded/);
+});
+
+check('conversation stylesheet raises specificity for the collapsed state', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
+  // Upstream's chat CSS is lazily injected after ours; without the extra
+  // attribute the same-specificity rule would lose.
+  assert.match(css, /data-state\]:not\(\[data-expanded\]\)/);
+});
+
+check('conversation stylesheet keeps the sticky header masking its body', () => {
+  // Upstream fills the header with bg-base and pins it (sticky;top:0;z-index:1).
+  // Dropping that fill lets the reasoning text scroll through the header; using
+  // upstream's colour instead of the surrounding plate's shows a stray band.
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-conversation').textContent;
+  const rule = /\[data-disclosure-row\]\{background:([^}]+)\}/.exec(css);
+  assert.ok(rule, 'the sticky-header rule is gone');
+  assert.ok(!/transparent/.test(rule[1]), 'a transparent header lets the body scroll through');
+  assert.match(rule[1], /--dshome-plate/);
+  assert.match(css, /--dshome-plate:var\(--dsw-alias-bg-layer-1/);
+});
+
+check('a collapsed reasoning block is force-expanded on the next frame', () => {
+  // The behaviour, not the text. Upstream renders the reasoning body only once
+  // the row is expanded, so this synthetic click *is* the feature. The plugin
+  // schedules its sweep with a bare `requestAnimationFrame`, i.e. globalThis's
+  // (installGlobals stubs it out) — instrument() only covers `window`, so the
+  // recorder has to be installed on globalThis to see the frame at all.
+  const doc = installGlobals();
+  const flow = new El('div');
+  flow.setAttribute('data-chat-flow-key', 'turn-1');
+  const root = new El('div');
+  root.setAttribute('data-variant', 'think');
+  root.setAttribute('data-state', 'ok');
+  const row = new El('div');
+  row.setAttribute('data-disclosure-row', 'true');
+  root.appendChild(row);
+  flow.appendChild(root);
+  doc.body.appendChild(flow);
+
+  instrument();
+  const frames = [];
+  globalThis.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length; };
+  loaded.factory(provide).apply({ get: () => undefined });
+
+  assert.ok(frames.length > 0, 'no sweep was scheduled');
+  const clicks = [];
+  row.addEventListener('click', (e) => clicks.push(e));
+  frames.splice(0).forEach((fn) => fn());
+
+  assert.equal(clicks.length, 1, 'the reasoning block was never expanded');
+  assert.equal(clicks[0].bubbles, true, 'the synthetic click would not reach React');
+});
 
 check('conversation stylesheet styles the card kinds', () => {
   const doc = installGlobals();

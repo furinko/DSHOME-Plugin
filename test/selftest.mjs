@@ -110,13 +110,32 @@ check('each feature is isolated behind safe()', () => {
 // ── selectors: semantic attributes only ─────────────────────────────────────
 console.log('\n== selectors ==');
 
-check('never anchors on the non-existent data-variant="think"', () => {
-  // Verified in the shipped app.asar: upstream emits no `data-variant="think"`
-  // anywhere. The old reasoning-window feature keyed off it and therefore never
-  // matched a single node. The selector must stay gone, while the anchor that
-  // does exist stays in place.
-  assert.doesNotMatch(code, /data-variant/);
-  assert.ok(code.includes('data-disclosure-row'), 'the real disclosure anchor is missing');
+check('reasoning window keeps its verified anchors and stays masking', () => {
+  // `data-variant="think"` DOES exist upstream: ui-chat's ReasoningRow renders
+  // it (app.asar offset 19312977) alongside `data-state` (`running`/`ok`) and
+  // `data-expanded`. An earlier probe searched the archive for the literal
+  // `data-variant="think"`, missed the bundle's actual `"data-variant": "think"`
+  // spelling, declared the anchor absent and deleted a working feature. These
+  // assertions exist so that cannot happen silently again: if the window is ever
+  // removed on purpose, remove the feature and this lock in the same commit,
+  // with fresh asar evidence in the message.
+  assert.match(code, /think: '\[data-variant="think"\]'/, 'the reasoning anchor is gone');
+  assert.ok(code.includes("thinkRow: '[data-disclosure-row]'"), 'the disclosure-row anchor is gone');
+  assert.ok(code.includes("thinkBody: '[data-disclosure-row] + div'"), 'the reasoning-body anchor is gone');
+  assert.match(code, /var THINK_LINES = 12;/, 'the line window is gone');
+  assert.ok(code.includes('max-height:calc('), 'the line-window clamp is gone');
+});
+
+check('the sticky disclosure header masks without showing', () => {
+  // Upstream pins it (sticky;top:0;z-index:1) and fills it with bg-base. The
+  // fill must stay — a transparent row lets the body scroll through the header
+  // — but it must be the *plate* colour, because a reasoning block sits inside
+  // our card (layer-1), where upstream's bg-base reads as a stray band.
+  const rule = code.match(/'\[data-disclosure-row\]\{background:([^}]+)\}/);
+  assert.ok(rule, 'the sticky-header rule is gone');
+  assert.ok(!/transparent/.test(rule[1]), 'the sticky header stopped masking its body');
+  assert.match(rule[1], /--dshome-plate/, 'the header no longer follows the plate colour');
+  assert.match(code, /--dshome-plate:var\(--dsw-alias-bg-layer-1/, 'nothing sets the plate colour');
 });
 
 check('never relies on hashed CSS-module class names', () => {
