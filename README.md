@@ -1,6 +1,6 @@
 # DSHOME-Plugin
 
-A consolidated web client kit for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): brand theme, conversation card layout, and a VSCode-style turn minimap, in one plugin.
+A consolidated web client kit for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): brand theme, conversation card layout, a VSCode-style turn minimap, and reminder notifications, in one plugin.
 
 Pure client plugin — no host behaviour, no build step, no runtime dependencies.
 
@@ -24,6 +24,38 @@ A canvas strip on the right edge showing a squashed picture of the whole session
 
 - Your messages render in brand blue, assistant replies mid grey, reasoning and tool blocks light grey, matching the real message alignment.
 - The strip is drawn once as a full-length canvas and moved by a transform, so scrolling never repaints it.
+
+### 4. Reminders
+Tells you when something is worth looking up from what you are doing — the client-side port of DSHOME's `dshome/notify` host plugin, rebuilt on state the official client already computes because this bundle has no host half.
+
+- **A finished turn** — the session you are looking at stops running.
+- **A finished member/background session** — any other session the catalog reports as running and then stopped, named by its own label ("成员「复核员」…").
+- **Something is waiting on you** — a pending approval (`kind: 'approval'`) or a model question (`'question'` / `'plan-review'`), with the tool name and reason, or the first question's header.
+
+Sources, all optional and read through `ctx.get` / `ctx.inject`:
+
+| Source | What it supplies |
+|---|---|
+| `sessions.list` | `running`, `origin`, `retainedBy.mainView` (the official "session in view" tag), `displayTitle` |
+| `uiSession.sessionStatus` | `pendingInteraction` per session — the official approval/question projection |
+| `remote` | `api-session/error`, the client's view of a failed turn |
+
+Delivery degrades rather than failing: a system notification when the browser grants it, an in-page toast otherwise, always with a synthesised two-tone chime (WebAudio, no assets) and a tab-title flash while the window is hidden. Waiting reminders are throttled per session (5s), and all member/background reminders share one 5s sound window — the same two rules as the reference, so several members finishing at once do not fire a burst of sound.
+
+Two honest divergences from the reference, both forced by the platform:
+
+- Sounds are synthesised instead of picked from `%WINDIR%\Media` — a web page cannot read those files.
+- There is no client-side `turn/end{reason}` and no client-side background-*job* feed, so failures come from `api-session/error`, and the reference's `job-completed` branch is covered by the member branch.
+
+Notifications need permission: with `permission === 'default'` the plugin asks once on your first click or keypress; if you refuse, every reminder still arrives as a toast, so nothing is silently lost. In the desktop client the renderer already holds the permission, so no prompt appears.
+
+Live handle for inspection and testing (open the console):
+
+```js
+__dshomePluginNotify.status()                     // options, permission, scene count, baselines
+__dshomePluginNotify.emit('turn-completed')       // fire one scene by hand
+__dshomePluginNotify.emit('approval-asked', { body: '工具「pwsh」请求确认：沙箱放行' })
+```
 
 ## Install
 
@@ -51,11 +83,32 @@ window.__dshomePlugin = {
   theme: true,
   conversation: true,
   minimap: true,
+  sidebar: true,
   hideOfficialRail: true,   // hide upstream's own evenly-spaced turn rail
+  notify: true,             // or an object — see below
 };
 ```
 
 `hideOfficialRail` only hides upstream's rail visually and pointer-wise. Nothing in the React tree is touched, so setting it to `false` brings the rail straight back.
+
+`notify` accepts `true`, `false`, or an object. Field names follow DSHOME's own settings schema:
+
+```js
+window.__dshomePlugin = {
+  notify: {
+    enabled: true,               // master switch
+    notifyOnTurnCompletion: true, // the session you are looking at finished
+    notifyOnBackground: true,     // a member/other session finished
+    notifyOnApproval: true,       // an approval is waiting
+    notifyOnUserQuestion: true,   // a model question is waiting
+    sound: true,                  // synthesised chime
+    toast: true,                  // in-page fallback when notifications are unavailable
+    titleFlash: true,             // flash the tab title while the window is hidden
+  },
+};
+```
+
+`notify: false` installs nothing at all — no subscriptions, no listeners, no handle.
 
 ## Design notes
 
@@ -110,8 +163,8 @@ Every feature is a progressive enhancement, invoked inside an error boundary. A 
 npm test
 ```
 
-- `test/selftest.mjs` — 44 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 59 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, and the minimap's real geometry — where it sits, how wide it is, and how it follows a sidebar whose slide is transform-driven — against a DOM double.
+- `test/selftest.mjs` — 50 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
+- `test/domtest.mjs` — 78 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, and how it follows a sidebar whose slide is transform-driven — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
 
 Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
 

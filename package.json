@@ -1,13 +1,14 @@
 {
   "name": "dshome-plugin",
   "version": "0.1.0",
-  "description": "DSHOME Plugin — brand theme, conversation card layout, and a VSCode-style turn minimap for DeepSeek Harness. Pure client plugin, no build step.",
+  "description": "DSHOME Plugin — brand theme, conversation card layout, a VSCode-style turn minimap, and turn/member/approval reminders for DeepSeek Harness. Pure client plugin, no build step.",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
     "theme",
-    "minimap"
+    "minimap",
+    "notifications"
   ],
   "type": "module",
   "main": "lib/index.js",

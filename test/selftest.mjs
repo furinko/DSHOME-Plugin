@@ -99,7 +99,7 @@ check('declares name, inject and apply', () => {
 });
 
 check('each feature is isolated behind safe()', () => {
-  for (const feature of ['applyTheme', 'applyConversation', 'applySidebar', 'applyMinimap']) {
+  for (const feature of ['applyTheme', 'applyConversation', 'applySidebar', 'applyMinimap', 'applyNotify']) {
     assert.ok(
       new RegExp(`safe\\([\\s\\S]{0,120}${feature}`).test(code),
       `${feature} is not wrapped in safe()`,
@@ -201,6 +201,59 @@ check('the collapsed rail keeps the centred row', () => {
 check('the sidebar feature is switchable and wired', () => {
   assert.match(code, /sidebar: true/, 'the feature is not enabled by default');
   assert.match(code, /if \(o\.sidebar\)/, 'the feature is never applied');
+});
+
+// ── notify: the client-side port of the reference's host reminder ───────────
+console.log('\n== notify ==');
+
+check('the notify feature is switchable and wired', () => {
+  assert.match(code, /notify: true/, 'the feature is not enabled by default');
+  assert.match(code, /if \(o\.notify\)/, 'the feature is never applied');
+  assert.match(code, /function applyNotify\(ctx, rawOptions\)/, 'the entry point is gone');
+});
+
+check('every upstream read is optional', () => {
+  // The bundle carries no host half, so its reminder sources are client services
+  // it does not declare: `slots` is the only hard inject. A missing service has to
+  // mean "one scene fewer", never "the plugin failed to activate" — which is why
+  // each source goes through ctx.get / ctx.inject inside applyNotify.
+  for (const service of ['sessions', 'uiSession', 'remote']) {
+    assert.ok(code.includes(`ctx.get('${service}')`), `${service} is not read through ctx.get`);
+  }
+  assert.match(code, /ctx\.inject\(\[name\], function \(\) \{ attach\(\); \}\)/,
+    'late-provided services are sampled once instead of awaited');
+  assert.match(code, /wired = \{ catalog: false, status: false, remote: false \}/,
+    'attachment is not idempotent');
+});
+
+check('the reference copy and both throttles are carried over', () => {
+  // Copy is the reference's `COPY` verbatim (`packages/dshome/lib/host/notify.js`),
+  // so the two products read alike; the 5s windows are its `deliverAttention` and
+  // its contract-v2 member sound window.
+  for (const scene of [
+    'turn-completed', 'turn-failed', 'member-completed',
+    'member-failed', 'approval-asked', 'user-question',
+  ]) {
+    assert.ok(code.includes(`'${scene}':`), `scene ${scene} lost its copy`);
+  }
+  assert.match(code, /var NOTIFY_THROTTLE_MS = 5000/, 'the per-session window is gone');
+  assert.match(code, /var NOTIFY_SOUND_WINDOW_MS = 5000/, 'the member sound window is gone');
+});
+
+check('delivery degrades instead of failing', () => {
+  // System notification when the browser grants it, in-page toast otherwise, and
+  // a title flash while the tab is hidden. A refused notification must not eat the
+  // reminder — that is what the `return false` path is for.
+  assert.match(code, /if \(!shown\) toast\(title, body\)/, 'the toast fallback is not wired');
+  assert.match(code, /document\.visibilityState === 'visible'\) return/, 'the title flash ignores focus');
+  assert.match(code, /function notificationCtor\(\)/, 'the Notification probe is gone');
+});
+
+check('the README documents the notify option', () => {
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  assert.match(readme, /notify/, 'the feature is undocumented');
+  assert.match(readme, /notifyOnTurnCompletion/, 'the per-category switches are undocumented');
+  assert.match(readme, /__dshomePluginNotify/, 'the live handle is undocumented');
 });
 
 // ── minimap geometry: the filmstrip rule ────────────────────────────────────

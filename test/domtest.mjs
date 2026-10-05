@@ -35,7 +35,11 @@ class El {
     this.tagName = tag.toUpperCase();
     this.attributes = {};
     this.children = [];
-    this.parent = null;
+    // Browser-faithful property name: a real Element has `parentNode`, not
+    // `parent`. Modelling the wrong one lets plugin code that reads `parent`
+    // pass here and break in the browser — which is what happened to the toast
+    // container while this double still spelled it `parent`.
+    this.parentNode = null;
     this.style = {};
     this.textContent = '';
     this.listeners = {};
@@ -61,13 +65,13 @@ class El {
   getAttribute(n) { return n in this.attributes ? this.attributes[n] : null; }
   hasAttribute(n) { return n in this.attributes; }
   removeAttribute(n) { delete this.attributes[n]; }
-  appendChild(c) { c.parent = this; this.children.push(c); return c; }
+  appendChild(c) { c.parentNode = this; this.children.push(c); return c; }
   append(...cs) { cs.forEach((c) => this.appendChild(c)); }
   remove() {
-    if (!this.parent) return;
-    const i = this.parent.children.indexOf(this);
-    if (i >= 0) this.parent.children.splice(i, 1);
-    this.parent = null;
+    if (!this.parentNode) return;
+    const i = this.parentNode.children.indexOf(this);
+    if (i >= 0) this.parentNode.children.splice(i, 1);
+    this.parentNode = null;
   }
   addEventListener(t, fn) { (this.listeners[t] ||= []).push(fn); }
   removeEventListener() {}
@@ -83,7 +87,7 @@ class El {
     let node = this;
     while (node) {
       if (node.matches?.(sel)) return node;
-      node = node.parent;
+      node = node.parentNode;
     }
     return null;
   }
@@ -140,12 +144,12 @@ function matches(node, selector) {
   const parts = selector.trim().split(/\s+/);
   if (parts.length > 1) {
     if (!matches(node, parts[parts.length - 1])) return false;
-    let up = node.parent;
+    let up = node.parentNode;
     for (let i = parts.length - 2; i >= 0; i -= 1) {
       let found = false;
       while (up) {
         if (matches(up, parts[i])) { found = true; break; }
-        up = up.parent;
+        up = up.parentNode;
       }
       if (!found) return false;
     }
@@ -1473,6 +1477,288 @@ check('the tip stays quiet while the layout gate is withholding the picture', ()
   hover(shell, shell.clientHeight / 2);
   assert.ok(!tipOf(shell).hasAttribute('data-show'),
     'the tip must not name a block that is not on the canvas');
+});
+
+// ── notify reminders, executed ──────────────────────────────────────────────
+//
+// The feature derives its reminders from two official client stores
+// (`sessions.list` and `uiSession.sessionStatus`) plus one Remote event. Every
+// check below drives those doubles through a real transition and then reads what
+// the delivery layer produced — because "the diff looks right" is not evidence
+// that a finished turn reaches a notification.
+console.log('\n== notify (runtime) ==');
+
+/** A minimal snapshot store: `{getSnapshot, subscribe}` plus a test-only `set`. */
+function makeStore(initial) {
+  let value = initial;
+  const listeners = new Set();
+  return {
+    getSnapshot: () => value,
+    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+    set(next) { value = next; listeners.forEach((fn) => fn()); },
+    listenerCount: () => listeners.size,
+  };
+}
+
+/**
+ * Load the real bundle against a fake client: the two official stores, the
+ * Remote namespace, and recording Notification/AudioContext constructors.
+ */
+function notifyWorld(config = {}) {
+  const doc = installGlobals();
+  globalThis.window.__dshomePlugin = config.options;
+  const catalog = makeStore({ ids: [], byId: {}, phase: 'ready' });
+  const status = makeStore(new Map());
+  const errorHandlers = [];
+  const remote = {
+    $on(name, fn) {
+      if (name === 'api-session/error') errorHandlers.push(fn);
+      return () => {};
+    },
+  };
+  const notifications = [];
+  class FakeNotification {
+    constructor(title, init) {
+      this.title = title;
+      Object.assign(this, init);
+      notifications.push(this);
+    }
+    close() { this.closed = true; }
+    addEventListener() {}
+  }
+  FakeNotification.permission = config.permission || 'granted';
+  FakeNotification.requestPermission = () => Promise.resolve('granted');
+  const tones = [];
+  class FakeAudioContext {
+    constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
+    createOscillator() {
+      const osc = {
+        type: '', frequency: { value: 0 },
+        connect() {}, start() {}, stop() { tones.push(osc.frequency.value); },
+      };
+      return osc;
+    }
+    createGain() {
+      return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} };
+    }
+    close() {}
+  }
+  globalThis.window.Notification = FakeNotification;
+  globalThis.window.AudioContext = FakeAudioContext;
+  const services = {
+    sessions: { list: catalog },
+    uiSession: { sessionStatus: status },
+    remote,
+  };
+  const ctx = { get: (name) => services[name], inject() {} };
+  loaded.factory(provide).apply(ctx);
+  return {
+    doc, catalog, status, errorHandlers, notifications, tones, ctx,
+    api: globalThis.window.__dshomePluginNotify,
+    teardown: globalThis.window.__dshomePluginNotifyTeardown,
+    catalogSet(byId, phase = 'ready') {
+      catalog.set({ ids: Object.keys(byId), byId, phase });
+    },
+    statusSet(entries) { status.set(new Map(entries)); },
+    reapply() { loaded.factory(provide).apply(ctx); },
+    toastCount: () => walk(doc.body).filter((n) => n.className === 'dshome-plugin-notify-toast').length,
+  };
+}
+
+/** A catalog row, with the retention tag that marks the session the user sees. */
+function catalogRow(over) {
+  return Object.assign({ running: true, retainedBy: { mainView: 1 }, displayTitle: '会话' }, over);
+}
+
+check('a finished turn raises one reminder naming the session', () => {
+  const w = notifyWorld();
+  w.catalogSet({ s1: catalogRow({ id: 's1', displayTitle: 'DSHOME插件提醒功能补全' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false, displayTitle: 'DSHOME插件提醒功能补全' }) });
+  assert.equal(w.notifications.length, 1, 'exactly one reminder per finished turn');
+  assert.equal(w.notifications[0].title, 'DSHOME 回合完成');
+  assert.match(w.notifications[0].body, /DSHOME插件提醒功能补全/);
+});
+
+check('a member session finishing is announced with its label', () => {
+  // The reference groups background jobs and member (subagent) turns together;
+  // client-side the member branch is the one with a catalog row to name.
+  const w = notifyWorld();
+  const row = (running) => catalogRow({
+    id: 'm1', running, origin: 'subagent', displayTitle: '复核员', retainedBy: {},
+  });
+  w.catalogSet({ m1: row(true) });
+  w.catalogSet({ m1: row(false) });
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.notifications[0].title, 'DSHOME 成员任务完成');
+  assert.match(w.notifications[0].body, /成员「复核员」/);
+});
+
+check('the first ready catalog is a baseline, and later turns still fire', () => {
+  const w = notifyWorld();
+  const row = (running) => catalogRow({ id: 's1', running });
+  // A catalog that arrives `pending` is partial: it seeds the baseline, and the
+  // first ready snapshot must not replay everything already finished.
+  w.catalogSet({ s1: row(false) }, 'pending');
+  w.catalogSet({ s1: row(false) }, 'ready');
+  assert.equal(w.notifications.length, 0, 'history is not a reminder');
+  w.catalogSet({ s1: row(true) });
+  w.catalogSet({ s1: row(false) });
+  assert.equal(w.notifications.length, 1, 'the baseline gate must not disable the feature');
+});
+
+check('a pending approval is announced, and repeats inside 5s do not stack', () => {
+  const w = notifyWorld();
+  w.statusSet([['s1', { pendingInteraction: { kind: 'approval', toolName: 'pwsh', reason: '沙箱放行' } }]]);
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.notifications[0].title, 'DSHOME 需要你确认');
+  assert.match(w.notifications[0].body, /工具「pwsh」/);
+  w.statusSet([]);                                            // the user answered
+  w.statusSet([['s1', { pendingInteraction: { kind: 'approval', toolName: 'pwsh' } }]]);
+  assert.equal(w.notifications.length, 1, 'a second prompt within 5s must be swallowed');
+});
+
+check('a model question carries its first question text', () => {
+  const w = notifyWorld();
+  w.statusSet([['s1', {
+    pendingInteraction: { kind: 'question', questions: [{ header: '选哪个模型', question: '请选择' }] },
+  }]]);
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.notifications[0].title, 'DSHOME 有个问题等你回答');
+  assert.equal(w.notifications[0].body, '选哪个模型');
+});
+
+check('a plan review waits like a question', () => {
+  const w = notifyWorld();
+  w.statusSet([['s1', {
+    pendingInteraction: { kind: 'plan-review', questions: [{ header: '计划待确认' }] },
+  }]]);
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.notifications[0].title, 'DSHOME 有个问题等你回答');
+});
+
+check('a category switch silences only its own scene', () => {
+  const w = notifyWorld({ options: { notify: { notifyOnApproval: false } } });
+  w.statusSet([['s1', { pendingInteraction: { kind: 'approval', toolName: 'pwsh' } }]]);
+  assert.equal(w.notifications.length, 0, 'approval is switched off');
+  w.statusSet([['s2', { pendingInteraction: { kind: 'question', questions: [{ header: 'Q' }] } }]]);
+  assert.equal(w.notifications.length, 1, 'questions are still on');
+});
+
+check('notify:false leaves no subscription and no handle', () => {
+  const w = notifyWorld({ options: { notify: false } });
+  assert.equal(w.api, undefined, 'a switched-off feature must not publish a handle');
+  assert.equal(w.catalog.listenerCount(), 0, 'and must not subscribe');
+  w.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(w.notifications.length, 0);
+});
+
+check('options accept true, false and an object', () => {
+  assert.ok(notifyWorld({ options: { notify: true } }).api, 'true = on with defaults');
+  assert.equal(notifyWorld({ options: { notify: false } }).api, undefined, 'false = off');
+  const tuned = notifyWorld({ options: { notify: { sound: false } } });
+  assert.equal(tuned.api.status().options.sound, false);
+  assert.equal(tuned.api.status().options.notifyOnTurnCompletion, true,
+    'unspecified fields keep their defaults');
+});
+
+check('without notification rights the reminder still lands as an in-page toast', () => {
+  const w = notifyWorld({ permission: 'denied' });
+  globalThis.document.title = 'DSH';
+  w.catalogSet({ s1: catalogRow({ id: 's1', displayTitle: 'X' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false, displayTitle: 'X' }) });
+  assert.equal(w.notifications.length, 0, 'a denied permission must not fabricate one');
+  assert.equal(w.toastCount(), 1, 'the toast is the fallback');
+  assert.match(globalThis.document.title, /DSHOME 回合完成/, 'and the tab title carries the flash');
+});
+
+check('member reminders share one 5s sound window', () => {
+  const w = notifyWorld();
+  const rows = (running) => ({
+    m1: catalogRow({ id: 'm1', running, origin: 'subagent', displayTitle: 'm1', retainedBy: {} }),
+    m2: catalogRow({ id: 'm2', running, origin: 'subagent', displayTitle: 'm2', retainedBy: {} }),
+  });
+  w.catalogSet(rows(true));
+  w.catalogSet(rows(false));
+  assert.equal(w.notifications.length, 2, 'both members are announced');
+  assert.equal(w.tones.length, 2, 'but only the first one sounds (two tones of one chime)');
+});
+
+check('sound is a switch, not an obligation', () => {
+  const w = notifyWorld({ options: { notify: { sound: false } } });
+  w.api.emit('turn-completed');
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.tones.length, 0);
+});
+
+check('a session error is reported as a failed turn', () => {
+  const w = notifyWorld();
+  w.catalogSet({ s1: catalogRow({ id: 's1', displayTitle: 'X' }) });
+  assert.equal(w.errorHandlers.length, 1, 'the feature must listen for host failures');
+  w.errorHandlers.forEach((fn) => fn('s1', 'model call failed'));
+  assert.equal(w.notifications.length, 1);
+  assert.equal(w.notifications[0].title, 'DSHOME 回合失败');
+});
+
+check('teardown drops every subscription', () => {
+  const w = notifyWorld();
+  assert.equal(w.catalog.listenerCount(), 1, 'the catalog is watched');
+  w.teardown();
+  assert.equal(w.catalog.listenerCount(), 0, 'teardown must unsubscribe');
+  w.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(w.notifications.length, 0);
+});
+
+check('re-applying tears the previous pass down instead of stacking', () => {
+  // A client hot reload re-evaluates the bundle and calls apply() again while the
+  // previous pass still holds subscriptions; without the re-entrancy guard every
+  // reminder would arrive twice.
+  const w = notifyWorld();
+  w.reapply();
+  assert.equal(w.catalog.listenerCount(), 1, 'still exactly one subscription');
+  w.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(w.notifications.length, 1, 'one reminder, not two');
+});
+
+check('the live handle can fire a scene by hand', () => {
+  const w = notifyWorld();
+  assert.equal(typeof w.api.emit, 'function');
+  w.api.emit('turn-completed');
+  assert.equal(w.notifications.length, 1);
+  assert.ok(w.api.status().scenes.includes('approval-asked'), 'status lists the scenes');
+});
+
+check('repeated toasts share one container and are removed on teardown', () => {
+  // The container is remembered across toasts. Reading `element.parent` to test
+  // that is what a real browser would not have: a real Element exposes
+  // `parentNode`, so the guard was false every time and each toast appended a new
+  // container to <body> for the life of the page.
+  const w = notifyWorld({ permission: 'denied' });
+  w.api.emit('turn-completed');
+  w.api.emit('approval-asked');
+  w.api.emit('user-question');
+  const stacks = walk(w.doc.body).filter((n) => n.className === 'dshome-plugin-notify-stack');
+  assert.equal(stacks.length, 1, `a browser would leak one container per toast, got ${stacks.length}`);
+  assert.equal(stacks[0].children.length, 3, 'and every reminder is still in it');
+  w.teardown();
+  assert.equal(
+    walk(w.doc.body).filter((n) => n.className === 'dshome-plugin-notify-stack').length, 0,
+    'teardown takes the container with it',
+  );
+});
+
+check('a localized approval reason never reads as [object Object]', () => {
+  // `displayReason` is a locale token (see dsh-client-ui-approval's
+  // `resolveReason`), not a string; only the raw `reason` may be interpolated.
+  const w = notifyWorld();
+  w.statusSet([['s1', {
+    pendingInteraction: { kind: 'approval', toolName: 'pwsh', displayReason: { key: 'needs.module' } },
+  }]]);
+  assert.equal(w.notifications.length, 1);
+  assert.ok(!w.notifications[0].body.includes('[object'),
+    `notification body leaked a stringified token: ${w.notifications[0].body}`);
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);
