@@ -256,6 +256,16 @@ check('the README documents the notify option', () => {
   assert.match(readme, /__dshomePluginNotify/, 'the live handle is undocumented');
 });
 
+check('a feature that cannot fire says so in-page, not only in the console', () => {
+  // All three sources are optional reads, so "nothing attached" is a legal state
+  // that must not look identical to "working": the gap notice is the only signal
+  // an owner who never opens a console can see.
+  assert.match(code, /function notifyWiringGap\(wired\)/, 'the gap check is gone');
+  assert.match(code, /var NOTIFY_WIRING_GRACE_MS = 5000/, 'the grace window is gone');
+  assert.match(code, /var gap = notifyWiringGap\(wired\);\s*\n\s*if \(gap\) toast\(gap\.title, gap\.body\);/,
+    'the gap is computed but never shown');
+});
+
 // ── minimap geometry: the filmstrip rule ────────────────────────────────────
 console.log('\n== minimap geometry ==');
 

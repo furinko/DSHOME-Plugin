@@ -1545,7 +1545,14 @@ function notifyWorld(config = {}) {
   }
   globalThis.window.Notification = FakeNotification;
   globalThis.window.AudioContext = FakeAudioContext;
-  const services = {
+  // The bundle schedules its "did anything attach?" notice through window
+  // timers. The shared double never fires them, so they are recorded here and
+  // released on demand — otherwise that notice could never be asserted at all.
+  const timers = new Map();
+  let timerId = 0;
+  globalThis.window.setTimeout = (fn, delay) => { timerId += 1; timers.set(timerId, { fn, delay }); return timerId; };
+  globalThis.window.clearTimeout = (id) => { timers.delete(id); };
+  const services = config.bare ? {} : {
     sessions: { list: catalog },
     uiSession: { sessionStatus: status },
     remote,
@@ -1561,6 +1568,11 @@ function notifyWorld(config = {}) {
     },
     statusSet(entries) { status.set(new Map(entries)); },
     reapply() { loaded.factory(provide).apply(ctx); },
+    /** Run the timers registered for one delay (all of them when omitted). */
+    fireTimers(delay) {
+      const due = [...timers.entries()].filter(([, t]) => delay === undefined || t.delay === delay);
+      due.forEach(([id, t]) => { timers.delete(id); t.fn(); });
+    },
     toastCount: () => walk(doc.body).filter((n) => n.className === 'dshome-plugin-notify-toast').length,
   };
 }
@@ -1759,6 +1771,31 @@ check('a localized approval reason never reads as [object Object]', () => {
   assert.equal(w.notifications.length, 1);
   assert.ok(!w.notifications[0].body.includes('[object'),
     `notification body leaked a stringified token: ${w.notifications[0].body}`);
+});
+
+check('a page with no reminder source says so once instead of failing silently', () => {
+  // Every source is an optional read, but all three missing means no reminder can
+  // ever fire. Without this the only witness would be a console log, which is
+  // exactly the kind of "silent success" this plugin refuses to ship.
+  const w = notifyWorld({ bare: true });
+  assert.equal(w.toastCount(), 0, 'nothing is said before the grace window');
+  w.fireTimers(5000);
+  assert.equal(w.toastCount(), 1, 'the gap must be visible without a console');
+  const title = walk(w.doc.body).find((n) => n.className === 'dshome-plugin-notify-toast-title');
+  assert.equal(title.textContent, '提醒功能未接入');
+});
+
+check('a wired page stays silent through the grace window', () => {
+  const w = notifyWorld();
+  w.fireTimers(5000);
+  assert.equal(w.toastCount(), 0, 'no gap, no notice');
+});
+
+check('teardown cancels the wiring notice', () => {
+  const w = notifyWorld({ bare: true });
+  w.teardown();
+  w.fireTimers(5000);
+  assert.equal(w.toastCount(), 0, 'a torn-down feature must not speak');
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);

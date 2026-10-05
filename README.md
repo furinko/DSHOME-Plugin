@@ -49,12 +49,20 @@ Two honest divergences from the reference, both forced by the platform:
 
 Notifications need permission: with `permission === 'default'` the plugin asks once on your first click or keypress; if you refuse, every reminder still arrives as a toast, so nothing is silently lost. In the desktop client the renderer already holds the permission, so no prompt appears.
 
-Live handle for inspection and testing (open the console):
+### Using it — nothing to operate
+
+The reminders are automatic; there is no console step and no button to press.
+
+1. Reload the page once after installing or updating this plugin. The client half is hot-replaced, but a page that is already open keeps the copy it booted with until it is reloaded.
+2. Use the client normally. Send a message and let the reply finish: that is a turn completion, and it announces itself — a system notification, or an in-page card in the bottom-right corner when the browser has not granted notifications (with a tab-title flash while the window is in the background). A finished member session, a pending approval and a waiting question announce themselves the same way.
+
+If a reminder never appears, the feature reports its own gap instead of failing quietly: when none of the three sources attach within five seconds, one in-page card reads「提醒功能未接入」with the missing services named.
+
+For troubleshooting only, a handle is published on the page:
 
 ```js
-__dshomePluginNotify.status()                     // options, permission, scene count, baselines
+__dshomePluginNotify.status()                     // options, permission, scenes, baselines
 __dshomePluginNotify.emit('turn-completed')       // fire one scene by hand
-__dshomePluginNotify.emit('approval-asked', { body: '工具「pwsh」请求确认：沙箱放行' })
 ```
 
 ## Install
