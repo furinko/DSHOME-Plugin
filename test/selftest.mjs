@@ -270,6 +270,22 @@ check('a feature that cannot fire says so in-page, not only in the console', () 
     'the gap is computed but never shown');
 });
 
+check('设置卡片：六个开关都挂在官方设置分区上', () => {
+  // 面板上要"看得见、点得动"：注册进 `settings.section`（官方设置页给插件的
+  // list 槽位），值存浏览器本地。锁住字段名，免得改了名字界面与代码对不上。
+  assert.match(code, /slots\.inject\('settings\.section'/, '没注册到设置分区');
+  assert.match(code, /id: 'dshome-notify'/, '分区 id 丢了');
+  assert.match(code, /label: function \(\) \{ return '提醒'; \}/, '分区名丢了');
+  assert.match(code, /var NOTIFY_STORE_KEY = 'dshome-plugin\.notify\.v1'/, '存储键丢了');
+  for (const field of [
+    'enabled', 'notifyOnTurnCompletion', 'notifyOnBackground',
+    'notifyOnApproval', 'notifyOnUserQuestion', 'sound',
+  ]) {
+    assert.ok(code.includes(`field: '${field}'`), `卡片少了这一行：${field}`);
+  }
+  assert.match(code, /set: function \(patch\)/, '句柄缺少写回入口');
+});
+
 // ── minimap geometry: the filmstrip rule ────────────────────────────────────
 console.log('\n== minimap geometry ==');
 

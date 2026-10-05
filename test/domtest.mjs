@@ -294,6 +294,8 @@ check('registers with the module loader', () => {
 
 const provide = (id) => {
   if (id === 'react/jsx-runtime') return { jsx: () => null };
+  // 设置卡片用 useState 触发重渲染；没有它组件一渲染就崩。
+  if (id === 'react') return { useState: (init) => [typeof init === 'function' ? init() : init, () => {}] };
   return { FishLogo: () => null };
 };
 
@@ -1828,6 +1830,87 @@ check('teardown cancels the wiring notice', () => {
   w.teardown();
   w.fireTimers(5000);
   assert.equal(w.toastCount(), 0, 'a torn-down feature must not speak');
+});
+
+// ── 设置页卡片 ──────────────────────────────────────────────────────────────
+//
+// 卡片注册进官方设置页的 `settings.section`（list 协议）。这里用记录型 jsx
+// 把每次 createElement 记下来，于是"渲染了几行、点了哪个开关"都能断言——
+// 只断言"注册了"是不够的，那种锁抓不到"注册了但渲染不出来"。
+console.log('\n== 设置卡片（运行） ==');
+
+function recordingProvide(jsxCalls) {
+  return (id) => {
+    if (id === 'react/jsx-runtime') {
+      return { jsx: (type, props) => { jsxCalls.push({ type, props }); return { type, props }; } };
+    }
+    if (id === 'react') {
+      return { useState: (init) => [typeof init === 'function' ? init() : init, () => {}] };
+    }
+    return { FishLogo: () => null };
+  };
+}
+
+function settingsWorld() {
+  const doc = installGlobals();
+  const registrations = [];
+  const jsxCalls = [];
+  const slots = {
+    inject(name, fn) { return fn(); },
+    register(spec, component) { registrations.push({ spec, component }); return () => {}; },
+  };
+  const ctx = { get: (name) => (name === 'slots' ? slots : undefined), inject() {}, slots };
+  const mount = () => loaded.factory(recordingProvide(jsxCalls)).apply(ctx);
+  mount();
+  return {
+    doc, registrations, jsxCalls, ctx, mount,
+    section: () => registrations.filter((r) => r.spec.name === 'settings.section').pop(),
+    api: () => globalThis.window.__dshomePluginNotify,
+    switches: () => jsxCalls.filter((c) => c.type === 'button' && c.props && c.props['data-dshome-notify-field']),
+    toasts: () => walk(doc.body).filter((n) => n.className === 'dshome-plugin-notify-toast').length,
+  };
+}
+
+check('设置页注册了「提醒」分区，六行开关都在', () => {
+  const w = settingsWorld();
+  const section = w.section();
+  assert.ok(section, '没有注册 settings.section');
+  assert.equal(section.spec.id, 'dshome-notify', '分区 id');
+  assert.equal(section.spec.label(), '提醒', '导航上的名字');
+  section.component();                                   // 真渲染一次
+  assert.deepEqual(
+    w.switches().map((c) => c.props['data-dshome-notify-field']),
+    ['enabled', 'notifyOnTurnCompletion', 'notifyOnBackground', 'notifyOnApproval', 'notifyOnUserQuestion', 'sound'],
+    '六行开关的字段名与顺序',
+  );
+});
+
+check('卡片上点一下：立刻生效并落本地存储', () => {
+  const w = settingsWorld();
+  w.section().component();
+  const target = w.switches().find((c) => c.props['data-dshome-notify-field'] === 'notifyOnTurnCompletion');
+  target.props.onClick();
+  assert.equal(w.api().status().options.notifyOnTurnCompletion, false, '内存里立刻生效');
+  const stored = JSON.parse(globalThis.localStorage.getItem('dshome-plugin.notify.v1'));
+  assert.equal(stored.notifyOnTurnCompletion, false, '写进本地存储');
+});
+
+check('卡片上关掉的总开关，重载插件后仍然生效', () => {
+  const w = settingsWorld();
+  w.api().set({ enabled: false });
+  w.mount();                                             // 同一页面重新装载（模拟刷新后重读）
+  assert.equal(w.api().status().options.enabled, false, '重载后仍读到关');
+  w.api().emit('turn-completed');
+  assert.equal(w.toasts(), 0, '总开关关掉后不再弹卡片');
+  assert.ok(w.api(), '但功能仍在（卡片要能把开关打开回来）');
+});
+
+check('卡片改的回值不会被 notify:false 覆盖', () => {
+  // 代码里的全局是"默认值"，用户在卡片上点过的才是"当前值"。
+  const w = settingsWorld();
+  w.api().set({ sound: false });
+  w.mount();
+  assert.equal(w.api().status().options.sound, false);
 });
 
 console.log(`\n${failed === 0 ? 'PASS' : 'FAIL'}  ${passed}/${passed + failed}`);

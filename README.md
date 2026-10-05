@@ -58,6 +58,10 @@ The reminders are automatic; there is no console step and no button to press.
 
 If a reminder never appears, the feature reports its own gap instead of failing quietly: when none of the three sources attach within five seconds, one in-page card reads「提醒功能未接入」with the missing services named.
 
+### The switches live in Settings
+
+Open the client's settings page: the plugin registers a **提醒** section (the official `settings.section` slot) with six switches — master, turn completion, member sessions, approvals, questions, and the chime. Clicking one takes effect immediately and is remembered in this browser (`localStorage`, key `dshome-plugin.notify.v1`), so no code editing and no console are involved. The master switch only silences delivery; the section itself stays, so it can always be turned back on.
+
 For troubleshooting only, a handle is published on the page:
 
 ```js
