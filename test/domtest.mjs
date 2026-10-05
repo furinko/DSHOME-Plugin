@@ -1507,6 +1507,10 @@ function makeStore(initial) {
 function notifyWorld(config = {}) {
   const doc = installGlobals();
   globalThis.window.__dshomePlugin = config.options;
+  // 默认模拟"页面不在前台"——提醒的主场景就是主人已经切走。前台/后台的策略
+  // 差异由专门的两条锁覆盖（见下方 in-front / background 两例）。
+  doc.visibilityState = config.visibility || 'hidden';
+  doc.hasFocus = () => config.visibility !== 'hidden';
   const catalog = makeStore({ ids: [], byId: {}, phase: 'ready' });
   const status = makeStore(new Map());
   const errorHandlers = [];
@@ -1773,6 +1777,34 @@ check('a localized approval reason never reads as [object Object]', () => {
     `notification body leaked a stringified token: ${w.notifications[0].body}`);
 });
 
+check('页面在前台时只弹页内卡片，不重复构造系统通知', () => {
+  const w = notifyWorld({ visibility: 'visible' });
+  w.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(w.toastCount(), 1, '前台必须看得见卡片');
+  assert.equal(w.notifications.length, 0, '前台不必再弹系统通知');
+});
+
+check('页面不在前台时，卡片与系统通知一起给', () => {
+  const w = notifyWorld({ visibility: 'hidden' });
+  w.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  w.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(w.notifications.length, 1, '切走了就得靠系统通知');
+  assert.equal(w.toastCount(), 1, '卡片留痕，切回来还能看到');
+});
+
+check('systemNotification 可强制 always / never', () => {
+  const forced = notifyWorld({ visibility: 'visible', options: { notify: { systemNotification: 'always' } } });
+  forced.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  forced.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(forced.notifications.length, 1, 'always 应强制发系统通知');
+  const off = notifyWorld({ visibility: 'hidden', options: { notify: { systemNotification: 'never' } } });
+  off.catalogSet({ s1: catalogRow({ id: 's1' }) });
+  off.catalogSet({ s1: catalogRow({ id: 's1', running: false }) });
+  assert.equal(off.notifications.length, 0, 'never 应只留卡片');
+  assert.equal(off.toastCount(), 1);
+});
+
 check('a page with no reminder source says so once instead of failing silently', () => {
   // Every source is an optional read, but all three missing means no reminder can
   // ever fire. Without this the only witness would be a console log, which is
@@ -1782,7 +1814,7 @@ check('a page with no reminder source says so once instead of failing silently',
   w.fireTimers(5000);
   assert.equal(w.toastCount(), 1, 'the gap must be visible without a console');
   const title = walk(w.doc.body).find((n) => n.className === 'dshome-plugin-notify-toast-title');
-  assert.equal(title.textContent, '提醒功能未接入');
+  assert.match(title.textContent, /提醒功能未接入/, '卡片标题要说明缺什么');
 });
 
 check('a wired page stays silent through the grace window', () => {

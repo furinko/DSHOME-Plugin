@@ -241,12 +241,16 @@ check('the reference copy and both throttles are carried over', () => {
 });
 
 check('delivery degrades instead of failing', () => {
-  // System notification when the browser grants it, in-page toast otherwise, and
-  // a title flash while the tab is hidden. A refused notification must not eat the
-  // reminder — that is what the `return false` path is for.
-  assert.match(code, /if \(!shown\) toast\(title, body\)/, 'the toast fallback is not wired');
-  assert.match(code, /document\.visibilityState === 'visible'\) return/, 'the title flash ignores focus');
-  assert.match(code, /function notificationCtor\(\)/, 'the Notification probe is gone');
+  // 2026-10-06 实测教训：**构造成功 ≠ 已经弹给用户看**。Windows 上的 Electron
+  // 渲染进程可以在没有应用标识的情况下构造出 Notification，却被系统静默丢弃
+  // ——主人当时拿到的正是"只有声音、没有弹窗"。现在页内卡片**无条件**投递
+  // （它不会被系统丢掉），系统通知只做加法：页面不在前台时才补一发。
+  assert.match(code, /toast\(title, body\);\s*\n\s*var mode = opts\.systemNotification;/,
+    '页内卡片不再是无条件投递');
+  assert.match(code, /mode === 'always' \|\| \(mode === 'auto' && !inFront\)/,
+    '系统通知不再按前后台决定');
+  assert.match(code, /if \(!inFront\) flashTitle\(title\);/, '标题闪烁忽略了前后台');
+  assert.match(code, /function notificationCtor\(\)/, 'Notification 探测没了');
 });
 
 check('the README documents the notify option', () => {
