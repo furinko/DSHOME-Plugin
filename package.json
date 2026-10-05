@@ -29,6 +29,7 @@
   },
   "files": [
     "lib",
+    "locale",
     "cordis.patch.yml",
     "README.md"
   ],

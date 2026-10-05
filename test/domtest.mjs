@@ -307,15 +307,30 @@ check('factory returns a plugin with name, inject and apply', () => {
 // ── style / conversation / minimap attach paths ─────────────────────────────
 console.log('\n== attach ==');
 
-check('apply() installs conversation and minimap stylesheets', () => {
+check('apply() installs conversation, sidebar and minimap stylesheets', () => {
   const doc = installGlobals();
   const plugin = loaded.factory(provide);
   // ctx.get('theme') returns undefined and ctx.slots is absent: the theme
-  // feature must degrade instead of throwing, and the other two must still run.
+  // feature must degrade instead of throwing, and the others must still run.
   plugin.apply({ get: () => undefined });
   const markers = doc.head.children.map((c) => c.getAttribute('data-plugin'));
   assert.ok(markers.includes('dshome-plugin-conversation'), 'conversation stylesheet missing');
+  assert.ok(markers.includes('dshome-plugin-sidebar'), 'sidebar stylesheet missing');
   assert.ok(markers.includes('dshome-plugin-minimap'), 'minimap stylesheet missing');
+});
+
+check('sidebar stylesheet stacks the foot rows and keeps the collapsed rail', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const css = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-sidebar').textContent;
+  // The container is named through the slot's own anchor — `renderSlot()` wraps
+  // every outlet in `<div data-slot="<key>" style="display:contents">` — and
+  // never through a hashed CSS-Module class, which changes on upstream rebuilds.
+  assert.match(css, /div:has\(>\[data-slot="sidebar\.footer\.action"\]\)/);
+  assert.match(css, /flex-direction:column;align-items:stretch/);
+  // Collapsed mode must outrank upstream's `._collapsed ._footerActions` (0,2,0).
+  assert.match(css, /\[data-sidebar-collapsed="true"\][^{]*\{flex-direction:row/);
 });
 
 check('apply() attaches the minimap strip to the body', () => {

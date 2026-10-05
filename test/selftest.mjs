@@ -99,7 +99,7 @@ check('declares name, inject and apply', () => {
 });
 
 check('each feature is isolated behind safe()', () => {
-  for (const feature of ['applyTheme', 'applyConversation', 'applyMinimap']) {
+  for (const feature of ['applyTheme', 'applyConversation', 'applySidebar', 'applyMinimap']) {
     assert.ok(
       new RegExp(`safe\\([\\s\\S]{0,120}${feature}`).test(code),
       `${feature} is not wrapped in safe()`,
@@ -156,6 +156,51 @@ check('card selector covers tool calls and system injections', () => {
   for (const kind of ['tool-call', 'context', 'system-prompt', 'command']) {
     assert.ok(code.includes(`'${kind}'`), `missing ${kind}`);
   }
+});
+
+// ── sidebar foot: the slot anchor names the container ───────────────────────
+console.log('\n== sidebar foot ==');
+
+check('the foot layout is addressed by the slot anchor, not a hashed class', () => {
+  // `renderSlot()` wraps every outlet in `<div data-slot="<key>"
+  // style="display:contents">` (ui-renderer `SlotOutlet`), so the slot's own key
+  // is the stable way to name its container. A CSS-Module class such as
+  // `_2H3hWW_footerActions` changes on every upstream rebuild; `:has()` reaches
+  // the parent from the anchor instead.
+  assert.ok(
+    code.includes('var FOOTER_SLOT = \'[data-slot="sidebar.footer.action"]\''),
+    'the slot anchor is gone',
+  );
+  assert.match(
+    code,
+    /FOOTER_ACTIONS = 'div:has\(>' \+ FOOTER_SLOT \+ '\)'/,
+    'the container selector is gone',
+  );
+});
+
+check('the foot stacks its rows instead of squeezing them into one line', () => {
+  // Every registrant is authored as a full-width row — dsh-opencode-go-usage
+  // `.ocg-widget{width:100%}`, dsh-context `.lc-ov-entry{width:calc(100% + 4px)}`
+  // (whose own source says the entry is "stacked directly above Settings"), and
+  // dsh-mind `.dm-widget{width:100%}`. Sharing one 280px row gives each about
+  // 66px, which is what wraps their headings mid-word.
+  assert.match(code, /flex-direction:column;align-items:stretch/, 'the stack rule is gone');
+});
+
+check('the collapsed rail keeps the centred row', () => {
+  // Collapsed mode passes `wide:false`, so registrants render compact badges; a
+  // column would stack them into a ladder. The restore has to outrank upstream's
+  // `._collapsed ._footerActions` (0,2,0), which is why it carries the attribute.
+  const rule = code.match(
+    /'\[data-sidebar-collapsed="true"\] ' \+ FOOTER_ACTIONS \+[\s\S]{0,80}?\{([^}]+)\}/,
+  );
+  assert.ok(rule, 'the collapsed restore is gone');
+  assert.match(rule[1], /flex-direction:row/, 'the collapsed rail no longer stays a row');
+});
+
+check('the sidebar feature is switchable and wired', () => {
+  assert.match(code, /sidebar: true/, 'the feature is not enabled by default');
+  assert.match(code, /if \(o\.sidebar\)/, 'the feature is never applied');
 });
 
 // ── minimap geometry: the filmstrip rule ────────────────────────────────────

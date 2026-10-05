@@ -1,0 +1,5 @@
+{
+  "meta": {
+    "description": "Brand theme, conversation card layout, and a VSCode-style turn minimap for DeepSeek Harness; a pure client plugin with no build step."
+  }
+}
