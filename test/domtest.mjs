@@ -918,7 +918,18 @@ check('the hover tip names the block whose painted rectangle is under the pointe
 });
 
 check('the tip labels the block kind read off the block', () => {
-  for (const [kind, label] of [['user', 'You'], ['assistant', 'Assistant'], ['tool-call', 'Tool call'], ['', 'Content']]) {
+  // The kinds are upstream's own value domain (the runner's key table), so the
+  // assistant row is `assistant-step`. A literal `assistant` is not a member:
+  // it must fall through to the generic label, and this pair of rows is what
+  // makes a regression back to `'assistant'` fail here rather than merely look
+  // plausible — the two rows contradict each other under either reading.
+  for (const [kind, label] of [
+    ['user', 'You'],
+    ['assistant-step', 'Assistant'],
+    ['assistant', 'Content'],
+    ['tool-call', 'Tool call'],
+    ['', 'Content'],
+  ]) {
     const { shell, rects } = mountWith({
       turns: 3, total: 3 * TURN_STEP + VIEW_H, kinds: [kind, kind, kind],
     });

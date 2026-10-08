@@ -175,8 +175,8 @@ Every feature is a progressive enhancement, invoked inside an error boundary. A 
 npm test
 ```
 
-- `test/selftest.mjs` — 50 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 78 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, and how it follows a sidebar whose slide is transform-driven — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
+- `test/selftest.mjs` — 58 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
+- `test/domtest.mjs` — 90 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, and how it follows a sidebar whose slide is transform-driven — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
 
 Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
 

@@ -451,6 +451,42 @@ check('a zero-height block is not admitted to the cache', () => {
   );
 });
 
+check('the minimap reads the assistant kind upstream actually emits', () => {
+  // `data-chat-flow-kind` is upstream's own semantic attribute, and its value
+  // domain is fixed by the owner's key table (the runner's registry entry:
+  // assistant-step, command, command-input, compaction, context,
+  // manual-compaction, model-retry, steering, system-prompt, tool-call,
+  // turn-error, turn-max-tokens, turn-process, turn-tail, unknown, user,
+  // workflow-run). `assistant` is *not* a member. The first version compared
+  // against it anyway, so an assistant reply silently fell through to
+  // `colorOther` — the light grey reserved for reasoning and tool blocks, not
+  // the mid grey the README promises — and the hover tip said "Content".
+  // Both bugs were invisible: a wrong colour and a generic word, no error.
+  assert.match(
+    code,
+    /kind === 'assistant-step' \? colorReply/,
+    'the reply colour must key off the kind upstream emits',
+  );
+  assert.match(
+    code,
+    /block\.kind === 'assistant-step' \? 'Assistant'/,
+    'the hover label must key off the kind upstream emits',
+  );
+  assert.ok(
+    !/'assistant'/.test(code),
+    "the source compares against a kind 'assistant', which upstream never emits",
+  );
+  // The other half of the same comparison is correct as it stands — the user's
+  // own messages are `user` *or* `steering` (both are in the key table). Pin it
+  // so a later edit cannot "fix" it to a plausible-looking value that upstream
+  // does not emit either, which would repaint every user message light grey.
+  assert.match(
+    code,
+    /var mine = kind === 'user' \|\| kind === 'steering';/,
+    'the user/steering pair is the correct way to say "mine"',
+  );
+});
+
 // ── theme tokens ────────────────────────────────────────────────────────────
 console.log('\n== theme ==');
 
