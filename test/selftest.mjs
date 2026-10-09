@@ -469,7 +469,7 @@ check('the minimap reads the assistant kind upstream actually emits', () => {
   );
   assert.match(
     code,
-    /block\.kind === 'assistant-step' \? 'Assistant'/,
+    /'assistant-step': 'Assistant'/,
     'the hover label must key off the kind upstream emits',
   );
   assert.ok(
@@ -485,6 +485,49 @@ check('the minimap reads the assistant kind upstream actually emits', () => {
     /var mine = kind === 'user' \|\| kind === 'steering';/,
     'the user/steering pair is the correct way to say "mine"',
   );
+});
+
+check('the hover-tip label table covers exactly the official kind domain', () => {
+  // The tip labels live in one lookup table keyed by upstream's own value
+  // domain — the runner's key table, the same 17 kinds listed in the check
+  // above. Two failure modes are locked here:
+  //
+  //   * a key the domain has never contained: `tool`, `thinking` and `think`
+  //     shipped as comparison branches that could never match (dead code), and
+  //     `assistant` did the same before them;
+  //   * an official kind with no entry and no stated reason, which would
+  //     silently relabel a real message to the generic 'Content'.
+  //
+  // Kinds whose semantics are not verified stay on the fallback *by design*;
+  // they are listed explicitly, so the table plus the unverified list is
+  // exactly the official domain — completeness, not just subset.
+  const OFFICIAL_KINDS = [
+    'assistant-step', 'command', 'command-input', 'compaction', 'context',
+    'manual-compaction', 'model-retry', 'steering', 'system-prompt',
+    'tool-call', 'turn-error', 'turn-max-tokens', 'turn-process', 'turn-tail',
+    'unknown', 'user', 'workflow-run',
+  ];
+  const UNVERIFIED = ['turn-process', 'turn-tail', 'unknown'];
+  const table = code.match(/var TIP_LABELS = \{([\s\S]*?)\n    \};/);
+  assert.ok(table, 'the hover-tip label table must exist');
+  const keys = [...table[1].matchAll(/'([^']+)':/g)].map((m) => m[1]);
+  assert.equal(new Set(keys).size, keys.length, 'a kind appears twice in the table');
+  for (const key of keys) {
+    assert.ok(OFFICIAL_KINDS.includes(key),
+      `the table names kind '${key}', which upstream never emits`);
+  }
+  for (const kind of OFFICIAL_KINDS) {
+    assert.ok(keys.includes(kind) || UNVERIFIED.includes(kind),
+      `official kind '${kind}' must have a label or be listed as unverified`);
+  }
+  assert.match(code, /TIP_LABELS\[block\.kind\] \|\| 'Content'/,
+    'the lookup must fall back to the generic label');
+  // The dead literals must stay dead — as kind comparisons, which is the form
+  // they shipped in ('tool-call' is a real member and stays).
+  for (const dead of ['assistant', 'tool', 'thinking', 'think']) {
+    assert.ok(!code.includes(`=== '${dead}'`),
+      `the bundle still compares against kind '${dead}', which upstream never emits`);
+  }
 });
 
 // ── theme tokens ────────────────────────────────────────────────────────────

@@ -955,6 +955,10 @@ check('the tip labels the block kind read off the block', () => {
     ['assistant-step', 'Assistant'],
     ['assistant', 'Content'],
     ['tool-call', 'Tool call'],
+    // A label the table actually carries, and an unverified kind that must
+    // take the fallback — the pair proves the lookup runs both ways.
+    ['command', 'Command'],
+    ['unknown', 'Content'],
     ['', 'Content'],
   ]) {
     const { shell, rects } = mountWith({
