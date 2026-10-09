@@ -325,6 +325,33 @@ check('apply() installs conversation, sidebar and minimap stylesheets', () => {
   assert.ok(markers.includes('dshome-plugin-minimap'), 'minimap stylesheet missing');
 });
 
+check('repeated apply() does not stack conversation observers', () => {
+  // The conversation feature installs a document-level click listener and a
+  // body MutationObserver. This bundle hot-reloads, so apply() runs again while
+  // the previous pass is still wired; without the teardown each pass stacked
+  // another observer on the same body. Locked out by the same re-entrancy
+  // contract as the minimap's `__dshomePluginTeardown`.
+  const doc = installGlobals();
+  const log = instrument();
+  const plugin = loaded.factory(provide);
+  plugin.apply({ get: () => undefined });
+  plugin.apply({ get: () => undefined });
+  plugin.apply({ get: () => undefined });
+  // The conversation watcher: body target + characterData (the style guard
+  // watches document.head, the minimap watches the scroller).
+  const watchers = log.observers.filter((o) => o.target === doc.body && o.options.characterData);
+  assert.equal(watchers.length, 3, `three applies install one observer each, found ${watchers.length}`);
+  assert.equal(
+    watchers.filter((o) => !o.disconnected).length, 1,
+    `exactly one conversation observer must stay alive, found ${watchers.filter((o) => !o.disconnected).length}`,
+  );
+  assert.equal(typeof globalThis.window.__dshomePluginConversationTeardown, 'function',
+    'the teardown handle is held on its own global (like the minimap/notify ones)');
+  globalThis.window.__dshomePluginConversationTeardown();
+  assert.ok(watchers.every((o) => o.disconnected),
+    'manual teardown disconnects the live observer too');
+});
+
 check('sidebar stylesheet stacks the foot rows and keeps the collapsed rail', () => {
   const doc = installGlobals();
   loaded.factory(provide).apply({ get: () => undefined });
