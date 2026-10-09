@@ -61,6 +61,17 @@ class El {
     return Number.isFinite(fromStyle) ? fromStyle : this._clientHeight;
   }
   set clientHeight(value) { this._clientHeight = value; }
+  /**
+   * Browser-faithful scrollTop: assigning NaN scrolls nothing (the scrolling
+   * spec returns early on NaN), so a wheel delta of NaN must leave the
+   * position exactly where it was. A plain property would store NaN and make
+   * that contract untestable against this double.
+   */
+  get scrollTop() { return this._scrollTop; }
+  set scrollTop(value) {
+    if (Number.isNaN(value)) return;   // browsers ignore the assignment
+    this._scrollTop = value;
+  }
   setAttribute(n, v) { this.attributes[n] = String(v); }
   getAttribute(n) { return n in this.attributes ? this.attributes[n] : null; }
   hasAttribute(n) { return n in this.attributes; }
@@ -1023,6 +1034,55 @@ check('the wheel converts deltaMode before it scrolls: lines by line height, pag
   wheel(120, 0);                                   // DOM_DELTA_PIXEL
   assert.equal(scroller.scrollTop, 120,
     `PIXEL mode scrolled ${scroller.scrollTop}px; expected the raw 120px`);
+});
+
+check('a NaN deltaY is a harmless no-op, not a scroll to nowhere', () => {
+  // A delta can arrive as NaN (driver quirks, hand-synthesised events). It
+  // passes the handler's typeof guard because NaN *is* a number, so the code
+  // computes scrollTop += NaN — which browsers ignore: assigning NaN to
+  // scrollTop scrolls nothing. The double models that same semantics on its
+  // own scrollTop (see El), so this pins the browser contract, not the
+  // double's accident.
+  const { scroller, shell } = mountWith();
+  const wheel = (deltaY, deltaMode) =>
+    shell.dispatchEvent({ type: 'wheel', deltaY, deltaMode, preventDefault() {} });
+  scroller.scrollTop = 123;
+  wheel(NaN, 0);                                   // DOM_DELTA_PIXEL
+  assert.equal(scroller.scrollTop, 123,
+    `scrollTop must stay 123 after a NaN delta, got ${scroller.scrollTop}`);
+  // The converted paths agree: NaN lines × 16px is still nothing at all.
+  scroller.scrollTop = 123;
+  wheel(NaN, 1);                                   // DOM_DELTA_LINE
+  assert.equal(scroller.scrollTop, 123,
+    `scrollTop must stay 123 after a NaN line delta, got ${scroller.scrollTop}`);
+});
+
+check('a zero-height scroller in PAGE mode scrolls nothing, silently', () => {
+  // A page whose viewport measures 0 converts to 1 × 0px = 0: no throw, no
+  // movement. The handler must not invent a fallback height for a container
+  // it cannot see.
+  const { scroller, shell } = mountWith();
+  scroller.clientHeight = 0;
+  scroller.scrollTop = 40;
+  shell.dispatchEvent({ type: 'wheel', deltaY: 1, deltaMode: 2, preventDefault() {} });
+  assert.equal(scroller.scrollTop, 40,
+    `PAGE mode with clientHeight 0 must not move: got ${scroller.scrollTop}`);
+});
+
+check('a throwing getComputedStyle falls back to the 16px line estimate', () => {
+  // The line-height measurement is optional by contract: a style engine that
+  // throws must not take the wheel with it. The handler catches and the
+  // estimate carries the conversion: 3 lines × 16px.
+  const { scroller, shell } = mountWith();
+  const previous = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => { throw new Error('style engine unavailable'); };
+  try {
+    shell.dispatchEvent({ type: 'wheel', deltaY: 3, deltaMode: 1, preventDefault() {} });
+    assert.equal(scroller.scrollTop, 3 * 16,
+      `expected 3 lines × the 16px estimate after a throwing getComputedStyle, got ${scroller.scrollTop}`);
+  } finally {
+    globalThis.getComputedStyle = previous;
+  }
 });
 
 check('a sidebar that owns a track beside the column never hides the strip', () => {

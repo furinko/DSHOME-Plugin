@@ -176,7 +176,7 @@ npm test
 ```
 
 - `test/selftest.mjs` — 60 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, the header's feature census, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 92 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, how it follows a sidebar whose slide is transform-driven, and how its wheel handler converts deltaMode — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
+- `test/domtest.mjs` — 95 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, how it follows a sidebar whose slide is transform-driven, and how its wheel handler converts deltaMode (including the NaN no-op, a zero-height PAGE target, and a throwing style engine) — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
 
 Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
 
