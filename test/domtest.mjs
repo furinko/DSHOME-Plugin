@@ -996,6 +996,35 @@ check('the tip is throttled, so a fast sweep does not re-read the DOM per pixel'
   assert.match(tip.textContent, /hello from turn 20/, 'past the window the tip must follow the pointer');
 });
 
+check('the wheel converts deltaMode before it scrolls: lines by line height, pages by viewport', () => {
+  // A WheelEvent carries its own unit in deltaMode. Firefox delivers line
+  // counts, so `scrollTop += deltaY` scrolled 5px for a 5-line notch. The
+  // double's getComputedStyle refuses to name a line height, which is exactly
+  // the "nothing measurable" path: the 16px estimate must carry the conversion.
+  const { scroller, shell } = mountWith();
+  const wheel = (deltaY, deltaMode) =>
+    shell.dispatchEvent({ type: 'wheel', deltaY, deltaMode, preventDefault() {} });
+  wheel(5, 1);                                     // DOM_DELTA_LINE
+  assert.equal(scroller.scrollTop, 5 * 16,
+    `LINE mode scrolled ${scroller.scrollTop}px; expected 5 lines × the 16px estimate`);
+  // A measurable line height must win over the estimate.
+  globalThis.getComputedStyle = () => ({ lineHeight: '22px' });
+  scroller.scrollTop = 0;
+  wheel(5, 1);
+  assert.equal(scroller.scrollTop, 5 * 22,
+    `LINE mode with a measured line height scrolled ${scroller.scrollTop}px; expected 5 × 22`);
+  // One page is the scroller's own viewport height, not one pixel per page.
+  scroller.scrollTop = 0;
+  wheel(1, 2);                                     // DOM_DELTA_PAGE
+  assert.equal(scroller.scrollTop, VIEW_H,
+    `PAGE mode scrolled ${scroller.scrollTop}px; expected one viewport (${VIEW_H}px)`);
+  // The pixel path must not regress.
+  scroller.scrollTop = 0;
+  wheel(120, 0);                                   // DOM_DELTA_PIXEL
+  assert.equal(scroller.scrollTop, 120,
+    `PIXEL mode scrolled ${scroller.scrollTop}px; expected the raw 120px`);
+});
+
 check('a sidebar that owns a track beside the column never hides the strip', () => {
   // The wide-viewport case, and the whole reason the strip used to vanish for no
   // reason: upstream lays out three grid tracks, so an open right sidebar sits
