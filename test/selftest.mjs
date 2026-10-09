@@ -198,6 +198,25 @@ check('the collapsed rail keeps the centred row', () => {
   assert.match(rule[1], /flex-direction:row/, 'the collapsed rail no longer stays a row');
 });
 
+check('the header comment counts exactly what apply() installs', () => {
+  // The header used to claim "Six features" over a list of five. This lock ties
+  // three things together: the count word in the header, the header's bullet
+  // list, and the `if (o.x)` gates apply() actually runs. Add or remove a
+  // feature and this goes red until all three agree again. (`hideOfficialRail`
+  // is a minimap option — it has an options() key but no gate of its own, and
+  // README files it under Configuration, not under a Features section.)
+  const gates = [...code.matchAll(/^ {6}if \(o\.(\w+)\) \{$/gm)].map((m) => m[1]);
+  const bullets = [...clientSource.matchAll(/^\/\/   · (\w+)/gm)].map((m) => m[1]);
+  const declared = clientSource.match(/^\/\/ (\w+) features share one plugin id:$/m);
+  assert.ok(declared, 'the header no longer declares a feature count');
+  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify'],
+    'the feature gates apply() runs have changed — update header and bullets with them');
+  assert.deepEqual(bullets, gates, 'the header bullets and the applied gates disagree');
+  const counts = { One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9, Ten: 10 };
+  assert.equal(counts[declared[1]], gates.length,
+    `header claims ${declared[1]} features but apply() installs ${gates.length}`);
+});
+
 check('the sidebar feature is switchable and wired', () => {
   assert.match(code, /sidebar: true/, 'the feature is not enabled by default');
   assert.match(code, /if \(o\.sidebar\)/, 'the feature is never applied');
