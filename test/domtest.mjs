@@ -114,14 +114,30 @@ class El {
     if (kind !== '2d') return null;
     if (!this._ctx) {
       const calls = [];
+      // The paint routine builds one path per bar and fills it, so `rect` /
+      // `roundRect` record the geometry and `fill` commits it. Keeping the
+      // committed rect on the same `op: 'rect'` shape the assertions already
+      // read is deliberate: the checks are about geometry, not about which
+      // path builder produced it.
+      let pending = null;
       this._ctx = {
         calls,
         globalAlpha: 1,
         fillStyle: '',
         setTransform() {},
         clearRect() { calls.push({ op: 'clear' }); },
+        beginPath() { pending = null; },
+        rect(x, y, w, h) { pending = { op: 'rect', x, y, w, h, rounded: false }; },
+        roundRect(x, y, w, h, r) {
+          pending = { op: 'rect', x, y, w, h, rounded: true, radius: r };
+        },
+        fill() {
+          if (!pending) { calls.push({ op: 'fill-no-path' }); return; }
+          calls.push({ ...pending, alpha: this.globalAlpha, fill: this.fillStyle });
+          pending = null;
+        },
         fillRect(x, y, w, h) {
-          calls.push({ op: 'rect', x, y, w, h, alpha: this.globalAlpha, fill: this.fillStyle });
+          calls.push({ op: 'rect', x, y, w, h, rounded: false, alpha: this.globalAlpha, fill: this.fillStyle });
         },
       };
     }
