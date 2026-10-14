@@ -131,11 +131,64 @@ check('the sticky disclosure header masks without showing', () => {
   // fill must stay — a transparent row lets the body scroll through the header
   // — but it must be the *plate* colour, because a reasoning block sits inside
   // our card (layer-1), where upstream's bg-base reads as a stray band.
-  const rule = code.match(/'\[data-disclosure-row\]\{background:([^}]+)\}/);
+  // 2026-10-14 review P2-28: the rule is scoped to rows inside our cards —
+  // a bare `[data-disclosure-row]` with !important repainted host settings
+  // panels too. The assertions therefore pin BOTH the scoping and the paint.
+  const rule = code.match(/\{background:var\(--dshome-plate[^}]*\}/);
   assert.ok(rule, 'the sticky-header rule is gone');
-  assert.ok(!/transparent/.test(rule[1]), 'the sticky header stopped masking its body');
-  assert.match(rule[1], /--dshome-plate/, 'the header no longer follows the plate colour');
+  assert.ok(!/transparent/.test(rule[0]), 'the sticky header stopped masking its body');
+  assert.ok(/!important/.test(rule[0]), 'the rule lost !important (upstream’s (0,4,0) rule wins without it)');
+  // `code` 已剥注释，而 CSS 是拼出来的——钉**构造式**（两个作用域前缀都在）。
+  assert.match(code, /SELECTORS\.think \+ ' \[data-disclosure-row\],'/,
+    'the rule must be scoped to disclosure rows inside the think card');
+  assert.match(code, /CARD_SELECTOR \+ ' \[data-disclosure-row\]'/,
+    'the rule must also cover disclosure rows inside card-wrapped flow items');
+  assert.ok(!/'\[data-disclosure-row\]\{/.test(code),
+    'the unscoped global disclosure-row rule must be gone (P2-28)');
   assert.match(code, /--dshome-plate:var\(--dsw-alias-bg-layer-1/, 'nothing sets the plate colour');
+});
+
+// ── 2026-10-14 review batch D pins ──────────────────────────────────────────
+
+check('canvas backing store is rounded before comparing (P2-26)', () => {
+  // Fractional DPR (125%/150% scaling) made `canvas.width !== w * dpr` always
+  // true — every paint rebuilt the canvas, every 120ms while streaming.
+  assert.match(code, /Math\.round\(w \* dpr\)/, 'DPR width compare is not rounded');
+  assert.match(code, /Math\.round\(h \* dpr\)/, 'DPR height compare is not rounded');
+});
+
+check('canvas length is capped below Chrome’s 32767px limit (P2-27)', () => {
+  assert.match(code, /32767/, 'no 32767 cap found');
+  assert.match(code, /CONTENT_MAX_PX/, 'the content cap constant is gone');
+});
+
+check('a missing scrollBody anchor says so once (P1-12)', () => {
+  // The minimap dying silently is how the 2026-10-04 think-window deletion went
+  // unnoticed; the probe must exist and must be one-shot.
+  assert.match(code, /warnOnce\('scrollBody-anchor'/, 'the anchor probe is gone');
+  assert.match(code, /function warnOnce\(/, 'warnOnce helper is gone');
+});
+
+check('synthetic-click expansion backs off and gives up loudly (P2-30)', () => {
+  assert.match(code, /EXPAND_MAX_TRIES/, 'no retry cap');
+  assert.match(code, /EXPAND_RETRY_MS/, 'no retry spacing');
+  assert.match(code, /warnOnce\('expand-anchor'/, 'give-up is silent');
+});
+
+check('theme and notify-settings passes hold their teardowns (P2-25)', () => {
+  // Discarded handles stacked a duplicate registration on every HMR reload.
+  assert.match(code, /__dshomePluginThemeTeardown/, 'theme teardown global is gone');
+  assert.match(code, /__dshomePluginNotifySettingsTeardown/, 'notify-settings teardown global is gone');
+  assert.match(code, /function reentrantPass\(/, 'the re-entrant wrapper is gone');
+});
+
+check('the selector header documents exactly two hash-fragment exceptions (P1-12)', () => {
+  // The old header claimed hash class names were "never used anywhere in this
+  // file" while scrollBody/officialRail used them — an honest tripwire instead.
+  // 注释在 `code` 里被剥掉了 ⇒ 这条钉读原文 `clientSource`。
+  assert.match(clientSource, /audited exceptions/, 'the exceptions paragraph is gone');
+  assert.ok(!/never used anywhere in this file/.test(clientSource),
+    'the false "never used anywhere" claim is back');
 });
 
 check('never relies on hashed CSS-module class names', () => {
@@ -150,6 +203,18 @@ check('card selector excludes empty hidden blocks', () => {
   // Upstream marks empty per-turn process blocks with `hidden` while leaving
   // them display:block; without the guard they become blank cards.
   assert.match(code, /:not\(\[hidden\]\)/);
+});
+
+check('locale descriptions track package.json (2026-10-14 review, locale drift)', () => {
+  // 漂移史：locale 漏掉 reminders、zh.json 还曾以错误编码落盘（乱码）。钉三件事：
+  // 两种语言都提到 minimap 与 reminders，且 zh 里没有乱码替身符。
+  const en = JSON.parse(readFileSync(join(root, 'locale', 'en.json'), 'utf8'));
+  const zh = JSON.parse(readFileSync(join(root, 'locale', 'zh.json'), 'utf8'));
+  assert.match(en.meta.description, /minimap/, 'en locale lost the minimap');
+  assert.match(en.meta.description, /reminder/i, 'en locale lost reminders (package.json has them)');
+  assert.match(zh.meta.description, /缩略导航/, 'zh locale lost the minimap');
+  assert.match(zh.meta.description, /提醒/, 'zh locale lost reminders');
+  assert.ok(!zh.meta.description.includes(String.fromCharCode(0xFFFD)), 'zh locale has mojibake replacement chars');
 });
 
 check('card selector covers tool calls and system injections', () => {

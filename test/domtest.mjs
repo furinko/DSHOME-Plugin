@@ -503,14 +503,16 @@ check('conversation stylesheet styles the card kinds', () => {
   assert.match(css, /:not\(\[hidden\]\)/);
 });
 
-check('minimap hides the official rail by default', () => {
+check('minimap no longer ships a global rail-hiding stylesheet', () => {
+  // 2026-10-14 review P2-29: hiding moved to geometry-gated JS (see the rail
+  // geometry test below); a lingering global CSS rule would still hit every
+  // `_frame` nav, so its ABSENCE is the thing worth locking here.
   const doc = installGlobals();
   loaded.factory(provide).apply({ get: () => undefined });
   const rail = doc.head.children.find(
     (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap-rail',
   );
-  assert.ok(rail, 'rail rule missing');
-  assert.match(rail.textContent, /pointer-events:none/);
+  assert.ok(!rail, 'the global rail-hiding rule must be gone');
 });
 
 check('applying twice does not duplicate stylesheets', () => {
@@ -1138,8 +1140,41 @@ check('the strip anchors inside the conversation column, not the window edge', (
     `the strip must sit inside the column: right=${shell.style.right}, expected ${expected}`);
 });
 
-check('the strip aligns to the official rail when the rail is there', () => {
-  // Upstream's rail already sits in the gutter, clear of the scrollbar, so it is
+check('minimap hides the official rail only when its geometry is rail-like', () => {
+  // 2026-10-14 review P2-29: the old CSS rule `body nav[class*="_frame"]{opacity:0;
+  // pointer-events:none}` hit EVERY nav carrying that hash fragment. The hide is now
+  // JS-side and gated on the rail's silhouette (narrow gutter strip, tall), and the
+  // hidden rails are restored on teardown.
+  const { doc } = mountWith({
+    setup: (d) => {
+      const rail = d.createElement('nav');
+      rail.className = 'chat_frame';
+      rail.getBoundingClientRect = () => ({
+        top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
+      });
+      d.body.appendChild(rail);
+      const wide = d.createElement('nav');
+      wide.className = 'sidebar_frame';
+      wide.getBoundingClientRect = () => ({
+        top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800,
+      });
+      d.body.appendChild(wide);
+      d.__rail = rail;
+      d.__wide = wide;
+    },
+  });
+  assert.equal(doc.__rail.style.opacity, '0', 'a rail-like nav must be hidden');
+  assert.equal(doc.__rail.style.pointerEvents, 'none', 'hidden rail must not take clicks');
+  assert.notEqual(doc.__wide.style.opacity, '0',
+    'a wide nav that merely carries the hash fragment must be left alone');
+  const teardown = globalThis.window.__dshomePluginTeardown;
+  assert.equal(typeof teardown, 'function', 'minimap teardown must be on its global');
+  teardown();
+  assert.equal(doc.__rail.style.opacity, '', 'teardown must restore the hidden rail');
+  assert.equal(doc.__rail.style.pointerEvents, '', 'teardown must restore pointer events');
+});
+
+check('the strip aligns to the official rail when the rail is there', () => {  // Upstream's rail already sits in the gutter, clear of the scrollbar, so it is
   // the better anchor whenever it is laid out.
   const { shell } = mountWith({
     setup: (doc) => {
