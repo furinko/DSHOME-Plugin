@@ -1153,28 +1153,41 @@ check('minimap hides the official rail only when its geometry is rail-like', () 
         top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
       });
       d.body.appendChild(rail);
+      // 2026-10-15 现场回归臂：真实 rail 含热区/内边距量出来 72px 宽——第一版
+      // 包络（≤64px，测试替身上标定）把它放走了，官方进度条和缩略图并排出现。
       const wide = d.createElement('nav');
-      wide.className = 'sidebar_frame';
+      wide.className = 'official_frame';
       wide.getBoundingClientRect = () => ({
-        top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800,
+        top: 100, bottom: 900, left: 960, right: 1032, width: 72, height: 800,
       });
       d.body.appendChild(wide);
+      const pane = d.createElement('nav');
+      pane.className = 'sidebar_frame';
+      pane.getBoundingClientRect = () => ({
+        top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800,
+      });
+      d.body.appendChild(pane);
       d.__rail = rail;
       d.__wide = wide;
+      d.__pane = pane;
     },
   });
   assert.equal(doc.__rail.style.opacity, '0', 'a rail-like nav must be hidden');
   assert.equal(doc.__rail.style.pointerEvents, 'none', 'hidden rail must not take clicks');
-  assert.notEqual(doc.__wide.style.opacity, '0',
-    'a wide nav that merely carries the hash fragment must be left alone');
+  assert.equal(doc.__wide.style.opacity, '0',
+    'a 72px-wide rail (live-measured shape, 2026-10-15) must be hidden — the envelope exists so threshold drift cannot re-break this');
+  assert.notEqual(doc.__pane.style.opacity, '0',
+    'a 240px sidebar pane that merely carries the hash fragment must be left alone');
   const teardown = globalThis.window.__dshomePluginTeardown;
   assert.equal(typeof teardown, 'function', 'minimap teardown must be on its global');
   teardown();
   assert.equal(doc.__rail.style.opacity, '', 'teardown must restore the hidden rail');
   assert.equal(doc.__rail.style.pointerEvents, '', 'teardown must restore pointer events');
+  assert.equal(doc.__wide.style.opacity, '', 'teardown must restore the wide rail too');
 });
 
-check('the strip aligns to the official rail when the rail is there', () => {  // Upstream's rail already sits in the gutter, clear of the scrollbar, so it is
+check('the strip aligns to the official rail when the rail is there', () => {
+  // Upstream's rail already sits in the gutter, clear of the scrollbar, so it is
   // the better anchor whenever it is laid out.
   const { shell } = mountWith({
     setup: (doc) => {

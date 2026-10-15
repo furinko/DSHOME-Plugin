@@ -189,6 +189,14 @@ check('the selector header documents exactly two hash-fragment exceptions (P1-12
   assert.match(clientSource, /audited exceptions/, 'the exceptions paragraph is gone');
   assert.ok(!/never used anywhere in this file/.test(clientSource),
     'the false "never used anywhere" claim is back');
+  // 2026-10-15 现场回归：两个例外**各自**要有失效探针——rail 选择器 miss 的
+  // 静默路径当时没盖住，官方进度条回来了半天没人知道为什么。
+  assert.match(code, /warnOnce\('scrollBody-anchor'/, 'scrollBody anchor probe is gone');
+  assert.match(code, /warnOnce\('rail-anchor'/, 'rail anchor probe is gone');
+  // 包络必须是「宽包络」而非剪影：≤200px / ≥40px。第一版 ≤64px 是测试替身上
+  // 标定的，真实 rail 量出来 72px，当场放走。
+  assert.match(code, /RAIL_MAX_W = 200/, 'the rail envelope regressed to a tight silhouette');
+  assert.match(code, /RAIL_MIN_H = 40/, 'the rail min-height guard changed');
 });
 
 check('never relies on hashed CSS-module class names', () => {
