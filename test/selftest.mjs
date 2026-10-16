@@ -200,12 +200,25 @@ check('the selector header documents exactly two hash-fragment exceptions (P1-12
   // 2026-10-16 现场回归（「官方进度条还是没藏掉」第三次报告的根因）：藏 rail
   // 不能只在 scroller 变更那一刻——官方 TurnNavigator 的 nav 要到第 2 个回合才
   // 挂载（items.length < 2 直接 render null），scroller 被找到时往往还没有 nav，
-  // 一次性隐藏必然放过迟到/重挂载的 nav。钉三点：每拍复查的 rationale 注释、
-  // 探针的 ≥2 回合门槛（railDueOnScreen）、竞态宽限（railSeenPasses）。
+  // 一次性 JS 追藏必然放过迟到/重挂载的 nav。
   assert.match(clientSource, /官方 TurnNavigator 的 nav 在 items\.length < 2 时不挂载/,
-    'the per-beat re-check rationale is gone');
+    'the audit rationale is gone');
   assert.match(code, /railDueOnScreen/, 'the ≥2-turn gate on the rail probe is gone');
   assert.match(code, /railSeenPasses/, 'the mount-race grace counter is gone');
+  // 2026-10-16 重设计（主人问「不能常态隐藏吗」）：隐藏本体回到 CSS——但这次
+  // 圈在语义属性 data-conversation-scroll 里（已在 app.asar 核实：与 _scrollBody
+  // 同元素、rail 的 nav 是它的后代），P2-29 拆掉的全局形态绝不回来；每拍只做
+  // 审计（规则在场 / 锚点探针）和救错杀（确凿不是 rail 的用 inline !important
+  // 救回——方向比「像 rail 才藏」更安全：漏判只多藏 250ms）。
+  assert.match(code, /RAIL_RULE = '\[data-conversation-scroll\] nav\[class\*="_frame"\]'/,
+    'the scoped rail rule anchor changed');
+  assert.ok(!/body nav\[class\*="_frame"\]\{/.test(code),
+    'the global P2-29 rule came back');
+  assert.match(code, /function auditOfficialRails/, 'the per-pass audit is gone');
+  assert.match(code, /function confidentlyNotARail/, 'the rescue gate is gone');
+  assert.match(code, /setProperty\('opacity', '1', 'important'\)/,
+    'the rescue lost its inline !important (it would lose to the rule)');
+  assert.match(code, /ensureRailStyle/, 'the rule can no longer self-heal after a head clearing');
 });
 
 check('never relies on hashed CSS-module class names', () => {

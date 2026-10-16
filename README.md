@@ -101,7 +101,14 @@ window.__dshomePlugin = {
 };
 ```
 
-`hideOfficialRail` only hides upstream's rail visually and pointer-wise. Nothing in the React tree is touched, so setting it to `false` brings the rail straight back.
+`hideOfficialRail` (default `true`) is a **constant** hide: one stylesheet rule scoped to
+the conversation scroller (`[data-conversation-scroll] nav[class*="_frame"]`), so it applies
+to the rail the moment upstream mounts or remounts it — no polling, no visible gap. The
+per-tick audit only re-ensures the rule survived, warns once if either anchor name changes
+(so a broken hide is never silent), and **rescues** a nav the rule provably mis-caught
+(wider than 200px, or laid out shorter than 40px) with an inline `!important` override.
+Setting it to `false` removes the rule on the next apply; nothing in the React tree is
+touched either way.
 
 `notify` accepts `true`, `false`, or an object. Field names follow DSHOME's own settings schema:
 

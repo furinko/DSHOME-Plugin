@@ -30,6 +30,44 @@ function check(label, fn) {
 }
 
 // ── a DOM just large enough for this plugin ─────────────────────────────────
+/**
+ * A style object browser-faithful at the plugin's touch points:
+ * - reading an unset declaration yields `''` (never `undefined`, which is what
+ *   a plain object would report — and a test asserting "no inline fingerprint"
+ *   must assert the browser's answer);
+ * - `setProperty(name, value, priority)` accepts the dashed spelling and files
+ *   it under the camelCase one (`pointer-events` ⇒ `pointerEvents`), exactly as
+ *   CSSStyleDeclaration aliases them — the rail rescue needs inline
+ *   `!important` declarations, which plain assignment cannot express.
+ * The double records the value and keeps priority as bookkeeping; it has NO
+ * cascade engine, so tests assert on WHICH declaration was emitted
+ * (hide-fingerprint vs rescue-fingerprint), never on real precedence — that
+ * part only a browser can prove.
+ */
+function createStyle() {
+  const declared = {};
+  const important = {};
+  const camel = (name) => name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  return new Proxy(declared, {
+    get(target, prop) {
+      if (prop === 'setProperty') {
+        return (name, value, priority) => {
+          const key = camel(String(name));
+          target[key] = String(value);
+          if (priority === 'important') important[key] = true;
+          else delete important[key];
+        };
+      }
+      if (prop === 'declaredImportant') return important;
+      if (typeof prop !== 'string') return target[prop];
+      return target[prop] === undefined ? '' : target[prop];
+    },
+    set(target, prop, value) {
+      target[prop] = String(value);
+      return true;
+    },
+  });
+}
 class El {
   constructor(tag) {
     this.tagName = tag.toUpperCase();
@@ -40,7 +78,7 @@ class El {
     // pass here and break in the browser — which is what happened to the toast
     // container while this double still spelled it `parent`.
     this.parentNode = null;
-    this.style = {};
+    this.style = createStyle();
     this.textContent = '';
     this.listeners = {};
     this.clientWidth = 900;
@@ -503,16 +541,36 @@ check('conversation stylesheet styles the card kinds', () => {
   assert.match(css, /:not\(\[hidden\]\)/);
 });
 
-check('minimap no longer ships a global rail-hiding stylesheet', () => {
-  // 2026-10-14 review P2-29: hiding moved to geometry-gated JS (see the rail
-  // geometry test below); a lingering global CSS rule would still hit every
-  // `_frame` nav, so its ABSENCE is the thing worth locking here.
+check('the rail-hiding stylesheet is SCOPED, never the global P2-29 rule', () => {
+  // 2026-10-14 P2-29 removed the GLOBAL rule (`body nav[class*="_frame"]` hit
+  // every nav with the fragment). 2026-10-16 redesign (主人问「不能常态隐藏吗」):
+  // hiding came back as a CONSTANT CSS rule — but scoped to the semantic
+  // `data-conversation-scroll` attribute (verified on the scrollBody element in
+  // the shipped bundle), with the per-pass audit rescuing provable mis-catches.
+  // What this pins: the rule exists, its scope is the conversation scroller,
+  // and the global form stays gone.
   const doc = installGlobals();
   loaded.factory(provide).apply({ get: () => undefined });
-  const rail = doc.head.children.find(
+  const tag = doc.head.children.find(
     (c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap-rail',
   );
-  assert.ok(!rail, 'the global rail-hiding rule must be gone');
+  assert.ok(tag, 'the scoped constant rule must exist');
+  assert.match(tag.textContent, /^\[data-conversation-scroll\] nav\[class\*="_frame"\]/,
+    'the rule must scope to the conversation scroller, not the whole page');
+  assert.match(tag.textContent, /!important/);
+  assert.ok(!tag.textContent.includes('body nav'),
+    'the P2-29 global form must not come back');
+  // 关掉开关：apply 必须把上一轮的规则摘干净（热重载从开到关不能赖着不走）。
+  globalThis.window.__dshomePlugin = { hideOfficialRail: false };
+  try {
+    loaded.factory(provide).apply({ get: () => undefined });
+    assert.ok(
+      !doc.head.children.some((c) => c.getAttribute('data-plugin') === 'dshome-plugin-minimap-rail'),
+      'applying with hideOfficialRail:false must remove the rule',
+    );
+  } finally {
+    globalThis.window.__dshomePlugin = undefined;
+  }
 });
 
 check('applying twice does not duplicate stylesheets', () => {
@@ -618,6 +676,10 @@ function mountSession({ total = TOTAL_H, view = VIEW_H, turns = TURN_COUNT, step
   const doc = installGlobals();
   const scroller = doc.createElement('div');
   scroller.className = 'session_scrollBody';
+  // Browser-faithful: upstream's scrollBody carries the semantic attribute on
+  // the same element (verified in the shipped bundle) — it scopes the plugin's
+  // constant rail-hiding rule.
+  scroller.setAttribute('data-conversation-scroll', '');
   scroller.clientHeight = view;
   scroller.scrollHeight = total;
   scroller.scrollTop = 0;
@@ -798,6 +860,10 @@ console.log('\n== minimap behaviour (runtime) ==');
 function addColumn(doc, { turns, step, total, view = VIEW_H, left = 0, top = 0, laidOut = null, kinds = null, width = 900, textRight = 800 }) {
   const scroller = doc.createElement('div');
   scroller.className = 'session_scrollBody';
+  // Browser-faithful: upstream's scrollBody carries the semantic attribute on
+  // the same element (verified in the shipped bundle) — it scopes the plugin's
+  // constant rail-hiding rule.
+  scroller.setAttribute('data-conversation-scroll', '');
   scroller.clientHeight = view;
   scroller.scrollHeight = total;
   scroller.scrollTop = 0;
@@ -1140,88 +1206,87 @@ check('the strip anchors inside the conversation column, not the window edge', (
     `the strip must sit inside the column: right=${shell.style.right}, expected ${expected}`);
 });
 
-check('minimap hides the official rail only when its geometry is rail-like', () => {
-  // 2026-10-14 review P2-29: the old CSS rule `body nav[class*="_frame"]{opacity:0;
-  // pointer-events:none}` hit EVERY nav carrying that hash fragment. The hide is now
-  // JS-side and gated on the rail's silhouette (narrow gutter strip, tall), and the
-  // hidden rails are restored on teardown.
+check('the constant rule hides the rail; JS only rescues provable mis-catches', () => {
+  // v14 语义（2026-10-16 重设计，三代方案史见 lib/client.js 的 RAIL_RULE 注释）：
+  // 隐藏本体是作用域 CSS 规则——对新挂载零延迟零轮询；JS 每拍只审计。本测钉
+  // 四件事：rail 不留 JS 指纹、确凿不是 rail 的被救回、作用域外的一律不碰、
+  // 2026-10-15 的 72px 真机尺寸仍不许被「救」（包络在，方向反了）。
   const { doc } = mountWith({
     setup: (d) => {
-      const rail = d.createElement('nav');
+      // setup 先于 apply 跑：会话滚动区由 mountWith 刚挂好，从 body 里取。
+      const scroller = d.body.children.find((c) => c.className === 'session_scrollBody');
+      const rail = d.createElement('nav');            // rail-like：28×420
       rail.className = 'chat_frame';
-      rail.getBoundingClientRect = () => ({
-        top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
-      });
-      d.body.appendChild(rail);
-      // 2026-10-15 现场回归臂：真实 rail 含热区/内边距量出来 72px 宽——第一版
-      // 包络（≤64px，测试替身上标定）把它放走了，官方进度条和缩略图并排出现。
+      rail.getBoundingClientRect = () => ({ top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420 });
+      scroller.appendChild(rail);                     // 规则的作用域内
+      d.__rail = rail;
+      // 2026-10-15 现场回归臂：真实 rail 含热区/内边距量出来 72px 宽——包络
+      // （≤200px）必须继续把它当 rail，不许被新方向（救错杀）放走。
       const wide = d.createElement('nav');
       wide.className = 'official_frame';
-      wide.getBoundingClientRect = () => ({
-        top: 100, bottom: 900, left: 960, right: 1032, width: 72, height: 800,
-      });
-      d.body.appendChild(wide);
-      const pane = d.createElement('nav');
-      pane.className = 'sidebar_frame';
-      pane.getBoundingClientRect = () => ({
-        top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800,
-      });
-      d.body.appendChild(pane);
-      d.__rail = rail;
+      wide.getBoundingClientRect = () => ({ top: 100, bottom: 900, left: 960, right: 1032, width: 72, height: 800 });
+      scroller.appendChild(wide);
       d.__wide = wide;
+      const pane = d.createElement('nav');            // 确凿不是 rail：240px 宽窗格
+      pane.className = 'sidebar_frame';
+      pane.getBoundingClientRect = () => ({ top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800 });
+      scroller.appendChild(pane);                     // 关键：在作用域内 ⇒ 规则盖得住 ⇒ 必须被救
       d.__pane = pane;
+      const outside = d.createElement('nav');         // 作用域外：规则碰不到，JS 也不许多管
+      outside.className = 'sidebar_frame';
+      outside.getBoundingClientRect = () => ({ top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800 });
+      d.body.appendChild(outside);
+      d.__outside = outside;
     },
   });
-  assert.equal(doc.__rail.style.opacity, '0', 'a rail-like nav must be hidden');
-  assert.equal(doc.__rail.style.pointerEvents, 'none', 'hidden rail must not take clicks');
-  assert.equal(doc.__wide.style.opacity, '0',
-    'a 72px-wide rail (live-measured shape, 2026-10-15) must be hidden — the envelope exists so threshold drift cannot re-break this');
-  assert.notEqual(doc.__pane.style.opacity, '0',
-    'a 240px sidebar pane that merely carries the hash fragment must be left alone');
+  assert.equal(doc.__rail.style.opacity, '',
+    'a rail-like nav is hidden by the CSS rule — no JS fingerprints on it');
+  assert.equal(doc.__wide.style.opacity, '',
+    'a 72px rail (live-measured 2026-10-15) must stay ruled, not rescued');
+  assert.equal(doc.__pane.style.opacity, '1',
+    'a 240px pane inside the scope is provably not a rail — the audit must rescue it');
+  assert.equal(doc.__pane.style.pointerEvents, 'auto', 'the rescue must cover pointer events too');
+  assert.equal(doc.__outside.style.opacity, '',
+    'a nav outside the conversation scroller is nobody’s business — untouched');
   const teardown = globalThis.window.__dshomePluginTeardown;
-  assert.equal(typeof teardown, 'function', 'minimap teardown must be on its global');
   teardown();
-  assert.equal(doc.__rail.style.opacity, '', 'teardown must restore the hidden rail');
-  assert.equal(doc.__rail.style.pointerEvents, '', 'teardown must restore pointer events');
-  assert.equal(doc.__wide.style.opacity, '', 'teardown must restore the wide rail too');
+  assert.equal(doc.__pane.style.opacity, '',
+    'teardown must clear the rescue overrides it installed');
 });
 
-check('a rail that mounts after the strip is re-checked on every sync pass', () => {
-  // 2026-10-16 现场回归（主人三次报告「官方进度条没藏掉」的根因）：官方
-  // TurnNavigator 的 nav 要到第 2 个回合才挂载（`if (items.length < 2) return
-  // null`），而插件找到 scroller 的那一刻往往还没有 nav。旧实现只在 scroller
-  // 变更那一拍藏一次——nav 迟到或重挂载就永久放行。现在每拍（250ms tick）复查。
-  const { doc, log } = mountWith({});
+check('a rail that mounts after the strip needs no JS pass at all', () => {
+  // 2026-10-16 现场回归的根因（官方 nav 到第 2 回合才挂载）在 v14 下的形态：
+  // 迟到挂载不再依赖「下一拍追藏」——规则本身作用于未来元素。每拍审计只管
+  // 救错杀；0×0（刚挂载未布局）不许救，救了反而闪一拍。
+  const { doc, scroller, log } = mountWith({});
+  const tick = () => log.intervals.find((t) => t.delay === 250).fn();
   const rail = doc.createElement('nav');
   rail.className = 'chat_frame';
-  rail.getBoundingClientRect = () => ({
-    top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
-  });
-  // 上游在第 2 个回合才挂出 nav——此刻 apply/sync 早已跑过：
-  doc.body.appendChild(rail);
-  log.intervals.find((t) => t.delay === 250).fn();
-  assert.equal(rail.style.opacity, '0',
-    'a rail that mounted after the first sync must still be hidden by the tick');
-  // React 重挂载：旧节点拆走、新节点顶上——下一拍必须把新节点也藏掉。
+  rail.getBoundingClientRect = () => ({ top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420 });
+  scroller.appendChild(rail);                        // 上游在第 2 个回合才挂出 nav
+  tick();
+  assert.equal(rail.style.opacity, '',
+    'a late-mounted rail is hidden by the rule alone — no JS pass required');
+  // 未布局完的 nav（0×0）：交给规则，不许被救——救了就闪一拍。
+  const mounting = doc.createElement('nav');
+  mounting.className = 'chat_frame';
+  mounting.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 });
+  scroller.appendChild(mounting);
+  // React 重挂载：旧 rail 拆走、新 rail 顶上——同样零 JS 参与。
   rail.remove();
   const remounted = doc.createElement('nav');
   remounted.className = 'chat_frame';
-  remounted.getBoundingClientRect = () => ({
-    top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
-  });
-  doc.body.appendChild(remounted);
-  log.intervals.find((t) => t.delay === 250).fn();
-  assert.equal(remounted.style.opacity, '0',
-    'a remounted rail must be re-hidden on the next pass');
-  // 宿主或别的插件把 style 抹回去，也不能让它回来：已藏的每拍重申。
-  remounted.style.opacity = '';
-  log.intervals.find((t) => t.delay === 250).fn();
-  assert.equal(remounted.style.opacity, '0',
-    'an already-hidden rail must be re-asserted every pass');
-  const teardown = globalThis.window.__dshomePluginTeardown;
-  teardown();
-  assert.equal(remounted.style.opacity, '',
-    'teardown must restore the rail this pass hid');
+  remounted.getBoundingClientRect = () => ({ top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420 });
+  scroller.appendChild(remounted);
+  // 迟到的错杀：窗格晚于一切挂进来，下一拍必须救。
+  const pane = doc.createElement('nav');
+  pane.className = 'sidebar_frame';
+  pane.getBoundingClientRect = () => ({ top: 0, bottom: 800, left: 0, right: 240, width: 240, height: 800 });
+  scroller.appendChild(pane);
+  tick();
+  assert.equal(remounted.style.opacity, '', 'a remounted rail is again rule-hidden with no JS pass');
+  assert.equal(mounting.style.opacity, '', 'a not-yet-laid-out nav must be left to the rule (no rescue flicker)');
+  assert.equal(pane.style.opacity, '1', 'a provably-not-rail nav is rescued on the next pass');
 });
 
 check('the rail-anchor probe waits out the mount race before speaking', () => {
@@ -1239,6 +1304,30 @@ check('the rail-anchor probe waits out the mount race before speaking', () => {
   tick();
   tick();                                     // 第 4 拍：40 回合在场且无 nav ⇒ 说
   assert.ok(spoke(), 'the probe must speak once the race is lost and ≥2 turns are on screen');
+});
+
+check('the probe also speaks when the scoped rule stops biting', () => {
+  // 探针第二臂（2026-10-16）：选择器还匹配得到 nav，但规则不再作用于它——
+  // 比如 data-conversation-scroll 或 _frame 任一锚点改名。只看「匹配到没有」
+  // 的旧探针会瞎；新臂读 computed opacity：rail-like、不在被救名单里，却算出
+  // 来不是 0 ⇒ 该藏的没藏住，说一次，别静默。
+  const { doc, log } = mountWith({});
+  const rail = doc.createElement('nav');
+  rail.className = 'chat_frame';
+  rail.getBoundingClientRect = () => ({ top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420 });
+  doc.body.appendChild(rail);          // 故意挂在作用域外：规则盖不到，选择器匹配得到
+  const before = capturedWarnings.length;
+  const previous = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ opacity: '1', getPropertyValue: () => '' });
+  try {
+    log.intervals.find((t) => t.delay === 250).fn();
+  } finally {
+    globalThis.getComputedStyle = previous;
+  }
+  assert.ok(
+    capturedWarnings.slice(before).some((w) => /is present but a rail-like nav still computes opacity/.test(w)),
+    'a rail-like nav the rule never reached must be reported',
+  );
 });
 
 check('the strip aligns to the official rail when the rail is there', () => {
@@ -1459,6 +1548,10 @@ function rowEl(doc, { top, height, turn = '', kind = '' }) {
 function columnEl(doc, { scrollHeight = 1000, view = 200 } = {}) {
   const scroller = doc.createElement('div');
   scroller.className = 'session_scrollBody';
+  // Browser-faithful: upstream's scrollBody carries the semantic attribute on
+  // the same element (verified in the shipped bundle) — it scopes the plugin's
+  // constant rail-hiding rule.
+  scroller.setAttribute('data-conversation-scroll', '');
   scroller.clientHeight = view;
   scroller.scrollHeight = scrollHeight;
   scroller.getBoundingClientRect = () => ({
