@@ -197,6 +197,15 @@ check('the selector header documents exactly two hash-fragment exceptions (P1-12
   // 标定的，真实 rail 量出来 72px，当场放走。
   assert.match(code, /RAIL_MAX_W = 200/, 'the rail envelope regressed to a tight silhouette');
   assert.match(code, /RAIL_MIN_H = 40/, 'the rail min-height guard changed');
+  // 2026-10-16 现场回归（「官方进度条还是没藏掉」第三次报告的根因）：藏 rail
+  // 不能只在 scroller 变更那一刻——官方 TurnNavigator 的 nav 要到第 2 个回合才
+  // 挂载（items.length < 2 直接 render null），scroller 被找到时往往还没有 nav，
+  // 一次性隐藏必然放过迟到/重挂载的 nav。钉三点：每拍复查的 rationale 注释、
+  // 探针的 ≥2 回合门槛（railDueOnScreen）、竞态宽限（railSeenPasses）。
+  assert.match(clientSource, /官方 TurnNavigator 的 nav 在 items\.length < 2 时不挂载/,
+    'the per-beat re-check rationale is gone');
+  assert.match(code, /railDueOnScreen/, 'the ≥2-turn gate on the rail probe is gone');
+  assert.match(code, /railSeenPasses/, 'the mount-race grace counter is gone');
 });
 
 check('never relies on hashed CSS-module class names', () => {

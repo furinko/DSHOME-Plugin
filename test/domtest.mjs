@@ -1186,6 +1186,61 @@ check('minimap hides the official rail only when its geometry is rail-like', () 
   assert.equal(doc.__wide.style.opacity, '', 'teardown must restore the wide rail too');
 });
 
+check('a rail that mounts after the strip is re-checked on every sync pass', () => {
+  // 2026-10-16 现场回归（主人三次报告「官方进度条没藏掉」的根因）：官方
+  // TurnNavigator 的 nav 要到第 2 个回合才挂载（`if (items.length < 2) return
+  // null`），而插件找到 scroller 的那一刻往往还没有 nav。旧实现只在 scroller
+  // 变更那一拍藏一次——nav 迟到或重挂载就永久放行。现在每拍（250ms tick）复查。
+  const { doc, log } = mountWith({});
+  const rail = doc.createElement('nav');
+  rail.className = 'chat_frame';
+  rail.getBoundingClientRect = () => ({
+    top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
+  });
+  // 上游在第 2 个回合才挂出 nav——此刻 apply/sync 早已跑过：
+  doc.body.appendChild(rail);
+  log.intervals.find((t) => t.delay === 250).fn();
+  assert.equal(rail.style.opacity, '0',
+    'a rail that mounted after the first sync must still be hidden by the tick');
+  // React 重挂载：旧节点拆走、新节点顶上——下一拍必须把新节点也藏掉。
+  rail.remove();
+  const remounted = doc.createElement('nav');
+  remounted.className = 'chat_frame';
+  remounted.getBoundingClientRect = () => ({
+    top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
+  });
+  doc.body.appendChild(remounted);
+  log.intervals.find((t) => t.delay === 250).fn();
+  assert.equal(remounted.style.opacity, '0',
+    'a remounted rail must be re-hidden on the next pass');
+  // 宿主或别的插件把 style 抹回去，也不能让它回来：已藏的每拍重申。
+  remounted.style.opacity = '';
+  log.intervals.find((t) => t.delay === 250).fn();
+  assert.equal(remounted.style.opacity, '0',
+    'an already-hidden rail must be re-asserted every pass');
+  const teardown = globalThis.window.__dshomePluginTeardown;
+  teardown();
+  assert.equal(remounted.style.opacity, '',
+    'teardown must restore the rail this pass hid');
+});
+
+check('the rail-anchor probe waits out the mount race before speaking', () => {
+  // 探针收紧（2026-10-16）：官方 nav 本来就要到第 2 个回合才挂载，且挂载与
+  // 首个 sync 之间有竞态——头两拍「没匹配到」不算锚点失效，第三次起才报警。
+  // 否则每次开屏都误报一次，真失效反而没人当真。
+  // （capturedWarnings 是全程累计的：以本测试开跑处为基线看增量。）
+  const { log } = mountWith({});
+  const tick = () => log.intervals.find((t) => t.delay === 250).fn();
+  const before = capturedWarnings.length;
+  const spoke = () => capturedWarnings.slice(before)
+    .some((w) => /rail selector .* matched nothing although/.test(w));
+  tick();                                     // 第 2 拍：竞态窗口内，不许说话
+  assert.ok(!spoke(), 'the probe must not speak while the mount race is still open');
+  tick();
+  tick();                                     // 第 4 拍：40 回合在场且无 nav ⇒ 说
+  assert.ok(spoke(), 'the probe must speak once the race is lost and ≥2 turns are on screen');
+});
+
 check('the strip aligns to the official rail when the rail is there', () => {
   // Upstream's rail already sits in the gutter, clear of the scrollbar, so it is
   // the better anchor whenever it is laid out.
