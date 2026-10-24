@@ -182,10 +182,22 @@ Every feature is a progressive enhancement, invoked inside an error boundary. A 
 npm test
 ```
 
-- `test/selftest.mjs` — 60 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, the header's feature census, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 95 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, how it follows a sidebar whose slide is transform-driven, and how its wheel handler converts deltaMode (including the NaN no-op, a zero-height PAGE target, and a throwing style engine) — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
+- `test/selftest.mjs` — 67 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, the header's feature census, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
+- `test/domtest.mjs` — 102 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, how it follows a sidebar whose slide is transform-driven, and how its wheel handler converts deltaMode (including the NaN no-op, a zero-height PAGE target, and a throwing style engine) — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
 
 Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
+
+### Manual: Firefox flash check
+
+A `display:none` element reports a zero rect, so the mock DOM cannot reproduce a show/hide feedback loop — the failure mode where the strip hides itself, loses the geometry that justified hiding, and comes back. `test/manual/firefox-flash.mjs` covers it in a real browser: a full-width conversation plus a floating sidebar that slides in, sampled every 16ms across open, settled, close and reopen.
+
+```bash
+node test/manual/firefox-flash.mjs          # open http://127.0.0.1:3099/
+DSHOME_V15=/path/to/old-client.js \
+  node test/manual/firefox-flash.mjs        # then open http://127.0.0.1:3099/?impl=v15
+```
+
+It prints `FAIL`/`PASS` per property (display flips, direction reversals, lane inset, return-to-baseline, stable-window drift) and writes the raw report to the OS temp directory. Deliberately not part of `npm test`: it needs a browser window in the foreground. The 2026-10-25 run is recorded in `test/manual/firefox-flash-20261025.json`.
 
 ## License
 

@@ -1,0 +1,50 @@
+{
+  "at": "2026-10-25T02:00:00+08:00",
+  "build": "v16-sidebar-navigation-lane",
+  "commit": "9f121a4",
+  "question": "Firefox 侧栏打开时闪烁（v15 记录中的用户报告：\"User reports flashing with sidebar open\"）",
+  "hypothesis": "v15 用 display:none 把缩略图从遮挡处撤走；真浏览器里 display:none 让 getBoundingClientRect 返回全零，遮挡判定随即失明，下一拍又判不遮挡——显隐反馈回路。mock DOM 里 rect 不随 display 变化，所以测试看不到它。",
+  "method": {
+    "tool": "test/manual/firefox-flash.mjs",
+    "engine": "Firefox 158.0",
+    "viewport": "1734x1079",
+    "devicePixelRatio": 1.25,
+    "fixture": "会话滚动区满宽 + 固定定位侧栏从右滑入（250ms transform），即侧栏覆盖会话的场景",
+    "sampling": "16ms 粒度，七段：baseline / opening / opened / closing / closed / reopening / reopened",
+    "control": "同一 fixture 通过 /client-v15.js 注入 v15 备份做对照"
+  },
+  "results": {
+    "v16": {
+      "displayValues": ["block"],
+      "displayFlips": 0,
+      "visibleFrac": 1,
+      "stripMovedWhenOpenedPx": 400,
+      "laneInsetFinal": "474px",
+      "lanePadRightFinal": "474px",
+      "closedBackToBaselinePx": 27.6,
+      "stableSpreadPx": 0,
+      "rightReversals": 0,
+      "pageErrors": 0,
+      "pageWarnings": 0,
+      "resizeObserverCallbacks": 71,
+      "resizeObserverNote": "71 次全部发生在两段 1200ms 的开/关动画期间，逐帧跟随 transform；没有失控增长"
+    },
+    "v15": {
+      "displayValues": ["block", "none"],
+      "displayFlips": 1,
+      "visibleFracOpening": 0.027,
+      "visibleFracOpened": 0,
+      "displayWhileOpened": "none",
+      "laneInset": "未设置",
+      "pageErrors": 0,
+      "pageWarnings": 0
+    }
+  },
+  "conclusion": "v16 在真 Firefox 里不再靠隐藏躲侧栏：display 恒 block、位置单调移动、稳定期零漂移、关闭精确回到基线。对照的 v15 在同一场景下侧栏打开即整体隐藏、关闭才出现，症状与用户报告一致。闪烁的机制根因已消除，不是被掩盖。",
+  "residual": [
+    "真实 DSH 页面没有注入采样：需要在 Firefox 里刷新 http://127.0.0.1:3080 后目视确认，重点看窄视口/浮动侧栏场景。",
+    "installation.json 的两条 limits 仍然有效：提醒投递与长会话缩略图没有在真实新回合上跑过。",
+    "只覆盖 DPR 1.25；150% 缩放（DPR 1.5）与多显示器切换未测。",
+    "只覆盖浮层覆盖场景；宽视口下的 push 侧栏由 Chromium 实测覆盖（navigationRight 694 < sidebarLeft 704），Firefox 的 push 场景未单独采样。"
+  ]
+}
