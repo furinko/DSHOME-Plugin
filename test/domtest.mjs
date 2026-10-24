@@ -48,11 +48,13 @@ function createStyle() {
   const declared = {};
   const important = {};
   const camel = (name) => name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  const propertyKey = (name) => String(name).startsWith('--') ? String(name) : camel(String(name));
   return new Proxy(declared, {
     get(target, prop) {
+      if (prop === 'getPropertyValue') return (name) => target[propertyKey(name)] ?? '';
       if (prop === 'setProperty') {
         return (name, value, priority) => {
-          const key = camel(String(name));
+          const key = propertyKey(name);
           target[key] = String(value);
           if (priority === 'important') important[key] = true;
           else delete important[key];
@@ -1180,13 +1182,41 @@ check('a sidebar that owns a track beside the column never hides the strip', () 
     'a sidebar beside the conversation column must not stand the strip down');
 });
 
-check('a sidebar that reaches the strip itself stands it down', () => {
-  // The narrow-viewport case: there is no room for a track, so the panel floats
-  // over the centre column and does overlap the strip. Sliding the strip to the
-  // panel's edge — what the reference implementation does — parks it on top of
-  // the conversation being read, so standing down is still right here.
-  const { shell } = mountWith({ setup: (doc) => { sidebarPanel(doc, 700); } });
-  assert.equal(shell.style.display, 'none', 'the strip must stand down while it is covered');
+check('an overlapping sidebar leaves a visible lane and reserves room beside the text', () => {
+  const { shell, scroller } = mountWith({ setup: (doc) => { sidebarPanel(doc, 700); } });
+  assert.equal(shell.style.display, 'block', 'opening a sidebar must keep navigation available');
+  const right = window.innerWidth - parseFloat(shell.style.right);
+  assert.equal(right, 692, 'the strip must stop 8px before the sidebar');
+  assert.ok(scroller.hasAttribute('data-dshome-minimap-inset'), 'text must reflow away from the navigation lane');
+  const inset = parseFloat(scroller.style['--dshome-minimap-inset']);
+  assert.ok(inset >= 200 + parseFloat(shell.style.width) + 16,
+    'the inset must cover both the overlay and the navigation lane');
+});
+
+check('sidebar navigation stays visible and stable across repeated syncs and reopening', () => {
+  const { doc, shell, log } = mountWith({ setup: (d) => { sidebarPanel(d, 700); } });
+  // A browser returns an empty rect for display:none. The generic DOM double
+  // keeps a fixed rect, which hid the show/hide feedback loop from older tests.
+  shell.getBoundingClientRect = () => shell.style.display === 'none'
+    ? { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }
+    : { top: 108, bottom: 868, left: 834, right: 892, width: 58, height: 760 };
+  const tick = log.intervals.find((t) => t.delay === 250).fn;
+  for (let i = 0; i < 12; i += 1) {
+    tick();
+    assert.equal(shell.style.display, 'block', `navigation must stay visible on sync ${i + 1}`);
+    assert.equal(window.innerWidth - parseFloat(shell.style.right), 692, 'the lane must not oscillate');
+  }
+  const panel = doc.body.children.find((c) => c.className === 'sidebar_panel');
+  panel.removeAttribute('data-sidebar-right-open');
+  tick();
+  assert.equal(shell.style.display, 'block', 'closing the sidebar must show the strip again');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 892, 'closing restores the original position');
+  panel.setAttribute('data-sidebar-right-open', '');
+  for (let i = 0; i < 12; i += 1) {
+    tick();
+    assert.equal(shell.style.display, 'block', `reopened sidebar must keep navigation on sync ${i + 1}`);
+    assert.equal(window.innerWidth - parseFloat(shell.style.right), 692);
+  }
 });
 
 check('the strip anchors inside the conversation column, not the window edge', () => {
@@ -1338,17 +1368,17 @@ check('the strip aligns to the official rail when the rail is there', () => {
       const nav = doc.createElement('nav');
       nav.className = 'chat_frame';
       nav.getBoundingClientRect = () => ({
-        top: 100, bottom: 520, left: 1000, right: 1028, width: 28, height: 420,
+        top: 100, bottom: 520, left: 820, right: 848, width: 28, height: 420,
       });
-      doc.body.appendChild(nav);
+      doc.body.children.find((c) => c.className === 'session_scrollBody').appendChild(nav);
     },
   });
-  const expected = 1400 - 1028 + (28 - 58) / 2;      // rail-aligned, centred on it
+  const expected = 1400 - 848 + (28 - 58) / 2;      // rail-aligned, centred on it
   assert.ok(Math.abs(parseFloat(shell.style.right) - expected) <= 1,
     `the rail must win as the anchor: right=${shell.style.right}, expected ${expected}`);
 });
 
-check('a floating sidebar pane hides the strip even with no open attribute', () => {
+check('a floating sidebar pane gets a navigation lane even with no open attribute', () => {
   // Upstream's own rule is "a pane is visible when it is floating OR its owner is
   // open". A float is on screen with no `data-sidebar-right-open` anywhere, so
   // watching that attribute alone would leave the strip underneath it.
@@ -1364,7 +1394,8 @@ check('a floating sidebar pane hides the strip even with no open attribute', () 
       doc.body.appendChild(float);
     },
   });
-  assert.equal(shell.style.display, 'none', 'a floating pane over the strip must hide it');
+  assert.equal(shell.style.display, 'block', 'a floating pane must keep the strip available');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 692);
 });
 
 check('a stale fullscreen owner in an inactive session does not hide the strip', () => {
@@ -1409,7 +1440,8 @@ check('the sidebar is watched by attribute, and closing brings the strip back', 
   assert.deepEqual(watcher.options.attributeFilter,
     ['data-sidebar-right-open', 'data-sidebar-right-panel']);
   assert.equal(watcher.target, doc.body, 'the panel can appear anywhere, so body is the right root');
-  assert.equal(shell.style.display, 'none', 'an open sidebar must stand the strip down at mount');
+  assert.equal(shell.style.display, 'block', 'an open sidebar must keep navigation visible');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 692);
   // Closing: the attribute is gone, so the first read already has the final
   // position and the strip must come back without waiting for the animation.
   doc.body.children.find((c) => c.className === 'sidebar_panel').removeAttribute('data-sidebar-right-open');
@@ -1449,8 +1481,11 @@ check('the strip follows the sidebar slide frame by frame', () => {
     top: 0, bottom: 1080, left: 700, right: 1400, width: 700, height: 1080,
   });
   log.raf[0]();
-  assert.equal(shell.style.display, 'none',
-    'the frame that sees the overlap must stand the strip down');
+  assert.equal(shell.style.display, 'block', 'the strip must remain usable during the slide');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 692,
+    'the frame that sees the overlap must move the strip before the panel');
+  assert.equal(canvasOf(shell).width, parseFloat(shell.style.width),
+    'narrowing the lane must redraw the canvas at its current width');
   // Sliding back out: the next frame brings it back straight away.
   panel.getBoundingClientRect = () => ({
     top: 0, bottom: 1080, left: 1200, right: 1400, width: 200, height: 1080,
@@ -1459,6 +1494,36 @@ check('the strip follows the sidebar slide frame by frame', () => {
   log.raf[1]();
   assert.notEqual(shell.style.display, 'none',
     'the frame that sees the space free must bring the strip back');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 892,
+    'the strip must follow the freed conversation edge');
+});
+
+check('a narrow overlay leaves a compact lane and teardown restores the conversation', () => {
+  const { shell, scroller } = mountWith({
+    left: 200, width: 700,
+    setup: (doc) => { sidebarPanel(doc, 500); },
+  });
+  assert.equal(shell.style.display, 'block');
+  assert.equal(parseFloat(shell.style.width), 24, 'a narrow conversation must retain a usable compact lane');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 492);
+  assert.ok(scroller.hasAttribute('data-dshome-minimap-inset'));
+  window.__dshomePluginTeardown();
+  assert.equal(scroller.hasAttribute('data-dshome-minimap-inset'), false);
+  assert.equal(scroller.style['--dshome-minimap-inset'], '');
+});
+
+check('a sidebar surface below the conversation does not take its navigation space', () => {
+  const { shell, scroller } = mountWith({
+    setup: (doc) => {
+      const panel = sidebarPanel(doc, 700);
+      panel.getBoundingClientRect = () => ({
+        top: 900, bottom: 1080, left: 700, right: 1100, width: 400, height: 180,
+      });
+    },
+  });
+  assert.equal(shell.style.display, 'block');
+  assert.equal(window.innerWidth - parseFloat(shell.style.right), 892);
+  assert.equal(scroller.hasAttribute('data-dshome-minimap-inset'), false);
 });
 
 check('the layout gate is a ratio: 23/40 paints nothing, 24/40 paints', () => {

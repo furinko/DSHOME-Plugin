@@ -164,7 +164,7 @@ Four invariants keep the minimap accurate, each fixing a bug reproduced on a rea
 3. **Positions come only from the browser.** `fromEnd = scrollHeight − rect.top − rect.height`. Estimating height from character counts uses a different ruler than real layout, so "what I clicked" and "what is on screen" disagree.
 4. **Dirty values are never cached.** A block measuring 0px has not laid out yet; it gets a temporary height and no cache entry.
 
-The strip is not fixed-width: it narrows with the gutter between the text column's measured right edge and the conversation column's right edge (58px down to 24px) rather than disappearing, and it stands down only when a sidebar surface actually reaches it.
+The strip narrows with the conversation gutter (58px down to 24px). When a sidebar floats over the conversation, the strip moves to its left edge and the text and composer reflow to leave a navigation lane. Closing the sidebar restores the original layout. A fullscreen sidebar replaces the conversation view, so its conversation minimap stays hidden.
 
 Zoom is fixed at 1 by design. Above 1, the thumb (moving on the document ratio) and the content (drawn in its own coordinates) only agree near the middle, so clicks land in the wrong place and every measurement error is magnified. At zoom 1 the two relations are identical, which is what makes "click here, land here" exact.
 

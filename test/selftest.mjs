@@ -438,8 +438,9 @@ check('the composer height comes from the official measurement', () => {
 });
 
 check('the strip is top-aligned inside the conversation area', () => {
-  assert.match(code, /shell\.style\.top = Math\.round\(box\.top \+ CONVO_GAP_PX\) \+ 'px';/,
+  assert.match(code, /var top = Math\.round\(box\.top \+ CONVO_GAP_PX\);/,
     'the strip must start where the conversation starts');
+  assert.match(code, /shell\.style\.top = top \+ 'px';/);
 });
 
 check('the strip narrows with the conversation gutter instead of a fixed width', () => {
@@ -459,12 +460,12 @@ check('the gutter is measured off message rows, not parsed from a CSS expression
   assert.match(code, /return Math\.max\(0, box\.right - textRight\);/, 'gutter = column - text');
 });
 
-check('sidebar avoidance asks about the strip itself, not the window edge', () => {
+check('sidebar navigation uses the conversation box and reserves a text lane', () => {
   // The bug this locks: with three grid tracks the right sidebar sits *outside*
   // the conversation column, and "covered" measured against the window's right
   // edge hid the strip whenever the sidebar was open.
-  assert.match(code, /function sidebarCovers\(strip\)/, 'the rule must take the strip box');
-  assert.match(code, /sidebarCovers\(stripBox\(\)\)/, 'and be asked about the strip itself');
+  assert.match(code, /var freeRight = sidebarFreeRight\(box\);/, 'sidebar space must come from the conversation box');
+  assert.match(code, /reserveSidebarInset\(overlap > 0/, 'an overlay must leave an actual lane beside the text');
 });
 
 check('a column resize re-places the strip at once, and the slide is followed per frame', () => {
