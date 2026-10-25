@@ -475,6 +475,16 @@ check('conversation stylesheet clamps the think body to 12 lines', () => {
   assert.match(css, /max-height:calc\(12 \*/);
   assert.match(css, /data-variant="think"/);
   assert.match(css, /data-expanded/);
+  // 2026-10-25: upstream wrapped the row in a `data-disclosure-header`, so the
+  // body is now the header's sibling. The clamp must target that, and must NOT
+  // also emit the old `row + div` form: on this markup that selector matches the
+  // row's accessory sibling inside the header, and clamping upstream's own
+  // chrome is a worse failure than the window not applying.
+  assert.match(css,
+    /\[data-variant="think"\]\[data-expanded\] \[data-disclosure-header\] \+ div\{/,
+    'the clamp must target the header-wrapped body');
+  assert.ok(!/\[data-disclosure-row\] \+ div/.test(css),
+    'the legacy sibling form must stay out of CSS — it would clamp the accessory');
 });
 
 check('conversation stylesheet raises specificity for the collapsed state', () => {
@@ -514,9 +524,14 @@ check('a collapsed reasoning block is force-expanded on the next frame', () => {
   const root = new El('div');
   root.setAttribute('data-variant', 'think');
   root.setAttribute('data-state', 'ok');
+  // 2026-10-25 upstream nesting: the row is wrapped in a disclosure header, and
+  // the body is the header's sibling. The click still has to reach the row.
+  const header = new El('div');
+  header.setAttribute('data-disclosure-header', 'true');
   const row = new El('div');
   row.setAttribute('data-disclosure-row', 'true');
-  root.appendChild(row);
+  header.appendChild(row);
+  root.appendChild(header);
   flow.appendChild(root);
   doc.body.appendChild(flow);
 

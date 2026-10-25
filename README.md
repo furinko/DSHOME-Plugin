@@ -211,6 +211,18 @@ node test/manual/long-session-minimap.mjs   # open http://127.0.0.1:3097/?turns=
 
 It reports canvas device size against 32767, a sampled paint ratio (an all-transparent canvas is the P2-27 failure), per-block height, and where a click on 5% / 50% / 95% of the strip actually lands. Both runs are recorded in `test/manual/long-session-20261025.json`.
 
+### Manual: think-window clamp check
+
+The 12-line reasoning window is a stylesheet rule keyed to upstream's nesting, so a structural change upstream deletes the feature without failing anything here — which is exactly what happened on 2026-10-25, when the row gained a `data-disclosure-header` wrapper and the body stopped being its sibling. `test/manual/think-window.mjs` reproduces the current nesting in a real browser and measures the computed result:
+
+```bash
+node test/manual/think-window.mjs           # open http://127.0.0.1:3096/
+OLD_CLIENT=/path/to/old-client.js \
+  node test/manual/think-window.mjs         # then open http://127.0.0.1:3096/?old=1
+```
+
+It checks that the body clamps to `THINK_LINES × line-height`, scrolls internally, and that the accessory sibling next to the row is *not* clamped. The control run with the pre-fix bundle shows the opposite on both counts: no clamp on the body, and the accessory squeezed to 240px. Both runs are recorded in `test/manual/think-window-20261025.json`.
+
 ## License
 
 MIT

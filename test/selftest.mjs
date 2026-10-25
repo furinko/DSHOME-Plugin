@@ -121,7 +121,18 @@ check('reasoning window keeps its verified anchors and stays masking', () => {
   // with fresh asar evidence in the message.
   assert.match(code, /think: '\[data-variant="think"\]'/, 'the reasoning anchor is gone');
   assert.ok(code.includes("thinkRow: '[data-disclosure-row]'"), 'the disclosure-row anchor is gone');
-  assert.ok(code.includes("thinkBody: '[data-disclosure-row] + div'"), 'the reasoning-body anchor is gone');
+  // 2026-10-25: upstream wrapped the row in `data-disclosure-header`, so the body
+  // moved from the row's next sibling to the header's. The window silently
+  // stopped clamping when that happened; both spellings are pinned so the next
+  // change is a failing test, not a user report.
+  assert.ok(code.includes("thinkBody: '[data-disclosure-header] + div'"),
+    'the reasoning-body anchor (post-2026-10-25 nesting) is gone');
+  assert.ok(code.includes("thinkBodyLegacy: '[data-disclosure-row] + div'"),
+    'the legacy reasoning-body fallback is gone');
+  assert.ok(code.includes("'[data-expanded] ' + SELECTORS.thinkBody"),
+    'the clamp must reach the header-wrapped body');
+  assert.ok(!code.includes(":is(' + SELECTORS.thinkBody"),
+    'CSS must not also emit the legacy sibling form — it would clamp the accessory');
   assert.match(code, /var THINK_LINES = 12;/, 'the line window is gone');
   assert.ok(code.includes('max-height:calc('), 'the line-window clamp is gone');
 });

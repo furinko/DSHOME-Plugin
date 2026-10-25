@@ -1,0 +1,49 @@
+{
+  "at": "2026-10-25T12:56:00+08:00",
+  "question": "用户报告：思考块卡片没有行数上限了（展开后整段摊开，不再截到 12 行）",
+  "cause": "上游把 disclosure 的 DOM 套了一层。数据来源：dsh-web-frontend/dist/assets/index-CN7NIWNw.js 里 DisclosureRow 的渲染 —— children: [ div[data-disclosure-header] { div[data-disclosure-row], accessory }, 展开时的 body ]。正文因此从 row 的下一个兄弟变成 header 的下一个兄弟；插件原有的钳制选择器 [data-disclosure-row] + div 落空，max-height 规则不匹配，正文不再截断。合成点击仍能展开（row 还在），所以表现为「能展开、但没上限」。",
+  "control": {
+    "bundle": "HEAD~ 的 lib/client.js（修复前）",
+    "bodyMaxHeight": "none",
+    "bodyClientHeight": 1000,
+    "bodyScrollHeight": 1001,
+    "accessoryMaxHeight": "240px",
+    "accessoryClientHeight": 240,
+    "rootHeight": 1282,
+    "note": "旧选择器在新结构下不但没钳住正文，反而命中了 row 后面的 accessory，把上游自己的附件元素压到 240px"
+  },
+  "fixed": {
+    "bundle": "工作区 lib/client.js（修复后）",
+    "bodyMaxHeight": "240px",
+    "bodyClientHeight": 240,
+    "bodyScrollHeight": 1001,
+    "accessoryMaxHeight": "none",
+    "accessoryClientHeight": 300,
+    "rootHeight": 582,
+    "note": "正文截到 12×20px 且内部可滚；附件未被误伤"
+  },
+  "change": [
+    "SELECTORS.thinkBody 改为 '[data-disclosure-header] + div'，旧写法保留为 thinkBodyLegacy 仅作 JS 侧回退。",
+    "CSS 钳制只作用于新选择器；旧的 row + div 故意不进 CSS —— 它在当前结构下会命中 accessory。",
+    "bodyOf() 先查新结构再回退旧结构（不用逗号列表，避免拿到文档顺序更靠前的 accessory）。"
+  ],
+  "method": {
+    "tool": "test/manual/think-window.mjs",
+    "engine": "Firefox 158.0",
+    "fixture": "与上游一致的嵌套：header{row, accessory(300px)} + body(约 1000px 高)",
+    "controlRun": "?old=1 加载修复前的 bundle（OLD_CLIENT 指定）"
+  },
+  "tests": {
+    "selftest": "67/67",
+    "domtest": "102/102",
+    "locks": [
+      "selftest 钉住两个 body 锚点，并断言 CSS 不得 emit 旧写法",
+      "domtest 钉住钳制规则指向 header 兄弟，且 CSS 中不出现 row + div"
+    ]
+  },
+  "residual": [
+    "真实 DSH 页面未直接取证（无法向已登录页面注入采样）；结论基于从 web-frontend bundle 读到的上游结构与等价 fixture。刷新页面后仍需目视确认一次。",
+    "旧结构宿主（若回退到 2026-10-25 之前的上游）上，12 行窗口不再生效，只有 bodyOf 的回退查找还工作。这是有意的取舍：比误压 accessory 更安全。",
+    "未验证 hand-collapsed 记忆路径在新结构下的行为（COLLAPSED_KEY 与本问题无关）。"
+  ]
+}
