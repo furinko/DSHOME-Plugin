@@ -26,15 +26,6 @@ A canvas strip on the right edge showing a squashed picture of the conversation,
 - The strip is drawn once as a full-length canvas and moved by a transform, so scrolling never repaints it.
 - **Short sessions show the whole picture; long ones show the stretch around you.** The strip is at most a standard band tall (capped at 760px), while the canvas grows with zoom so blocks stay readable. Once the picture outgrows the band, the strip becomes a window onto it: it shows the neighbourhood of the current viewport and slides as you scroll. There a click jumps *within that window* (on a 600-turn session the window covers roughly 16% of the document, so clicking the bottom of the strip does not reach the end); travelling the whole conversation is the thumb's job — hold it and drag, which maps its travel linearly onto the document.
 
-### 5. Glow
-A restrained light layer, in three places only — and each is either ours or a stable semantic anchor, so an upstream rebuild cannot delete the effect silently.
-
-- **Brand mark** — a radial falloff behind the logo in the sidebar and the conversation hero, breathing on a 4.2s cycle.
-- **Cards** — a thin edge light on hover. Nothing glows at rest.
-- **Minimap thumb** — the existing hover ring gains light behind it; dragging (`data-active`) is when it reads strongest.
-
-The rules that keep light from becoming a liability: the loop animates `opacity` only (an animated `box-shadow` or `filter` repaints every frame — the reported cause of scroll jank in neon-heavy dark UIs); light sits *behind* content via `isolation` + `z-index:-1` and never lands on text; `prefers-reduced-motion: reduce` keeps the glow and stops the pulse; and the colour is a low-alpha brand blue, so the same rules read as a soft tint on a light page without any theme detection. `glow: false` injects no stylesheet at all.
-
 ### 4. Reminders
 Tells you when something is worth looking up from what you are doing — the client-side port of DSHOME's `dshome/notify` host plugin, rebuilt on state the official client already computes because this bundle has no host half.
 
@@ -67,6 +58,17 @@ The reminders are automatic; there is no console step and no button to press.
 2. Use the client normally. Send a message and let the reply finish: that is a turn completion, and it announces itself — a system notification, or an in-page card in the bottom-right corner when the browser has not granted notifications (with a tab-title flash while the window is in the background). A finished member session, a pending approval and a waiting question announce themselves the same way.
 
 If a reminder never appears, the feature reports its own gap instead of failing quietly: when none of the three sources attach within five seconds, one in-page card reads「提醒功能未接入」with the missing services named.
+
+### 5. Glow
+A restrained light layer, in three places only — and each is either ours or a stable semantic anchor, so an upstream rebuild cannot delete the effect silently.
+
+- **Brand mark** — a radial falloff behind the logo in the sidebar and the conversation hero, breathing on a 3.6s cycle. The halo reaches ~15px past the icon: the first pass at 9px and alpha .34 was invisible on the navy page, which is the failure mode "restrained" has to stay clear of.
+- **Cards** — a thin edge light on hover. Nothing glows at rest.
+- **Minimap thumb** — the existing hover ring gains light behind it; dragging (`data-active`) is when it reads strongest.
+
+The rules that keep light from becoming a liability: the loop animates `opacity` only (an animated `box-shadow` or `filter` repaints every frame — the reported cause of scroll jank in neon-heavy dark UIs); light sits *behind* content via `isolation` + `z-index:-1` and never lands on text; `prefers-reduced-motion: reduce` keeps the glow and stops the pulse; and the colour is a low-alpha brand blue, so the same rules read as a soft tint on a light page without any theme detection. `glow: false` injects no stylesheet at all.
+
+If you cannot see it, ask the page instead of guessing: `__dshomePluginGlow.status()` reports whether the sheet went in, how many `.dshome-glow-mark` wrappers exist (`0` means the slot never rendered), and the halo's live computed opacity.
 
 ### The switches live in Settings
 

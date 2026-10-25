@@ -602,6 +602,40 @@ check('glow:false installs no glow sheet at all', () => {
   }
 });
 
+// The stylesheet is worthless if the slot never renders the host it targets, and
+// "registered the slot" does not prove "rendered the wrapper" — the earlier
+// generator-form bug failed in exactly that gap. So this one walks the whole
+// path: register → render → component → span.
+check('the brand slot really renders the glow wrapper', () => {
+  const doc = installGlobals();
+  const jsxCalls = [];
+  const renders = [];
+  globalThis.window.__dshomePlugin = {
+    conversation: false, sidebar: false, minimap: false, notify: false,
+  };
+  try {
+    loaded.factory(recordingProvide(jsxCalls)).apply({
+      get: () => undefined,
+      slots: {
+        inject(name, fn) { return fn(); },
+        register(spec, render) {
+          if (spec.name === 'sidebar.brand.mark') renders.push(render);
+          return () => {};
+        },
+      },
+    });
+  } finally {
+    globalThis.window.__dshomePlugin = undefined;
+  }
+  assert.equal(renders.length, 1, 'the brand mark slot was not registered');
+  const wrapped = renders[0]({ size: 24 });
+  assert.equal(typeof wrapped.type, 'function', 'the slot must render a component, not null');
+  const span = wrapped.type(wrapped.props);
+  assert.equal(span.type, 'span');
+  assert.equal(span.props.className, 'dshome-glow-mark');
+  assert.ok(span.props.children, 'the mark itself must still be rendered inside the wrapper');
+});
+
 check('the rail-hiding stylesheet is SCOPED, never the global P2-29 rule', () => {
   // 2026-10-14 P2-29 removed the GLOBAL rule (`body nav[class*="_frame"]` hit
   // every nav with the fragment). 2026-10-16 redesign (主人问「不能常态隐藏吗」):
