@@ -558,6 +558,50 @@ check('conversation stylesheet styles the card kinds', () => {
   assert.match(css, /:not\(\[hidden\]\)/);
 });
 
+// The glow layer is the one feature whose failure mode is "looks wrong" rather
+// than "doesn't work", so the locks are about the rules that keep light from
+// becoming a liability: the pulse animates opacity only (an animated
+// box-shadow/filter repaints every frame), reduced motion is honoured, and
+// cards glow on hover rather than at rest.
+check('the glow layer pulses with opacity only and honours reduced motion', () => {
+  const doc = installGlobals();
+  loaded.factory(provide).apply({ get: () => undefined });
+  const tag = doc.head.children
+    .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-glow');
+  assert.ok(tag, 'the glow stylesheet must be installed');
+  const css = tag.textContent;
+
+  assert.match(css, /\.dshome-glow-mark/, 'the brand mark host rule is gone');
+  assert.match(css, /radial-gradient\(closest-side/, 'the mark light must be a radial falloff');
+  assert.match(css, /z-index:-1/, 'light must sit behind the mark, never on it');
+  assert.match(css, /isolation:isolate/, 'the negative z-index must stay inside the mark');
+
+  const pulse = /@keyframes dshome-glow-breathe\{([^}]*)\}/.exec(css);
+  assert.ok(pulse, 'the breathing keyframes are gone');
+  assert.ok(!/box-shadow|filter|transform|width:|height:/.test(pulse[1]),
+    'the pulse must animate opacity only — anything else repaints every frame');
+
+  assert.match(css, /prefers-reduced-motion:reduce/,
+    'reduced motion must stop the pulse');
+  assert.match(css, /:hover\{box-shadow:/,
+    'cards must glow on hover, not at rest');
+  assert.match(css, /dshome-plugin-minimap\[data-active\] \.dshome-plugin-minimap-thumb\{box-shadow:/,
+    'dragging the thumb must light it up');
+});
+
+check('glow:false installs no glow sheet at all', () => {
+  const doc = installGlobals();
+  globalThis.window.__dshomePlugin = { glow: false };
+  try {
+    loaded.factory(provide).apply({ get: () => undefined });
+    const tag = doc.head.children
+      .find((c) => c.getAttribute('data-plugin') === 'dshome-plugin-glow');
+    assert.equal(tag, undefined, 'glow:false must not inject the stylesheet');
+  } finally {
+    globalThis.window.__dshomePlugin = undefined;
+  }
+});
+
 check('the rail-hiding stylesheet is SCOPED, never the global P2-29 rule', () => {
   // 2026-10-14 P2-29 removed the GLOBAL rule (`body nav[class*="_frame"]` hit
   // every nav with the fragment). 2026-10-16 redesign (主人问「不能常态隐藏吗」):

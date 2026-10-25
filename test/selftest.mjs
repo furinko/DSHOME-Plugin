@@ -315,7 +315,7 @@ check('the header comment counts exactly what apply() installs', () => {
   const bullets = [...clientSource.matchAll(/^\/\/   · (\w+)/gm)].map((m) => m[1]);
   const declared = clientSource.match(/^\/\/ (\w+) features share one plugin id:$/m);
   assert.ok(declared, 'the header no longer declares a feature count');
-  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify'],
+  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify', 'glow'],
     'the feature gates apply() runs have changed — update header and bullets with them');
   assert.deepEqual(bullets, gates, 'the header bullets and the applied gates disagree');
   const counts = { One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9, Ten: 10 };

@@ -26,6 +26,15 @@ A canvas strip on the right edge showing a squashed picture of the conversation,
 - The strip is drawn once as a full-length canvas and moved by a transform, so scrolling never repaints it.
 - **Short sessions show the whole picture; long ones show the stretch around you.** The strip is at most a standard band tall (capped at 760px), while the canvas grows with zoom so blocks stay readable. Once the picture outgrows the band, the strip becomes a window onto it: it shows the neighbourhood of the current viewport and slides as you scroll. There a click jumps *within that window* (on a 600-turn session the window covers roughly 16% of the document, so clicking the bottom of the strip does not reach the end); travelling the whole conversation is the thumb's job — hold it and drag, which maps its travel linearly onto the document.
 
+### 5. Glow
+A restrained light layer, in three places only — and each is either ours or a stable semantic anchor, so an upstream rebuild cannot delete the effect silently.
+
+- **Brand mark** — a radial falloff behind the logo in the sidebar and the conversation hero, breathing on a 4.2s cycle.
+- **Cards** — a thin edge light on hover. Nothing glows at rest.
+- **Minimap thumb** — the existing hover ring gains light behind it; dragging (`data-active`) is when it reads strongest.
+
+The rules that keep light from becoming a liability: the loop animates `opacity` only (an animated `box-shadow` or `filter` repaints every frame — the reported cause of scroll jank in neon-heavy dark UIs); light sits *behind* content via `isolation` + `z-index:-1` and never lands on text; `prefers-reduced-motion: reduce` keeps the glow and stops the pulse; and the colour is a low-alpha brand blue, so the same rules read as a soft tint on a light page without any theme detection. `glow: false` injects no stylesheet at all.
+
 ### 4. Reminders
 Tells you when something is worth looking up from what you are doing — the client-side port of DSHOME's `dshome/notify` host plugin, rebuilt on state the official client already computes because this bundle has no host half.
 
@@ -99,6 +108,7 @@ window.__dshomePlugin = {
   sidebar: true,
   hideOfficialRail: true,   // hide upstream's own evenly-spaced turn rail
   notify: true,             // or an object — see below
+  glow: true,               // false injects no glow stylesheet at all
 };
 ```
 
@@ -184,7 +194,7 @@ npm test
 ```
 
 - `test/selftest.mjs` — 67 checks: the classic-script contract, selector stability, minimap geometry (including the conversation-area anchoring), theme token completeness, the slot-registration return contract, the header's feature census, and the packaging contract (the `dsh.client` bundle shape, every `exports` target exists, every cordis row resolves).
-- `test/domtest.mjs` — 102 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, how it follows a sidebar whose slide is transform-driven, and how its wheel handler converts deltaMode (including the NaN no-op, a zero-height PAGE target, and a throwing style engine) — and every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload.
+- `test/domtest.mjs` — 104 checks: evaluates the bundle with `new Function` (the closest local equivalent of a classic script, which rejects `import` the same way), then exercises style injection idempotency, the attach paths, slot registration, the minimap's real geometry — where it sits, how wide it is, how it follows a sidebar whose slide is transform-driven, and how its wheel handler converts deltaMode (including the NaN no-op, a zero-height PAGE target, and a throwing style engine) — every reminder scene against fake official stores, including the 5s throttles, the toast fallback, teardown, and re-apply after a hot reload, and the glow layer's rules (opacity-only pulse, reduced motion, hover-only card light, no sheet under `glow:false`).
 
 Both run without a browser. The two suites overlap deliberately on the module-format check: either one alone would have caught the boot failure.
 
