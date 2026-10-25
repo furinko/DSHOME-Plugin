@@ -60,15 +60,16 @@ The reminders are automatic; there is no console step and no button to press.
 If a reminder never appears, the feature reports its own gap instead of failing quietly: when none of the three sources attach within five seconds, one in-page card reads「提醒功能未接入」with the missing services named.
 
 ### 5. Glow
-A restrained light layer, in three places only — and each is either ours or a stable semantic anchor, so an upstream rebuild cannot delete the effect silently.
+A light layer in two places, both of which the plugin owns outright.
 
-- **Brand mark** — a radial falloff behind the logo in the sidebar and the conversation hero, breathing on a 3.6s cycle. The halo reaches ~15px past the icon: the first pass at 9px and alpha .34 was invisible on the navy page, which is the failure mode "restrained" has to stay clear of.
 - **Cards** — a thin edge light on hover. Nothing glows at rest.
-- **Minimap thumb** — the existing hover ring gains light behind it; dragging (`data-active`) is when it reads strongest.
+- **Minimap thumb** — an inner light on hover. It has to be inner: the thumb sits in a view clipped to the strip's rounded box, so an outward halo paints nothing (the first version did exactly that, and read as "小方块没生效"). Dragging adds nothing further — the pointer is still over the strip, so the hover light already applies, and a second, brighter state was reported as 扎眼 mid-drag.
 
-The rules that keep light from becoming a liability: the loop animates `opacity` only (an animated `box-shadow` or `filter` repaints every frame — the reported cause of scroll jank in neon-heavy dark UIs); light sits *behind* content via `isolation` + `z-index:-1` and never lands on text; `prefers-reduced-motion: reduce` keeps the glow and stops the pulse; and the colour is a low-alpha brand blue, so the same rules read as a soft tint on a light page without any theme detection. `glow: false` injects no stylesheet at all.
+There is no light on the brand mark. Four rounds of tuning (9px → 15px → 26px → silhouette-hugged drop-shadow) never made a permanently-lit logo look right beside its label, so it was removed; `registerBrand` renders the plain mark again. Do not reintroduce it without a reference the owner picked.
 
-If you cannot see it, ask the page instead of guessing: `__dshomePluginGlow.status()` reports whether the sheet went in, how many `.dshome-glow-mark` wrappers exist (`0` means the slot never rendered), and the halo's live computed opacity.
+Nothing animates on a loop: a breathing `box-shadow` or `filter` repaints every frame — the reported cause of scroll jank in neon-heavy dark UIs — so there is no pulse left to switch off for `prefers-reduced-motion`. Light stays inside the element it belongs to, and the colour is a low-alpha brand blue that also reads as a soft tint on a light page. `glow: false` injects no stylesheet at all.
+
+`__dshomePluginGlow.status()` reports whether the sheet went in and the thumb's live computed style.
 
 ### The switches live in Settings
 

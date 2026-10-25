@@ -559,11 +559,10 @@ check('conversation stylesheet styles the card kinds', () => {
 });
 
 // The glow layer is the one feature whose failure mode is "looks wrong" rather
-// than "doesn't work", so the locks are about the rules that keep light from
-// becoming a liability: the pulse animates opacity only (an animated
-// box-shadow/filter repaints every frame), reduced motion is honoured, and
-// cards glow on hover rather than at rest.
-check('the glow layer pulses with opacity only and honours reduced motion', () => {
+// than "doesn't work", so the locks record the boundaries the owner drew: light
+// on hover only, light inside the thumb (outside shadows are clipped), and no
+// light on the brand mark at all.
+check('the glow layer lights the thumb from the inside, on hover only, and leaves the logo alone', () => {
   const doc = installGlobals();
   loaded.factory(provide).apply({ get: () => undefined });
   const tag = doc.head.children
@@ -571,28 +570,31 @@ check('the glow layer pulses with opacity only and honours reduced motion', () =
   assert.ok(tag, 'the glow stylesheet must be installed');
   const css = tag.textContent;
 
-  assert.match(css, /\.dshome-glow-mark/, 'the brand mark host rule is gone');
-  assert.match(css, /radial-gradient\(closest-side/, 'the mark light must be a radial falloff');
-  assert.match(css, /z-index:-1/, 'light must sit behind the mark, never on it');
-  assert.match(css, /isolation:isolate/, 'the negative z-index must stay inside the mark');
+  // The brand mark is deliberately not lit any more (2026-10-25, fourth round:
+  // 9px invisible / 15px unreadable / 26px a white blob / silhouette-hugged
+  // still "效果不好"). The owner asked for it to go; this lock keeps it gone.
+  assert.ok(!/dshome-glow-mark/.test(css), 'the brand mark must carry no glow');
+  assert.ok(!/@keyframes/.test(css),
+    'the only looping animation left would be a mark pulse — there is none');
 
-  const pulse = /@keyframes dshome-glow-breathe\{([^}]*)\}/.exec(css);
-  assert.ok(pulse, 'the breathing keyframes are gone');
-  assert.ok(!/box-shadow|filter|transform|width:|height:/.test(pulse[1]),
-    'the pulse must animate opacity only — anything else repaints every frame');
-
-  assert.match(css, /prefers-reduced-motion:reduce/,
-    'reduced motion must stop the pulse');
+  assert.match(css, /:is\(\[data-chat-flow-kind/, 'the card rule is gone');
   assert.match(css, /:hover\{box-shadow:/,
     'cards must glow on hover, not at rest');
+
   // The thumb sits inside `.dshome-plugin-minimap-view`, which clips to the
   // strip's rounded box — an outward shadow there paints nothing (that is exactly
   // what the first version did, and the owner reported "小方块没生效").
   assert.match(css,
-    /dshome-plugin-minimap\[data-active\] \.dshome-plugin-minimap-thumb\{[^}]*inset 0 0/,
-    'dragging the thumb must light it from the inside');
+    /dshome-plugin-minimap:hover \.dshome-plugin-minimap-thumb\{[^}]*inset 0 0/,
+    'the thumb must light from the inside');
   assert.ok(!/minimap-thumb\{[^}]*box-shadow:0 0 0 1px/.test(css),
     'thumb light must never be an outer shadow — the view clips it away');
+
+  // Dragging must not brighten it further: the owner called the second, stronger
+  // `[data-active]` rule 扎眼. While dragging the pointer is still over the
+  // strip, so the hover light stays on by itself.
+  assert.ok(!/\[data-active\][^{]*minimap-thumb/.test(css),
+    'dragging must not add a brighter thumb rule');
 });
 
 check('glow:false installs no glow sheet at all', () => {
@@ -608,11 +610,11 @@ check('glow:false installs no glow sheet at all', () => {
   }
 });
 
-// The stylesheet is worthless if the slot never renders the host it targets, and
-// "registered the slot" does not prove "rendered the wrapper" — the earlier
-// generator-form bug failed in exactly that gap. So this one walks the whole
-// path: register → render → component → span.
-check('the brand slot really renders the glow wrapper', () => {
+// The brand slot is back to rendering the plain mark — the glow wrapper it used
+// to carry is gone with the mark light (2026-10-25). What still matters is that
+// the slot renders *something* real, because "registered the slot" does not prove
+// "rendered a component" (the earlier generator-form bug failed in that gap).
+check('the brand slot still renders a real component, with no glow wrapper', () => {
   const doc = installGlobals();
   const jsxCalls = [];
   const renders = [];
@@ -634,12 +636,9 @@ check('the brand slot really renders the glow wrapper', () => {
     globalThis.window.__dshomePlugin = undefined;
   }
   assert.equal(renders.length, 1, 'the brand mark slot was not registered');
-  const wrapped = renders[0]({ size: 24 });
-  assert.equal(typeof wrapped.type, 'function', 'the slot must render a component, not null');
-  const span = wrapped.type(wrapped.props);
-  assert.equal(span.type, 'span');
-  assert.equal(span.props.className, 'dshome-glow-mark');
-  assert.ok(span.props.children, 'the mark itself must still be rendered inside the wrapper');
+  const rendered = renders[0]({ size: 24 });
+  assert.ok(rendered, 'the slot must render something, not nothing');
+  assert.notEqual(rendered.className, 'dshome-glow-mark', 'the glow wrapper must be gone');
 });
 
 check('the rail-hiding stylesheet is SCOPED, never the global P2-29 rule', () => {
