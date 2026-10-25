@@ -586,6 +586,22 @@ check('the glow layer lights the thumb from the inside, on hover only, and leave
   assert.match(css, /prefers-reduced-motion:reduce/,
     'reduced motion must stop the sweep');
 
+  // Seamless loop — the arithmetic that is easy to get wrong, so it is pinned.
+  //
+  // `background-position` resolves a percentage against (element width − image
+  // width). With `background-size: 260%`, the image is 2.6× the element, so the
+  // available travel is −1.6× its width, and one whole image width equals
+  // 260 / 1.6 = 162.5 percentage points. Travel any other distance and the loop
+  // snaps by the remainder: the gradient's tail does not meet its own head.
+  // 180 → −80 (260 points) was exactly that bug: 1.6 periods, a 0.6-period jump
+  // every cycle, which the owner reported as "时间没对齐".
+  const sweep = /@keyframes dshome-name-sweep\{0%\{background-position:([-\d.]+)%.*?100%\{background-position:([-\d.]+)%/.exec(css);
+  assert.ok(sweep, 'the sweep keyframes are not in the expected shape');
+  const travel = Math.abs(Number(sweep[1]) - Number(sweep[2]));
+  assert.ok(Math.abs(travel - 162.5) < 0.01,
+    'the sweep must travel exactly one image width (162.5 points at size 260%); ' +
+    travel + ' points would snap at the loop');
+
   assert.match(css, /:is\(\[data-chat-flow-kind/, 'the card rule is gone');
   assert.match(css, /:hover\{box-shadow:/,
     'cards must glow on hover, not at rest');
