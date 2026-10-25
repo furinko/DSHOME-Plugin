@@ -615,6 +615,13 @@ check('the glow layer lights the thumb from the inside, on hover only, and leave
     /\.dshome-plugin-notify-toast:hover\{[^}]*0 0 28px rgba\(77,107,254/,
     'hovering a toast must lift its halo');
 
+  // Modals: depth comes from a backdrop blur, not a halo — the DSHOME reference
+  // has no glow anywhere. Anchored on role/aria-modal, so a restructure disables
+  // it instead of repainting something else.
+  assert.match(css,
+    /\[role="dialog"\]\[aria-modal="true"\] > div > div\[aria-hidden="true"\]\{[^}]*backdrop-filter/,
+    'the modal backdrop blur is gone');
+
   // The thumb sits inside `.dshome-plugin-minimap-view`, which clips to the
   // strip's rounded box — an outward shadow there paints nothing (that is exactly
   // what the first version did, and the owner reported "小方块没生效").
