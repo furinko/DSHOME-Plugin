@@ -585,8 +585,14 @@ check('the glow layer pulses with opacity only and honours reduced motion', () =
     'reduced motion must stop the pulse');
   assert.match(css, /:hover\{box-shadow:/,
     'cards must glow on hover, not at rest');
-  assert.match(css, /dshome-plugin-minimap\[data-active\] \.dshome-plugin-minimap-thumb\{box-shadow:/,
-    'dragging the thumb must light it up');
+  // The thumb sits inside `.dshome-plugin-minimap-view`, which clips to the
+  // strip's rounded box — an outward shadow there paints nothing (that is exactly
+  // what the first version did, and the owner reported "小方块没生效").
+  assert.match(css,
+    /dshome-plugin-minimap\[data-active\] \.dshome-plugin-minimap-thumb\{[^}]*inset 0 0/,
+    'dragging the thumb must light it from the inside');
+  assert.ok(!/minimap-thumb\{[^}]*box-shadow:0 0 0 1px/.test(css),
+    'thumb light must never be an outer shadow — the view clips it away');
 });
 
 check('glow:false installs no glow sheet at all', () => {

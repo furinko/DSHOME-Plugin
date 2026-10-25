@@ -205,6 +205,34 @@ window.__ModuleLoader__ = {
     await sleep(250);
     out.snapshots.push(snapshot('after-clicks'));
 
+    // Navigation-thumb light. The thumb lives inside an overflow-hidden + clip
+    // view, so the only light that survives is one drawn *inside* it.
+    // it. Computed style is the check: an inset shadow proves the rule matched;
+    // an outer one proves it will be clipped away (which is what shipped first).
+    mark('thumb');
+    var shellEl = q('.dshome-plugin-minimap');
+    var thumbEl = shellEl && shellEl.querySelector('.dshome-plugin-minimap-thumb');
+    if (thumbEl) {
+      var idle = getComputedStyle(thumbEl);
+      out.thumbIdle = { boxShadow: idle.boxShadow, opacity: idle.opacity };
+      shellEl.setAttribute('data-active', '1');
+      await sleep(600);
+      var live = getComputedStyle(thumbEl);
+      out.thumbActive = {
+        boxShadow: live.boxShadow,
+        opacity: live.opacity,
+        background: live.backgroundColor,
+      };
+      shellEl.removeAttribute('data-active');
+      await sleep(600);
+      out.thumbAfter = {
+        boxShadow: getComputedStyle(thumbEl).boxShadow,
+        opacity: getComputedStyle(thumbEl).opacity,
+      };
+    } else {
+      out.thumbActive = { found: false };
+    }
+
     out.firstPaintAt = probe.firstPaintAt || null;
     out.loadToFirstPaintMs = probe.firstPaintAt
       ? Math.round(probe.firstPaintAt - probe.t0) : null;
