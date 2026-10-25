@@ -20,10 +20,11 @@ Registers the brand accent through the official `theme` service and replaces the
 Upstream renders reasoning text only when expanded, so CSS alone cannot reach it. The plugin synthesises a click on the official disclosure row, letting React expand for real, then clamps the body with CSS. While a block is streaming the window follows the tail; the moment you scroll up to read back it lets go, and blocks you collapsed by hand are remembered and never force-expanded again.
 
 ### 3. Turn minimap
-A canvas strip on the right edge showing a squashed picture of the whole session, with a translucent viewport box. Click to jump, hold and drag to scrub.
+A canvas strip on the right edge showing a squashed picture of the conversation, with a translucent viewport box. Click to jump, hold and drag to scrub.
 
 - Your messages render in brand blue, assistant replies mid grey, reasoning and tool blocks light grey, matching the real message alignment.
 - The strip is drawn once as a full-length canvas and moved by a transform, so scrolling never repaints it.
+- **Short sessions show the whole picture; long ones show the stretch around you.** The strip is at most a standard band tall (capped at 760px), while the canvas grows with zoom so blocks stay readable. Once the picture outgrows the band, the strip becomes a window onto it: it shows the neighbourhood of the current viewport and slides as you scroll. There a click jumps *within that window* (on a 600-turn session the window covers roughly 16% of the document, so clicking the bottom of the strip does not reach the end); travelling the whole conversation is the thumb's job — hold it and drag, which maps its travel linearly onto the document.
 
 ### 4. Reminders
 Tells you when something is worth looking up from what you are doing — the client-side port of DSHOME's `dshome/notify` host plugin, rebuilt on state the official client already computes because this bundle has no host half.
@@ -166,7 +167,7 @@ Four invariants keep the minimap accurate, each fixing a bug reproduced on a rea
 
 The strip narrows with the conversation gutter (58px down to 24px). When a sidebar floats over the conversation, the strip moves to its left edge and the text and composer reflow to leave a navigation lane. Closing the sidebar restores the original layout. A fullscreen sidebar replaces the conversation view, so its conversation minimap stays hidden.
 
-Zoom is fixed at 1 by design. Above 1, the thumb (moving on the document ratio) and the content (drawn in its own coordinates) only agree near the middle, so clicks land in the wrong place and every measurement error is magnified. At zoom 1 the two relations are identical, which is what makes "click here, land here" exact.
+Zoom is computed, not fixed: it is chosen so the viewport occupies `THUMB_RATIO` (8%) of the standard band — which keeps blocks legible however long the session grows — capped at 32 and additionally clamped by `CONTENT_MAX_PX` so the backing store stays inside the browser's canvas limit. When the picture fits the band (zoom 1) the thumb's document ratio and the canvas's own coordinates coincide, which is what makes "click here, land here" exact. Above 1 the canvas is taller than the strip, so the two relations only agree inside the visible window; the click/window note under *Turn minimap* is the practical consequence.
 
 ### Slot registration
 
