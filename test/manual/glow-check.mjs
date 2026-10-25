@@ -22,9 +22,9 @@ const HTML = `<!doctype html>
 <html lang="zh"><head><meta charset="utf-8">
 <title>DSHOME 光效验证</title>
 <style>body{margin:0;padding:40px;background:#0f1420;color:#dbe4f0;font:15px/1.6 sans-serif}
-#mark{font-size:40px;color:#6B84FF}</style></head>
+#name{font-size:34px;font-weight:600;letter-spacing:.5px;color:#6B84FF}</style></head>
 <body>
-<span class="dshome-glow-mark" id="mark">◈</span>
+<span class="dshome-glow-name" id="name">DSHOME</span>
 <script>
 window.__dshomePlugin = {
   theme: false, conversation: false, sidebar: false, notify: false,
@@ -48,23 +48,27 @@ window.__ModuleLoader__ = {
   });
 
   function probe() {
-    var mark = document.getElementById('mark');
-    var be = getComputedStyle(mark, '::before');
+    var el = document.getElementById("name");
+    var cs = getComputedStyle(el);
     var sheet = document.querySelector('style[data-plugin="dshome-plugin-glow"]');
+    var anims = typeof document.getAnimations === "function" ? document.getAnimations() : [];
     return {
       sheetPresent: !!sheet,
       sheetLength: sheet ? sheet.textContent.length : 0,
       cssRules: (function () {
         try { return sheet.sheet ? sheet.sheet.cssRules.length : null; }
-        catch (e) { return 'blocked'; }
+        catch (e) { return "blocked"; }
       })(),
-      content: be.content,
-      background: be.backgroundImage,
-      animationName: be.animationName,
-      animationDuration: be.animationDuration,
-      opacity: be.opacity,
-      zIndex: be.zIndex,
-      markPosition: getComputedStyle(mark).position,
+      backgroundImage: cs.backgroundImage,
+      backgroundClip: cs.webkitBackgroundClip || cs.backgroundClip,
+      textFill: cs.webkitTextFillColor || cs.color,
+      animationName: cs.animationName,
+      animationDuration: cs.animationDuration,
+      backgroundPosition: cs.backgroundPosition,
+      animations: anims.length,
+      running: anims.filter(function (a) { return a.playState === "running"; }).length,
+      width: Math.round(el.getBoundingClientRect().width),
+      height: Math.round(el.getBoundingClientRect().height),
     };
   }
 
@@ -94,39 +98,45 @@ function summarize(r) {
   const b = r.second || {};
   const verdict = [];
 
-  if (a.sheetPresent) verdict.push('PASS 光效样式表已注入（' + a.sheetLength + ' 字符）');
-  else verdict.push('FAIL 光效样式表没注入');
+  if (a.sheetPresent) verdict.push("PASS 光效样式表已注入（" + a.sheetLength + " 字符）");
+  else verdict.push("FAIL 光效样式表没注入");
 
-  if (a.cssRules === 'blocked' || (typeof a.cssRules === 'number' && a.cssRules > 0))
-    verdict.push('PASS 浏览器解析出 ' + a.cssRules + ' 条规则（没有整体解析失败）');
-  else verdict.push('FAIL 样式表解析出 ' + a.cssRules + ' 条规则');
+  if (a.cssRules === "blocked" || (typeof a.cssRules === "number" && a.cssRules > 0))
+    verdict.push("PASS 浏览器解析出 " + a.cssRules + " 条规则");
+  else verdict.push("FAIL 样式表解析出 " + a.cssRules + " 条规则");
 
-  if (a.content && a.content !== 'none' && a.content !== 'normal')
-    verdict.push('PASS ::before 存在');
-  else verdict.push('FAIL ::before 不存在');
-  if (/radial-gradient/.test(a.background || ''))
-    verdict.push('PASS 光是 radial-gradient');
-  else verdict.push('FAIL 背景不是 radial-gradient：' + a.background);
+  if (/linear-gradient/.test(a.backgroundImage || ""))
+    verdict.push("PASS 文字是渐变填充");
+  else verdict.push("FAIL 背景不是渐变：" + a.backgroundImage);
 
-  const animated = a.animationName && a.animationName !== 'none';
-  const changed = a.opacity !== b.opacity;
-  if (animated && changed)
-    verdict.push('PASS 呼吸在跑（opacity ' + a.opacity + ' → ' + b.opacity + '）');
-  else if (animated)
-    verdict.push('WARN 动画已挂上但两个采样点 opacity 相同（' + a.opacity + '），可能刚好在波峰');
-  else verdict.push('FAIL 动画没挂上（animation-name=' + a.animationName + '）');
+  if (a.backgroundClip === "text")
+    verdict.push("PASS 渐变裁剪到字形（background-clip:text）");
+  else verdict.push("FAIL background-clip=" + a.backgroundClip);
 
-  if (a.zIndex === '-1') verdict.push('PASS 光在内容之后（z-index:-1）');
-  else verdict.push('WARN z-index=' + a.zIndex);
+  if (/rgba\(0, 0, 0, 0\)|transparent/.test(a.textFill || ""))
+    verdict.push("PASS 文字填充已透明（渐变才显示得出来）");
+  else verdict.push("FAIL text-fill=" + a.textFill);
 
-  if (!(r.errors || []).length) verdict.push('PASS 页面 0 错误');
-  else verdict.push('WARN 页面错误: ' + r.errors.join(' ; '));
+  if (a.animationName === "dshome-name-sweep")
+    verdict.push("PASS 扫光动画挂在文字上");
+  else verdict.push("FAIL animation-name=" + a.animationName);
+
+  if (a.animations > 0 && a.running > 0)
+    verdict.push("PASS 动画正在运行（" + a.running + "/" + a.animations + "）");
+  else verdict.push("WARN 没有运行中的动画（getAnimations 报 " + a.animations + "）");
+
+  if (a.backgroundPosition !== b.backgroundPosition)
+    verdict.push("PASS 背景位置在动（" + a.backgroundPosition + " → " + b.backgroundPosition + "）");
+  else verdict.push("WARN 两次采样背景位置相同（" + a.backgroundPosition + "），可能处于静止段");
+
+  if (!(r.errors || []).length) verdict.push("PASS 页面 0 错误");
+  else verdict.push("WARN 页面错误: " + r.errors.join(" ; "));
 
   return {
     ua: (r.ua.match(/Firefox\/[\d.]+/) || [r.ua])[0],
     reducedMotion: r.reducedMotion,
     first: a,
-    second: { opacity: b.opacity, animationName: b.animationName },
+    second: { backgroundPosition: b.backgroundPosition, animations: b.animations },
     errors: r.errors,
     verdict: verdict,
   };

@@ -574,8 +574,17 @@ check('the glow layer lights the thumb from the inside, on hover only, and leave
   // 9px invisible / 15px unreadable / 26px a white blob / silhouette-hugged
   // still "效果不好"). The owner asked for it to go; this lock keeps it gone.
   assert.ok(!/dshome-glow-mark/.test(css), 'the brand mark must carry no glow');
-  assert.ok(!/@keyframes/.test(css),
-    'the only looping animation left would be a mark pulse — there is none');
+
+  // The one loop allowed in the whole layer: the wordmark sweep. A gradient
+  // clipped to the glyphs keeps the letterforms; the light moves along the word
+  // instead of ballooning around it.
+  assert.match(css, /\.dshome-glow-name\{/, 'the wordmark sweep target is gone');
+  assert.match(css, /-webkit-text-fill-color:transparent/,
+    'the sweep needs the fill made transparent or the flat colour wins');
+  assert.match(css, /background-clip:text/, 'the gradient must be clipped to the glyphs');
+  assert.match(css, /@keyframes dshome-name-sweep/, 'the sweep keyframes are gone');
+  assert.match(css, /prefers-reduced-motion:reduce/,
+    'reduced motion must stop the sweep');
 
   assert.match(css, /:is\(\[data-chat-flow-kind/, 'the card rule is gone');
   assert.match(css, /:hover\{box-shadow:/,
@@ -639,6 +648,37 @@ check('the brand slot still renders a real component, with no glow wrapper', () 
   const rendered = renders[0]({ size: 24 });
   assert.ok(rendered, 'the slot must render something, not nothing');
   assert.notEqual(rendered.className, 'dshome-glow-mark', 'the glow wrapper must be gone');
+});
+
+check('the wordmark actually carries the sweep class', () => {
+  const doc = installGlobals();
+  const jsxCalls = [];
+  const renders = [];
+  globalThis.window.__dshomePlugin = {
+    conversation: false, sidebar: false, minimap: false, notify: false,
+  };
+  try {
+    loaded.factory(recordingProvide(jsxCalls)).apply({
+      get: () => undefined,
+      slots: {
+        inject(name, fn) { return fn(); },
+        register(spec, render) {
+          if (spec.name === 'sidebar.brand.name') renders.push(render);
+          return () => {};
+        },
+      },
+    });
+  } finally {
+    globalThis.window.__dshomePlugin = undefined;
+  }
+  assert.equal(renders.length, 1, 'the brand name slot was not registered');
+  const rendered = renders[0]();
+  // The slot's render returns `jsx(Name)`, i.e. `{type, props}` under the stub —
+  // Name itself only runs (and only emits its spans) once React calls it.
+  assert.equal(typeof rendered.type, 'function', 'the slot must render a component');
+  rendered.type(rendered.props || {});
+  assert.ok(jsxCalls.some((c) => c.props && c.props.className === 'dshome-glow-name'),
+    'the sweep class must land on the wordmark span itself, not the row');
 });
 
 check('the rail-hiding stylesheet is SCOPED, never the global P2-29 rule', () => {
