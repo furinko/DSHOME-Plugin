@@ -606,6 +606,16 @@ check('the glow layer lights the thumb from the inside, on hover only, and leave
   assert.match(css, /:hover\{box-shadow:/,
     'cards must glow on hover, not at rest');
 
+  // Reminder toasts: the one popup this bundle owns. Light goes around the card
+  // (its own elevation shadow must survive first), and hover lifts the halo.
+  assert.match(css,
+    /\.dshome-plugin-notify-toast\{[^}]*0 8px 24px[^}]*0 0 22px rgba\(77,107,254/,
+    'the toast must keep its elevation shadow and gain a brand halo');
+  assert.match(css, /\.dshome-glow-section\{[^}]*rgba\(77,107,254/, 'the settings-section glow is gone');
+  assert.match(css,
+    /\.dshome-plugin-notify-toast:hover\{[^}]*0 0 28px rgba\(77,107,254/,
+    'hovering a toast must lift its halo');
+
   // The thumb sits inside `.dshome-plugin-minimap-view`, which clips to the
   // strip's rounded box — an outward shadow there paints nothing (that is exactly
   // what the first version did, and the owner reported "小方块没生效").
