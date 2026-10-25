@@ -199,6 +199,17 @@ DSHOME_V15=/path/to/old-client.js \
 
 It prints `FAIL`/`PASS` per property (display flips, direction reversals, lane inset, return-to-baseline, stable-window drift) and writes the raw report to the OS temp directory. Deliberately not part of `npm test`: it needs a browser window in the foreground. The 2026-10-25 run is recorded in `test/manual/firefox-flash-20261025.json`.
 
+### Manual: long-session minimap check
+
+The canvas is capped at `CONTENT_MAX_PX` (16383 CSS px) so the backing store stays under the browser's 32767px limit at DPR 2 — but a cap that only exists in arithmetic is not a cap that was seen working. `test/manual/long-session-minimap.mjs` builds a 600-turn conversation and checks two paths: the natural zoom, and a forced `zoom=32` that must hit the cap exactly.
+
+```bash
+node test/manual/long-session-minimap.mjs   # open http://127.0.0.1:3097/?turns=600
+                                            # or  ?turns=600&zoom=32
+```
+
+It reports canvas device size against 32767, a sampled paint ratio (an all-transparent canvas is the P2-27 failure), per-block height, and where a click on 5% / 50% / 95% of the strip actually lands. Both runs are recorded in `test/manual/long-session-20261025.json`.
+
 ## License
 
 MIT

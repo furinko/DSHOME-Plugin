@@ -1,0 +1,64 @@
+{
+  "at": "2026-10-25T12:06:00+08:00",
+  "build": "v16-sidebar-navigation-lane",
+  "commit": "efbefe8",
+  "question": "installation.json limits: \"long-conversation minimap was not exercised on a new real turn\"",
+  "method": {
+    "tool": "test/manual/long-session-minimap.mjs",
+    "engine": "Firefox 158.0",
+    "viewport": "1734x1079",
+    "devicePixelRatio": 1.25,
+    "fixture": "600 条固定高度消息（scrollHeight 78130），minimap 单独启用；两条路径：自然 zoom 与强制 zoom=32",
+    "checks": "画布非空白（横向量化采样不透明像素）、canvas 设备像素上限、封顶是否命中 CONTENT_MAX_PX、点击顶部/中部/底部后的 scrollTop"
+  },
+  "results": {
+    "natural600": {
+      "scrollHeight": 78130,
+      "clientHeight": 1002,
+      "maxScroll": 77128,
+      "zoom": 6.24,
+      "canvasCssHeight": 4741,
+      "canvasDeviceHeight": 5926,
+      "canvasDeviceWidth": 30,
+      "perBlockPx": 7.9,
+      "paintedRatio": 0.383,
+      "shellHeight": 760,
+      "visibleShareOfDocument": "16.0%",
+      "clicks": {
+        "top5pct": { "at": 106, "scrollTop": 0 },
+        "bottom95pct": { "at": 790, "scrollTop": 11398 },
+        "mid50pct": { "at": 448, "scrollTop": 15456 }
+      },
+      "pageErrors": 0,
+      "pageWarnings": 0
+    },
+    "cappedZoom32": {
+      "canvasCssHeight": 16383,
+      "canvasDeviceHeight": 20479,
+      "contentMaxPx": 16383,
+      "capHit": true,
+      "perBlockPx": 27.3,
+      "paintedRatio": 0.35,
+      "visibleShareOfDocument": "4.6%",
+      "clicks": {
+        "top5pct": { "at": 106, "scrollTop": 0 },
+        "bottom95pct": { "at": 790, "scrollTop": 2942 },
+        "mid50pct": { "at": 448, "scrollTop": 4153 }
+      },
+      "pageErrors": 0,
+      "pageWarnings": 0
+    }
+  },
+  "findings": [
+    "P2-27 的封顶路径真实生效：强制 zoom=32 时 canvas CSS 高精确停在 16383，设备像素 20479 < 32767，且画布不是空白。",
+    "长会话画布正常绘制：600 块自然压缩到 4741px，每块 7.9px，可分辨；无空白、无 0 尺寸、0 错误。",
+    "点击不是全文档定位，而是当前画布窗口内的定位：shell 高 = min(band, content)，长会话固定 760px，画布在其内平移到当前视口。自然场景下窗口只覆盖文档 16%，从顶部点底部只到 14.8%（11398/77128）；封顶场景只覆盖 4.6%，点到底部只到 3.8%。",
+    "全文档导航靠拖动 thumb：dragGrab 分支用 p∈[0,1] 直接映射 scrollTop=(total−view)·p，可以一步到任意位置。点击与拖动因此是两套语义。",
+    "README 的 \"showing a squashed picture of the whole session\" 与实现不符：长会话里看到的是一条会滑动的画布窗口，不是整个会话的全貌。"
+  ],
+  "residual": [
+    "没有模拟拖动 thumb 的全程扫描（只核对了 dragGrab 分支的映射公式，未在真浏览器里按住拖到末端）。",
+    "没有覆盖 1000+ 回合（scrollHeight > 30 万）时自然触发封顶的情形；本次封顶是用 __dshomePluginMinimapZoom 强制走的同一条代码路径。",
+    "只测 DPR 1.25；DPR 2 时 16383×2=32766，正好贴着上限，未实测。"
+  ]
+}
