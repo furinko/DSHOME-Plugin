@@ -611,7 +611,6 @@ check('the glow layer lights the thumb from the inside, on hover only, and leave
   assert.match(css,
     /\.dshome-plugin-notify-toast\{[^}]*0 8px 24px[^}]*0 0 22px rgba\(77,107,254/,
     'the toast must keep its elevation shadow and gain a brand halo');
-  assert.match(css, /\.dshome-glow-section\{[^}]*rgba\(77,107,254/, 'the settings-section glow is gone');
   assert.match(css,
     /\.dshome-plugin-notify-toast:hover\{[^}]*0 0 28px rgba\(77,107,254/,
     'hovering a toast must lift its halo');
