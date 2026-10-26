@@ -1,6 +1,26 @@
 # DSHOME-Plugin
 
-## Packaging fix: 0.2.0-workbench.2
+## Modular workbench foundation: 0.2.0-workbench.3 (candidate)
+
+This is a **module-launcher and native-panel composition foundation**, not a finished arbitrary docking editor. In Workbench, **自定义** selects visible module entries and moves them up/down; **恢复默认模块** resets that session. Hiding an entry never closes its open tabs, terminates a process, or discards a draft. Configuration is session-local memory only, lost on reload; no user/profile settings are written. The toolbar order does not reorder existing native tabs.
+
+The built-in file, browser and terminal modules are registered through the same API as extensions. An extension first registers its actual panel kind with the host, then registers a launcher (and releases it on unload):
+
+```js
+const unregister = window.__dshomePluginWorkbench.registerModule({
+  id: 'metrics', kind: 'metrics', label: '指标',
+  description: '打开已注册的原生指标面板', defaultEnabled: false,
+});
+// unregister(); // removes only this launcher, not native tab content
+```
+
+Unknown host kinds stay visibly unavailable; registration never creates a fake panel. Definitions are copied, duplicate IDs rejected, and stale session callbacks cannot reconfigure or collapse the arriving session. Extensions must re-register after the Workbench instance reloads. Only native panel kinds are supported here, not arbitrary render callbacks, commands or write endpoints.
+
+The layout fix removes the proportional CSS grid override. DSH 0.2.1-rc.2 and rc.3 use a separately sized, absolutely positioned right panel, so changing only outer tracks produces a blank gutter. The host now owns tracks, panel width, resize handles, split-room budgets and narrow fullscreen together. The **分栏** action and native tab dragging compose actual panels within the host's limits; custom arbitrary docking, saved layout presets and a writable editor are **not implemented**.
+
+`npm run test:workbench` tests module behavior with explicit service/React doubles. `npm run test:workbench-browser -- --browser /path/to/chrome --output /path/to/report.json` runs an isolated headless Chromium regression using the frozen packaged rc.3 CSS and column solver. It checks adjacent panel geometry, native handle alignment, multiple widths/resizes and customization controls. This is not an authenticated production GUI, real React integration, file editor, terminal or IME test. Initial fixture assertion/scheduling failures remain in the audit logs; do not count them as product passes. Loading this candidate into a running profile still requires separate explicit approval.
+
+## Packaging fix: 0.2.0-workbench.2 (historical)
 
 The package uses a declared, package-relative, content-keyed empty host re-export. This avoids retaining an older client path when a host caches metadata by Loader name and resolution base. No private cache clearing, DSH core patch, or extra host behavior is introduced. Actual `dsh-app-boot` normalization and `ClientModuleRegistry` methods are regression-tested with isolated Loader inputs. A deployment also verified HTTP 200 containing the complete new client script; that is not an authenticated GUI/DOM or interaction test.
 
@@ -12,10 +32,10 @@ Pure client plugin — no host behaviour, no build step, no runtime dependencies
 
 The default remains Original. This repository contains the preview implementation; committing or pushing it does not install or reload it in a running DSH profile. The additive session-header **原版 / 工作台** switch and a small overlay launcher use the resident conversation and composer; no chat/view component is replaced or moved.
 
-- Entering Workbench opens the official `files` tab once per session; later toggles reuse the same native tabs. Clicking files uses the host's own real document preview.
-- At >=1200px the existing frame gives more room to the right work area, keeping the host sidebar and at least a 400px conversation column. The native outer-right drag handle is hidden only while this proportional override is active because its coordinates belong to the original geometry. Native dock-pane split/drag controls remain available. Smaller windows keep native layout/fullscreen behavior.
+- Entering Workbench opens the official `files` tab once per session only if its launcher is enabled and the host provides it; later toggles reuse native tabs. Missing or hidden files never blocks another module or automatically opens a terminal.
+- Geometry remains entirely native at all sizes. No proportional override or resize-handle hiding remains; use the native outer handle to resize and native tab/split controls to compose panels.
 - The workbench toolbar opens **文件 / 网页 / 终端** only through the host's registered types, and **分栏** uses the host's room/budget checks. No terminal starts automatically.
-- **返回原版** removes the layout override and restores the panel's prior collapsed state when appropriate; it never closes tabs or changes message/draft data. Preferences are session-local and in memory; a reload starts in Original.
+- **返回原版** removes the Workbench presentation and restores the panel's prior collapsed state when appropriate; it never closes tabs or changes message/draft data. Preferences are session-local and in memory; a reload starts in Original.
 - `workbench: false` disables and removes this feature. `__dshomePluginWorkbench.status()` reports support/failure; absent APIs or missing semantic anchors leave Original intact with a visible explanation.
 
 **Not implemented:** the current public `workspaceFiles` API only reads/lists/stats/watches. This candidate does not claim a writable file editor, save-to-disk, selection-to-composer or diff-apply implementation, and never adds a private file-write endpoint. Native file previews and the existing conversation/tools are real; the earlier standalone HTML's simulated save/diff actions are not shipped here.
@@ -30,7 +50,7 @@ Run `npm run test:workbench` for the new feature. The captured baseline already 
 DSH_SDK_ROOT=/path/to/deepseek-harness npm run test:client-registry
 ```
 
-Verified with DSH 0.2.1-rc.2. Missing SDK modules fail explicitly rather than silently skipping. The test creates and removes its own temporary old-package fixture, checks the same-name stale-path behavior, and simulates a remove/add batch using the real registry methods. It does not alter a live registry or restart DSH.
+Verified with isolated SDK captures from DSH 0.2.1-rc.2 and rc.3. Missing SDK modules fail explicitly rather than silently skipping. The test creates and removes its own temporary old-package fixture, checks the same-name stale-path behavior, and simulates a remove/add batch using the real registry methods. It does not alter a live registry or restart DSH.
 
 ## Features
 
