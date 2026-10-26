@@ -1,0 +1,57 @@
+{
+  "kind": "static SVG/XML plus actual rendered pixel checks; not running DSH or interactive implementation acceptance",
+  "chatBox": [
+    200,
+    80,
+    664,
+    1008
+  ],
+  "composerBox": [
+    220,
+    815,
+    644,
+    976
+  ],
+  "allPass": true,
+  "files": [
+    {
+      "name": "workbench-v2-01-daily",
+      "size": [
+        1920,
+        1080
+      ],
+      "editableTextElements": 104,
+      "svgSha256": "318f451d19861e945ce48bfa9c28e4046282e91e9837df0dd4f9537b33308794",
+      "onlyInternalSymbolRefs": true,
+      "noScriptsOrRasterAssets": true,
+      "renderedChatPixelsIdentical": true,
+      "renderedComposerPixelsIdentical": true
+    },
+    {
+      "name": "workbench-v2-02-layout-editor",
+      "size": [
+        1920,
+        1080
+      ],
+      "editableTextElements": 101,
+      "svgSha256": "593b5d04c5e50cb066c5613fa14878b6fb768d63d1afdee270a5e2b209cf8210",
+      "onlyInternalSymbolRefs": true,
+      "noScriptsOrRasterAssets": true,
+      "renderedChatPixelsIdentical": true,
+      "renderedComposerPixelsIdentical": true
+    },
+    {
+      "name": "workbench-v2-03-switch-preserve",
+      "size": [
+        1920,
+        1080
+      ],
+      "editableTextElements": 96,
+      "svgSha256": "734710a5b1b9f994cdbc7eb40793943dbaea4311e85170408a85e508e5ea6c19",
+      "onlyInternalSymbolRefs": true,
+      "noScriptsOrRasterAssets": true,
+      "renderedChatPixelsIdentical": true,
+      "renderedComposerPixelsIdentical": true
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "size": [
+    1920,
+    1080
+  ],
+  "conceptOnly": true,
+  "states": [
+    "daily",
+    "editor",
+    "review"
+  ],
+  "chatBox": [
+    200,
+    80,
+    464,
+    928
+  ],
+  "workspaceBox": [
+    680,
+    80,
+    1224,
+    928
+  ],
+  "composerBox": [
+    220,
+    815,
+    424,
+    161
+  ],
+  "files": [
+    "workbench-v2-01-daily.svg",
+    "workbench-v2-02-layout-editor.svg",
+    "workbench-v2-03-switch-preserve.svg"
+  ],
+  "scope": "Static editable vector proposal; no plugin, profile, model or live GUI changes."
+}

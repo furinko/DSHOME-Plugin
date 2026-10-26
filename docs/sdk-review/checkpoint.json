@@ -1,0 +1,66 @@
+{
+  "kind": "inspection handoff and disconnected WIP, not product acceptance",
+  "baseline": "8e18f6b4904e4c65ad68477238218bc9d1be4703",
+  "modelTests": {
+    "command": "node --test test/workspace-model.mjs",
+    "pass": 31,
+    "fail": 0,
+    "scope": "pure model; injected storage-lock doubles, not native UI or PTY"
+  },
+  "fingerprints": {
+    "src/workbench/model.mjs": "a52c704f8f7a36aede8838f9ecbd9293109a6d301a087240440d7a68ce4a5408",
+    "test/workspace-model.mjs": "15238b64e75d7b6aeba1b89d1d350bcd3645fc9f9090d033b32e19b01e1ba02e",
+    "lib/client.js": "f10a1138d50b537a56845f16015bf9292b82779a5b2ccde488be4673a9277d9d",
+    "lib/index.js": "874a3c55cd78430b0f20c3e25c2f7514e92a1a7f788205b9341b0a173d3863c4"
+  },
+  "designFiles": [
+    {
+      "name": "workbench-v2-01-daily.svg",
+      "sha256": "318f451d19861e945ce48bfa9c28e4046282e91e9837df0dd4f9537b33308794"
+    },
+    {
+      "name": "workbench-v2-01-daily.png",
+      "sha256": "685d99f9733fbdd733af80e85b0bf7087859971b5078646809890def450ae072"
+    },
+    {
+      "name": "workbench-v2-02-layout-editor.svg",
+      "sha256": "593b5d04c5e50cb066c5613fa14878b6fb768d63d1afdee270a5e2b209cf8210"
+    },
+    {
+      "name": "workbench-v2-02-layout-editor.png",
+      "sha256": "2bd1b1a39e2e5a646ad741a26313e0cc4a9122789fe01559edcb7cbe8e1f4ef9"
+    },
+    {
+      "name": "workbench-v2-03-switch-preserve.svg",
+      "sha256": "734710a5b1b9f994cdbc7eb40793943dbaea4311e85170408a85e508e5ea6c19"
+    },
+    {
+      "name": "workbench-v2-03-switch-preserve.png",
+      "sha256": "60e3d80587c5b7d960a1a4ad8357a1d35593eac2282d8f4b46a420e9fca76cd7"
+    },
+    {
+      "name": "create_design.py",
+      "sha256": "742f39544252aa2579bf169014f5886283c8cc3ed09889c1f5dcb161484d39aa"
+    },
+    {
+      "name": "render-and-check.mjs",
+      "sha256": "deb73d67c3b996096f775ca79a968b0a64a91f5403e712c87f92bc8b84833f6c"
+    },
+    {
+      "name": "verify_visual.py",
+      "sha256": "e90f2f5b91bff1d5338e61ceffdf43d4d0f6f1e25ea4fdd4aae88a311362e8d3"
+    },
+    {
+      "name": "visual-check.json",
+      "sha256": "ff38b025bf21dbef019c42b349cd041272b755f7f385070003a1809197732ee0"
+    },
+    {
+      "name": "design-metadata.json",
+      "sha256": "9e12ff5d17ae42ba10589426967776aea2b34a04ba542c5296a3ee480a7b4e27"
+    }
+  ],
+  "publication": {
+    "status": "not_pushed",
+    "reason": "policy_check publish denied: Lead cannot publish; no git push attempted"
+  }
+}

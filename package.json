@@ -39,7 +39,8 @@
     "test": "node test/selftest.mjs && node test/domtest.mjs",
     "test:workbench": "node test/workbench.mjs",
     "test:workbench-browser": "node test/workbench-browser.mjs",
-    "test:client-registry": "node test/client-registry.mjs"
+    "test:client-registry": "node test/client-registry.mjs",
+    "test:workspace-model": "node --test test/workspace-model.mjs"
   },
   "license": "MIT",
   "engines": {
