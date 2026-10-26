@@ -1,8 +1,36 @@
 # DSHOME-Plugin
 
+## Packaging fix: 0.2.0-workbench.2
+
+The package uses a declared, package-relative, content-keyed empty host re-export. This avoids retaining an older client path when a host caches metadata by Loader name and resolution base. No private cache clearing, DSH core patch, or extra host behavior is introduced. Actual `dsh-app-boot` normalization and `ClientModuleRegistry` methods are regression-tested with isolated Loader inputs. A deployment also verified HTTP 200 containing the complete new client script; that is not an authenticated GUI/DOM or interaction test.
+
 A consolidated web client kit for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): brand theme, conversation card layout, a VSCode-style turn minimap, and reminder notifications, in one plugin.
 
 Pure client plugin — no host behaviour, no build step, no runtime dependencies.
+
+## Workbench preview (0.2.0-workbench.1)
+
+The default remains Original. This repository contains the preview implementation; committing or pushing it does not install or reload it in a running DSH profile. The additive session-header **原版 / 工作台** switch and a small overlay launcher use the resident conversation and composer; no chat/view component is replaced or moved.
+
+- Entering Workbench opens the official `files` tab once per session; later toggles reuse the same native tabs. Clicking files uses the host's own real document preview.
+- At >=1200px the existing frame gives more room to the right work area, keeping the host sidebar and at least a 400px conversation column. The native outer-right drag handle is hidden only while this proportional override is active because its coordinates belong to the original geometry. Native dock-pane split/drag controls remain available. Smaller windows keep native layout/fullscreen behavior.
+- The workbench toolbar opens **文件 / 网页 / 终端** only through the host's registered types, and **分栏** uses the host's room/budget checks. No terminal starts automatically.
+- **返回原版** removes the layout override and restores the panel's prior collapsed state when appropriate; it never closes tabs or changes message/draft data. Preferences are session-local and in memory; a reload starts in Original.
+- `workbench: false` disables and removes this feature. `__dshomePluginWorkbench.status()` reports support/failure; absent APIs or missing semantic anchors leave Original intact with a visible explanation.
+
+**Not implemented:** the current public `workspaceFiles` API only reads/lists/stats/watches. This candidate does not claim a writable file editor, save-to-disk, selection-to-composer or diff-apply implementation, and never adds a private file-write endpoint. Native file previews and the existing conversation/tools are real; the earlier standalone HTML's simulated save/diff actions are not shipped here.
+
+Run `npm run test:workbench` for the new feature. The captured baseline already has two failing notification source-pattern assertions; this version preserves those same two failures rather than masking them. DOM and Workbench tests use explicit service/React doubles, not the authenticated production GUI. The optional browser fixture exercises DOM/CSS with doubles, not real files, terminals, IME, or production activation. Loading or updating a running profile requires separate explicit approval.
+
+### Host SDK regression
+
+`npm run test:client-registry` resolves the real Host SDK from local dependencies, or from a checkout/install root supplied as `DSH_SDK_ROOT`:
+
+```sh
+DSH_SDK_ROOT=/path/to/deepseek-harness npm run test:client-registry
+```
+
+Verified with DSH 0.2.1-rc.2. Missing SDK modules fail explicitly rather than silently skipping. The test creates and removes its own temporary old-package fixture, checks the same-name stale-path behavior, and simulates a remove/add batch using the real registry methods. It does not alter a live registry or restart DSH.
 
 ## Features
 

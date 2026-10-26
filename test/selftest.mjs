@@ -74,7 +74,9 @@ check('bundle is a single self-contained file', () => {
   // No relative import can exist if there is only one file; assert that too, so
   // a future split is caught here rather than at boot.
   const libFiles = readdirSync(join(root, 'lib'));
-  assert.deepEqual(libFiles.sort(), ['client.js', 'index.js']);
+  // Exactly one classic client bundle, plus the empty host entry and its
+  // declared content-keyed re-export. No untracked runtime files are admitted.
+  assert.deepEqual(libFiles.sort(), ['client.js', 'index.js', manifest.exports['./workbench-entry'].split('/').at(-1)].sort());
 });
 
 check('registers through the module loader factory protocol', () => {
@@ -315,7 +317,7 @@ check('the header comment counts exactly what apply() installs', () => {
   const bullets = [...clientSource.matchAll(/^\/\/   · (\w+)/gm)].map((m) => m[1]);
   const declared = clientSource.match(/^\/\/ (\w+) features share one plugin id:$/m);
   assert.ok(declared, 'the header no longer declares a feature count');
-  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify', 'glow'],
+  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify', 'glow', 'workbench'],
     'the feature gates apply() runs have changed — update header and bullets with them');
   assert.deepEqual(bullets, gates, 'the header bullets and the applied gates disagree');
   const counts = { One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9, Ten: 10 };
@@ -825,8 +827,9 @@ check('cordis rows resolve to this package', () => {
   const names = [...patch.matchAll(/name:\s*(\S+)/g)].map((m) => m[1]);
   assert.ok(names.length > 0, 'no rows declared');
   for (const name of names) {
-    assert.equal(name, manifest.name, `row "${name}" is not this package`);
-    assert.ok(!name.includes('/'), 'a subpath row would need its own exports entry');
+    assert.equal(name, manifest.exports['./workbench-entry'], 'row must name the declared package-owned host entry');
+    assert.match(name, /^\.\/lib\/entry-workbench-[a-f0-9]{12}\.js$/, 'entry must remain bounded, content-keyed and package-relative');
+    assert.ok(existsSync(join(root, name)), 'anchored host entry missing');
   }
 });
 

@@ -1,6 +1,6 @@
 {
   "name": "dshome-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0-workbench.2",
   "description": "DSHOME Plugin — brand theme, conversation card layout, a VSCode-style turn minimap, and turn/member/approval reminders for DeepSeek Harness. Pure client plugin, no build step.",
   "keywords": [
     "dsh",
@@ -16,7 +16,8 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./workbench-entry": "./lib/entry-workbench-c969dfeaf7ca.js"
   },
   "dsh": {
     "bundle": {
@@ -35,7 +36,9 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node test/selftest.mjs && node test/domtest.mjs"
+    "test": "node test/selftest.mjs && node test/domtest.mjs",
+    "test:workbench": "node test/workbench.mjs",
+    "test:client-registry": "node test/client-registry.mjs"
   },
   "license": "MIT",
   "engines": {

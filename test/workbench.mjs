@@ -1,0 +1,78 @@
+// Executes the real candidate bundle against explicit official-service contracts.
+// Emulated DOM tests are not production-browser or authenticated-host validation.
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const code=fs.readFileSync(new URL('../lib/client.js',import.meta.url),'utf8');
+class Style {
+ constructor(){this.values=new Map();this.priorities=new Map();}
+ getPropertyValue(k){return this.values.get(k)||'';}
+ getPropertyPriority(k){return this.priorities.get(k)||'';}
+ setProperty(k,v,p=''){this.values.set(k,String(v));this.priorities.set(k,p);}
+ removeProperty(k){const prev=this.getPropertyValue(k);this.values.delete(k);this.priorities.delete(k);return prev;}
+ get gridTemplateColumns(){return this.getPropertyValue('grid-template-columns');}
+}
+class El {
+ constructor(tag){this.tagName=tag;this.children=[];this.attributes=new Map();this.style=new Style();this.parentNode=null;this.textContent='';this.isConnected=true;}
+ setAttribute(k,v){this.attributes.set(k,String(v));}
+ getAttribute(k){return this.attributes.get(k)??null;}
+ hasAttribute(k){return this.attributes.has(k);}
+ removeAttribute(k){this.attributes.delete(k);}
+ appendChild(n){n.parentNode=this;this.children.push(n);return n;}
+ remove(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(n=>n!==this);this.parentNode=null;this.isConnected=false;}
+ get parentElement(){return this.parentNode;}
+ querySelectorAll(sel){const out=[];const match=sel.match(/^(\w+)?\[([\w-]+)(?:=['"]([^'"]*)['"])?\]$/);if(!match)throw new Error('Unexpected selector in fixture: '+sel);const visit=n=>{for(const c of n.children){if((!match[1]||match[1]===c.tagName)&&c.hasAttribute(match[2])&&(match[3]===undefined||c.getAttribute(match[2])===match[3]))out.push(c);visit(c);}};visit(this);return out;}
+ querySelector(sel){return this.querySelectorAll(sel)[0]||null;}
+}
+function boot(options={}){
+ const doc=new El('document'),head=doc.appendChild(new El('head')),body=doc.appendChild(new El('body'));
+ doc.head=head;doc.body=body;doc.documentElement=doc;doc.createElement=t=>new El(t);doc.addEventListener=()=>{};
+ const frame=body.appendChild(new El('div'));frame.style.setProperty('grid-template-columns','280px minmax(400px, 1fr) minmax(0px, 700px)');
+ const center=frame.appendChild(new El('main')),content=center.appendChild(new El('div'));content.setAttribute('data-conversation-session','s1');
+ const messages=content.appendChild(new El('div'));messages.textContent='real resident conversation';
+ const composer=content.appendChild(new El('div'));composer.setAttribute('data-composer-input','true');composer.textContent='unsent draft';
+ const rightCol=frame.appendChild(new El('aside'));rightCol.setAttribute('data-rightbar-col','true');
+ const bottom=frame.appendChild(new El('div'));bottom.setAttribute('data-shell-bottom','true');
+ const sourceListeners=new Set(),observerInstances=[],registrations=new Map(),raf=new Map(),contextCleanups=[],injections=[];
+ let session='s1',expanded=false,opens=[],splits=0,loader,seq=0,registrationsClosed=0;
+ const right={mounted:{getSnapshot:()=>session,subscribe:fn=>{sourceListeners.add(fn);return()=>sourceListeners.delete(fn);}},isExpanded:()=>expanded,toggleExpanded:()=>{expanded=!expanded;},openTab:kind=>{if(options.openError)throw new Error('open failed');opens.push(kind);expanded=true;},split:()=>{splits++;return options.noRoom?undefined:'pane2';}};
+ const kinds=new Set(options.kinds||['files','terminal','browser']);
+ const services={sidebarRight:right,sidebarRightTabs:{get:kind=>kinds.has(kind)?{kind}:undefined}};
+ if(options.noService)delete services.sidebarRight;
+ const slots={inject:(name,fn)=>{const off=fn();return()=>{if(off)off();};},register:(spec,Component)=>{const key=spec.name+':'+spec.id;registrations.set(key,{spec,Component});let done=false;return()=>{if(!done){done=true;registrationsClosed++;registrations.delete(key);}};}};
+ services.slots=slots;
+ const ctx={get:n=>services[n],inject:(deps,fn)=>{const dispose=fn();injections.push({deps,fn,dispose});return()=>{if(dispose)dispose();};},effect:fn=>{const off=fn();contextCleanups.push(off);return off;}};
+ const jsx=(type,props,key)=>({type,props,key});
+ const effects=[];
+ const react={useState:i=>[typeof i==='function'?i():i,()=>{}],useEffect:fn=>effects.push(fn),Fragment:'fragment'};
+ const win={innerWidth:1440,addEventListener(){},removeEventListener(){},requestAnimationFrame:fn=>{raf.set(++seq,fn);return seq;},cancelAnimationFrame:id=>raf.delete(id),__dshomePlugin:{theme:false,conversation:false,sidebar:false,minimap:false,notify:false,glow:false,workbench:true},__ModuleLoader__:{load:s=>loader=s}};
+ class Observer{constructor(fn){this.fn=fn;this.active=false;observerInstances.push(this);}observe(){this.active=true;}disconnect(){this.active=false;}trigger(){if(this.active)this.fn([]);}}
+ const sandbox={window:win,document:doc,console,MutationObserver:Observer,Map,Set};vm.createContext(sandbox);vm.runInContext(code,sandbox);
+ const plugin=loader.factory(name=>name==='react'?react:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:{});
+ plugin.apply(ctx);
+ const flush=()=>{for(let i=0;i<8&&raf.size;i++){const next=[...raf.values()];raf.clear();next.forEach(fn=>fn());}};flush();
+ return {win,doc,frame,content,composer,messages,services,ctx,right,kinds,registrations,observerInstances,injections,contextCleanups,effects,plugin,
+  get api(){return win.__dshomePluginWorkbench;},get opens(){return opens;},get splits(){return splits;},get closed(){return registrationsClosed;},get subscriberCount(){return sourceListeners.size;},flush,
+  session:(id,{commit=true}={})=>{session=id;if(commit&&id)content.setAttribute('data-conversation-session',id);sourceListeners.forEach(fn=>fn());},
+  render:key=>registrations.get(key).Component({sessionId:session})};
+}
+let passed=0;function test(name,fn){fn();passed++;console.log('PASS '+name);}
+test('original is default and has no native tab side effects',()=>{const b=boot();assert.equal(b.api.status().mode,'original');assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);assert.equal(b.opens.length,0);assert.equal(b.registrations.size,2);});
+test('native files seed only once across repeated mode toggles',()=>{const b=boot();for(let i=0;i<5;i++){assert.equal(b.api.setMode('workbench','s1').ok,true);assert.equal(b.api.setMode('original','s1').ok,true);}assert.deepEqual(b.opens,['files']);});
+test('mode changes retain resident messages composer and draft',()=>{const b=boot();const children=[...b.content.children],grid=b.frame.style.gridTemplateColumns;assert.equal(b.api.setMode('workbench','s1').ok,true);assert.equal(b.frame.getAttribute('data-dshome-workbench'),'true');assert.deepEqual(b.content.children,children);assert.equal(b.composer.textContent,'unsent draft');assert.equal(b.messages.textContent,'real resident conversation');assert.equal(b.frame.style.gridTemplateColumns,grid);b.api.setMode('original');assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);assert.equal(b.frame.style.gridTemplateColumns,grid);assert.equal(b.frame.style.getPropertyValue('--dshome-wb-left'),'');});
+test('stale session callbacks cannot open a tab on the arriving session',()=>{const b=boot();b.session('s2');const result=b.api.setMode('workbench','s1');assert.equal(result.ok,false);assert.equal(b.opens.length,0);assert.equal(b.api.open('terminal','s1').ok,false);assert.equal(b.api.split('s1').ok,false);});
+test('per-session preference and synchronous old-frame removal',()=>{const b=boot();b.api.setMode('workbench','s1');b.session('s2');assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);b.flush();assert.equal(b.api.status().mode,'original');b.session('s1');b.flush();assert.equal(b.api.status().mode,'workbench');assert.equal(b.frame.getAttribute('data-dshome-workbench'),'true');assert.deepEqual(b.opens,['files']);});
+test('global settings/no session restores native geometry and starts nothing',()=>{const b=boot();b.api.setMode('workbench');b.session(undefined);b.flush();assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);assert.equal(b.api.status().mode,'original');assert.equal(b.api.setMode('workbench').ok,false);assert.deepEqual(b.opens,['files']);});
+test('missing service or files kind is explicit and never mutates layout',()=>{for(const options of [{noService:true},{kinds:['terminal']}]){const b=boot(options);assert.equal(b.api.setMode('workbench').ok,false);assert.ok(b.api.status().reason);assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);assert.equal(b.opens.length,0);}});
+test('missing/ambiguous semantic frame and unknown grid syntax fail before opening',()=>{for(const action of ['anchor','track','duplicate']){const b=boot();if(action==='anchor')b.content.removeAttribute('data-conversation-session');if(action==='track')b.frame.style.setProperty('grid-template-columns','var(--host-columns)');if(action==='duplicate'){const f=b.doc.body.appendChild(new El('div'));const c=f.appendChild(new El('div'));c.setAttribute('data-conversation-session','s1');const r=f.appendChild(new El('aside'));r.setAttribute('data-rightbar-col','true');const t=f.appendChild(new El('div'));t.setAttribute('data-shell-bottom','true');}assert.equal(b.api.setMode('workbench').ok,false);assert.equal(b.opens.length,0);assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);}});
+test('native panel opening failure returns original without stray marker',()=>{const b=boot({openError:true});assert.equal(b.api.setMode('workbench').ok,false);assert.equal(b.api.status().mode,'original');assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);});
+test('native sidebar resizing updates only the owned custom property',()=>{const b=boot();b.api.setMode('workbench');b.frame.style.setProperty('grid-template-columns','56px minmax(400px, 1fr) 500px');b.observerInstances.forEach(o=>o.trigger());assert.equal(b.frame.style.getPropertyValue('--dshome-wb-left'),'56px');assert.equal(b.frame.style.gridTemplateColumns,'56px minmax(400px, 1fr) 500px');});
+test('layout syntax regression while active removes scoped workbench presentation',()=>{const b=boot();b.api.setMode('workbench');b.frame.style.setProperty('grid-template-columns','unknown');b.observerInstances.forEach(o=>o.trigger());assert.equal(b.api.status().mode,'original');assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);});
+test('optional tools are manual, registered, bounded and never arbitrary kinds',()=>{const b=boot({kinds:['files','browser']});b.api.setMode('workbench');assert.deepEqual(b.opens,['files']);assert.equal(b.api.open('terminal').ok,false);assert.equal(b.api.open('browser').ok,true);assert.equal(b.api.open('untrusted-kind').ok,false);assert.deepEqual(b.opens,['files','browser']);assert.equal(b.api.split().ok,true);assert.equal(b.splits,1);const narrow=boot({noRoom:true});assert.equal(narrow.api.split().ok,false);assert.match(narrow.api.status().reason,/栏宽/);});
+test('UI is a real registered additive header switch and overlay with return action',()=>{const b=boot();let v=b.render('conversation.session.header.utilities:dshome-workbench-mode');assert.equal(v.props['aria-label'],'界面模式');v.props.children[1].props.onClick();assert.equal(b.api.status().mode,'workbench');v=b.render('shell.overlay:dshome-workbench-tools');const back=v.props.children.find(c=>c?.props?.children==='返回原版');assert.ok(back);back.props.onClick();assert.equal(b.api.status().mode,'original');});
+test('disable/reapply/context unload remove styles attributes observers subscriptions',()=>{const b=boot();b.api.setMode('workbench');const old=b.api;b.win.__dshomePlugin.workbench=false;b.plugin.apply(b.ctx);assert.equal(b.win.__dshomePluginWorkbench,null);assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);assert.equal(b.subscriberCount,0);assert.equal(b.registrations.size,0);assert.equal(b.doc.querySelector('style[data-plugin="dshome-plugin-workbench"]'),null);assert.equal(old.setMode('workbench').ok,false);b.win.__dshomePlugin.workbench=true;b.plugin.apply(b.ctx);assert.equal(b.registrations.size,2);b.api.setMode('workbench');b.contextCleanups.at(-1)();assert.equal(b.api,null);assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);b.observerInstances.forEach(o=>o.trigger());assert.equal(b.doc.querySelector('style[data-plugin="dshome-plugin-workbench"]'),null);});
+test('late service attachment and departure degrade safely',()=>{const b=boot({noService:true});b.services.sidebarRight=b.right;b.injections.find(i=>i.deps[0]==='sidebarRight').fn();b.flush();assert.equal(b.api.setMode('workbench').ok,true);b.injections.find(i=>i.deps[0]==='sidebarRight').dispose();assert.equal(b.frame.hasAttribute('data-dshome-workbench'),false);assert.equal(b.api.status().mode,'original');});
+test('pre-existing custom property is restored exactly',()=>{const b=boot();b.frame.style.setProperty('--dshome-wb-left','123px','important');b.frame.setAttribute('data-dshome-workbench','previous-value');b.api.setMode('workbench');b.api.setMode('original');assert.equal(b.frame.style.getPropertyValue('--dshome-wb-left'),'123px');assert.equal(b.frame.style.getPropertyPriority('--dshome-wb-left'),'important');assert.equal(b.frame.getAttribute('data-dshome-workbench'),'previous-value');});
+test('explicit return restores prior collapsed or expanded state without closing any tabs',()=>{const b=boot();b.api.setMode('workbench');assert.equal(b.right.isExpanded(),true);b.api.setMode('original');assert.equal(b.right.isExpanded(),false);b.right.toggleExpanded();b.api.setMode('workbench');b.api.setMode('original');assert.equal(b.right.isExpanded(),true);assert.deepEqual(b.opens,['files']);});
+test('CSS is opt-in wide-only; no host file writes, transcript replacement or persistence',()=>{const b=boot();const css=b.doc.querySelector('style[data-plugin="dshome-plugin-workbench"]').textContent;assert.match(css,/@media\(min-width:1200px\)/);assert.match(css,/\[data-dshome-workbench="true"\]:not\(\[data-rightbar-collapsed\]\):not\(\[data-rightbar-fullscreen\]\)/);const section=code.slice(code.indexOf('var WORKBENCH_PLUGIN'),code.indexOf('// plugin',code.indexOf('var WORKBENCH_PLUGIN')));assert.doesNotMatch(section,/workspaceFiles\.(write|save)|fetch\(|localStorage|innerHTML|createPortal|replaceChildren/);assert.equal(b.api.status().fileWrite,false);});
+console.log(JSON.stringify({kind:'isolated-emulated-official-services-not-production-host',passed},null,2));
