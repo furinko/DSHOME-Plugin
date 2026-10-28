@@ -738,6 +738,53 @@ function parseWebAddress(value, applicationOrigin) {
   return url.href;
 }
 
+// layout-edit.mjs
+function createLayoutEdit(initial = { axis: "x", ratio: 0.5, swapped: false }) {
+  const valid = (value) => {
+    if (!value || !["x", "y"].includes(value.axis) || !Number.isFinite(value.ratio) || value.ratio < 0.2 || value.ratio > 0.8 || typeof value.swapped !== "boolean" || Object.keys(value).sort().join(",") !== "axis,ratio,swapped") throw Error("Invalid layout");
+    return Object.freeze({ axis: value.axis, ratio: value.ratio, swapped: value.swapped });
+  };
+  let committed = valid(initial), draft = null, revision = 0, snapshot;
+  const listeners = /* @__PURE__ */ new Set();
+  function publish() {
+    snapshot = Object.freeze({ committed, draft, revision: ++revision });
+    for (const fn of [...listeners]) fn();
+  }
+  function requireEdit() {
+    if (!draft) throw Error("Layout is not being edited");
+  }
+  publish();
+  return Object.freeze({
+    getSnapshot: () => snapshot,
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    begin() {
+      if (draft) throw Error("Layout edit already active");
+      draft = valid(committed);
+      publish();
+    },
+    update(patch) {
+      requireEdit();
+      if (!patch || Object.keys(patch).some((k) => !["axis", "ratio", "swapped"].includes(k))) throw Error("Unknown layout field");
+      draft = valid({ ...draft, ...patch });
+      publish();
+    },
+    cancel() {
+      requireEdit();
+      draft = null;
+      publish();
+    },
+    apply() {
+      requireEdit();
+      committed = valid(draft);
+      draft = null;
+      publish();
+    }
+  });
+}
+
 // extension.mjs
 var h = import_react.default.createElement;
 var useState = (store) => import_react.default.useSyncExternalStore(store.subscribe, store.getSnapshot);
@@ -828,6 +875,17 @@ function Desktop({ store, active, chatWidth, chatMax }) {
 }
 function Scene({ scene, store, active }) {
   const [error, setError] = import_react.default.useState(""), [loaded, setLoaded] = import_react.default.useState(false);
+  const [layout] = import_react.default.useState(() => createLayoutEdit());
+  const layoutState = useState(layout), arrangement = layoutState.committed;
+  const guarded = (fn) => {
+    try {
+      if (!active || store.getSnapshot().selected !== scene.key) throw Error("\u5F53\u524D\u5DE5\u4F5C\u533A\u4E0D\u53EF\u7528");
+      fn();
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
+  };
   const update = (patch) => {
     try {
       store.update(scene.key, patch);
@@ -843,21 +901,37 @@ function Scene({ scene, store, active }) {
       "header",
       { className: "p0-scene-header" },
       h("div", null, h("h1", null, scene.title), h("small", null, "\u540C\u5DE5\u4F5C\u533A\u5171\u4EAB\u73B0\u573A \xB7 \u4F1A\u8BDD\u8349\u7A3F\u4E0E\u6743\u9650\u4ECD\u72EC\u7ACB")),
-      h("label", null, "\u5E03\u5C40 ", h("select", { "aria-label": "\u64CD\u4F5C\u533A\u5E03\u5C40", value: scene.arrangement, onChange: (e) => update({ arrangement: e.target.value }) }, h("option", { value: "split" }, "\u5DE6\u53F3\u5206\u680F"), h("option", { value: "stack" }, "\u4E0A\u4E0B\u5206\u680F")))
+      h("label", null, "\u5E03\u5C40 ", h("select", { "aria-label": "\u64CD\u4F5C\u533A\u5E03\u5C40", value: scene.arrangement, disabled: !!layoutState.draft, onChange: (e) => update({ arrangement: e.target.value }) }, h("option", { value: "split" }, "\u5DE6\u53F3\u5206\u680F"), h("option", { value: "stack" }, "\u4E0A\u4E0B\u5206\u680F")))
     ),
     h(
       "div",
-      { className: "p0-tools" },
+      { className: "p0-layout-controls", role: "group", "aria-label": "\u64CD\u4F5C\u533A\u5E03\u5C40\u7F16\u8F91" },
+      !layoutState.draft ? h("button", { type: "button", onClick: () => guarded(() => layout.begin()) }, "\u7F16\u8F91\u5E03\u5C40") : h(
+        import_react.default.Fragment,
+        null,
+        h("label", null, "\u5206\u5272\u65B9\u5411", h("select", { "aria-label": "\u5206\u5272\u65B9\u5411", value: layoutState.draft.axis, onChange: (e) => guarded(() => layout.update({ axis: e.target.value })) }, h("option", { value: "x" }, "\u5DE6\u53F3"), h("option", { value: "y" }, "\u4E0A\u4E0B"))),
+        h("label", null, "\u5206\u5272\u6BD4\u4F8B", h("input", { type: "range", "aria-label": "\u5206\u5272\u6BD4\u4F8B", min: 20, max: 80, value: Math.round(layoutState.draft.ratio * 100), onChange: (e) => guarded(() => layout.update({ ratio: Number(e.target.value) / 100 })) })),
+        h("button", { type: "button", onClick: () => guarded(() => layout.update({ swapped: !layoutState.draft.swapped })) }, "\u4EA4\u6362\u4F4D\u7F6E"),
+        h("button", { type: "button", onClick: () => guarded(() => layout.cancel()) }, "\u53D6\u6D88"),
+        h("button", { type: "button", onClick: () => guarded(() => {
+          store.update(scene.key, { arrangement: "split" });
+          layout.apply();
+        }) }, "\u5E94\u7528\u5E03\u5C40")
+      )
+    ),
+    h(
+      "div",
+      { className: "p0-tools", "data-layout-axis": arrangement.axis, style: { "--p0-ratio": `${arrangement.ratio * 100}%` } },
       h(
         "article",
-        { className: "p0-note" },
+        { className: "p0-note", style: { order: arrangement.swapped ? 2 : 1 } },
         h("h2", null, "\u5DE5\u4F5C\u4FBF\u7B3A"),
         h("p", null, "\u771F\u5B9E\u53EF\u7F16\u8F91\u5185\u5B58\u8349\u7A3F\uFF1B\u672A\u5199\u5165\u6587\u4EF6\uFF0C\u91CD\u5F00\u5E94\u7528\u4E0D\u6062\u590D\u3002"),
         h("textarea", { "aria-label": "\u5DE5\u4F5C\u533A\u4FBF\u7B3A", value: scene.note, onChange: (e) => update({ note: e.target.value }), spellCheck: false, placeholder: "\u8FD9\u4EFD\u8349\u7A3F\u5C5E\u4E8E\u5DE5\u4F5C\u533A\uFF0C\u4E0D\u968F\u53F3\u4FA7\u4F1A\u8BDD\u5207\u6362\u3002" })
       ),
       h(
         "article",
-        { className: "p0-web" },
+        { className: "p0-web", style: { order: arrangement.swapped ? 1 : 2 } },
         h("h2", null, "\u7F51\u9875"),
         h(
           "form",
@@ -903,6 +977,9 @@ html[data-windows-titlebar] .p0-native:before{display:none}
 .p0-desktop{grid-column:2;grid-row:1;min-width:0;min-height:0;position:relative;background:color-mix(in srgb,var(--dsw-alias-bg-base) 95%,#3277ff)}
 .p0-scene-area{height:100%;overflow:auto}.p0-scene{height:100%;box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:360px}.p0-scene[hidden]{display:none}.p0-scene-header{display:flex;align-items:center;justify-content:space-between;gap:8px}.p0-scene h1{font-size:21px;margin:0 0 5px}.p0-scene small,.p0-scene footer{opacity:.65;font-size:12px}.p0-scene h2{font-size:14px;margin:0}.p0-tools{display:grid;grid-template-columns:minmax(180px,.85fr) minmax(220px,1.15fr);gap:12px;flex:1;min-height:200px}.p0-scene[data-arrangement=stack] .p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.p0-tools article{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;padding:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base)}
 .p0-tools p{font-size:12px;opacity:.7;margin:0}.p0-note textarea{flex:1;min-height:70px;width:100%;box-sizing:border-box;resize:none;border:0;outline:1px solid transparent;background:transparent;color:inherit;font:14px/1.65 Consolas,monospace}.p0-note textarea:focus{outline-color:#88aaff}.p0-web form{display:flex;gap:6px}.p0-web button{white-space:nowrap;flex:0 0 auto}.p0-web input{min-width:0;width:100%;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:5px;padding:6px}.p0-web iframe{border:1px solid var(--dsw-alias-border-l2);width:100%;flex:1;min-height:60px;box-sizing:border-box;background:white}.p0-chat-separator{position:absolute;top:0;bottom:0;right:-3px;width:6px;cursor:col-resize;z-index:8}.p0-chat-separator:focus-visible{outline:2px solid #285ad8}
+.p0-layout-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.p0-layout-controls label{display:flex;align-items:center;gap:4px}
+.p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=x]{grid-template-columns:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
+.p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=y]{grid-template-columns:1fr;grid-template-rows:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
 @media(max-width:1100px){.p0-label{display:none}.p0-scene{padding:10px}.p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
 @media(max-width:900px){.p0-narrow-switch{display:flex!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:0 minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}.p0-toolbar{gap:8px;font-size:12px}}
 `;

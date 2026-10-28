@@ -39,6 +39,22 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   await form().fill('未提交网页表单：A与B共用，不应刷新');
   await page.evaluate(() => { window.probeP0.frame = document.querySelector('.p0-scene:not([hidden]) iframe'); window.probeP0.note = document.querySelector('.p0-scene:not([hidden]) textarea'); window.probeP0.scene = window.testP0.ctx.dualShellP0.getSnapshot().selected; });
   const initialLoads = iframeLoads();
+  const edit = page.getByRole('group',{name:'操作区布局编辑'});
+  await edit.getByRole('button',{name:'编辑布局'}).click();
+  await edit.getByRole('combobox',{name:'分割方向'}).selectOption('y');
+  await edit.getByRole('button',{name:'交换位置'}).click();
+  await edit.getByRole('button',{name:'取消'}).click();
+  assert.equal(await visibleScene().locator('.p0-tools').getAttribute('data-layout-axis'),'x');
+  await edit.getByRole('button',{name:'编辑布局'}).click();
+  await edit.getByRole('combobox',{name:'分割方向'}).selectOption('y');
+  await edit.getByRole('slider',{name:'分割比例'}).fill('65');
+  await edit.getByRole('button',{name:'交换位置'}).click();
+  await edit.getByRole('button',{name:'应用布局'}).click();
+  const applied = await visibleScene().evaluate(node => ({axis:node.querySelector('.p0-tools').dataset.layoutAxis,noteOrder:getComputedStyle(node.querySelector('.p0-note')).order,webOrder:getComputedStyle(node.querySelector('.p0-web')).order,ratio:node.querySelector('.p0-tools').style.getPropertyValue('--p0-ratio')}));
+  ok('transactional-layout-applied', applied.axis==='y' && applied.noteOrder==='2' && applied.webOrder==='1' && applied.ratio==='65%', JSON.stringify(applied));
+  const positions = await visibleScene().evaluate(node => {const rect=q=>{const b=node.querySelector(q).getBoundingClientRect();return {top:b.top,bottom:b.bottom,height:b.height};};return {note:rect('.p0-note'),web:rect('.p0-web'),tools:rect('.p0-tools')};});
+  ok('layout-applied-geometry', positions.web.bottom <= positions.note.top + 1 && positions.note.bottom <= positions.tools.bottom + 1 && positions.web.height > positions.note.height, JSON.stringify(positions));
+  ok('layout-edit-preserves-content-instance', await page.evaluate(() => window.probeP0.frame === document.querySelector('.p0-scene:not([hidden]) iframe') && window.probeP0.note === document.querySelector('.p0-scene:not([hidden]) textarea')) && await form().inputValue()==='未提交网页表单：A与B共用，不应刷新');
   const dimensions = [];
   for (const width of [1920,1366,1040]) {
     await page.setViewportSize({width,height:1080});
@@ -58,9 +74,11 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B');
   await input().pressSequentially('B 独立草稿'); const draftB = await input().textContent();
   ok('same-workspace-same-scene', await page.evaluate(() => window.probeP0.scene === window.testP0.ctx.dualShellP0.getSnapshot().selected && window.probeP0.frame === document.querySelector('.p0-scene:not([hidden]) iframe')));
+  ok('shared-workspace-layout', await visibleScene().locator('.p0-tools').getAttribute('data-layout-axis') === 'y');
   assert.equal(await form().inputValue(),'未提交网页表单：A与B共用，不应刷新');
   await page.getByRole('button',{name:'会话 C',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'C');
   ok('same-path-different-workspace-isolated', await page.getByRole('textbox',{name:'工作区便笺'}).inputValue() === '' && await visibleScene().getAttribute('data-workspace') === 'W2');
+  ok('different-workspace-layout-isolated', await visibleScene().locator('.p0-tools').getAttribute('data-layout-axis') === 'x');
   await page.getByRole('textbox',{name:'工作区便笺'}).fill('W2自己的便笺');
   await page.getByRole('button',{name:'会话 A',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
   assert.equal(await input().textContent(),draftA);
