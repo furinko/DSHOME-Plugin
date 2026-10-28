@@ -10,13 +10,13 @@ import { REMOTE_TYPERT } from './wire.mjs';
 import { installReferenceBridge } from './reference-client.mjs';
 import { decodeReference, revealDocumentReference } from './reference.mjs';
 import { createBrowserLayoutStorage } from './browser-layout-storage.mjs';
-const h = React.createElement, ID = 'dshome-plugin.workbench-v2';
+const h = React.createElement, KIND = 'dshome-workspace', ID = 'dshome-plugin.workbench-v2';
 export function applyWorkbench(ctx, hostRequire) {
   const slots = ctx.get('slots');
   if (!slots?.register || !ctx.inject) return null;
   const cleanups = [], workspaces = new Map(), shelves = new Map(), retiring = new Set(), modes = new Map(), listeners = new Set();
   const ready = Promise.withResolvers(), shutdownKey = '__dshomeWorkbenchV2Shutdown', previousShutdown = window[shutdownKey]; let disposing;
-  let disposed = false, terminalConstructor, activeScope, activeOwner, shell, uiReady = false, reloadNotice = '', lastUpdate, reason = '工作台接口正在装配', snapshot = Object.freeze({ revision: 0 });
+  let disposed = false, terminalConstructor, activeScope, activeOwner, uiReady = false, reloadNotice = '', lastUpdate, reason = '工作台接口正在装配', snapshot = Object.freeze({ revision: 0 });
   const keep = off => { cleanups.push(off); return off; };
   const publish = () => { snapshot = Object.freeze({ revision: snapshot.revision + 1 }); for (const fn of [...listeners]) { try { fn(); } catch (error) { console.error('DSHOME subscriber', error); } } };
   const source = { subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn); }, getSnapshot: () => snapshot };
@@ -35,15 +35,16 @@ export function applyWorkbench(ctx, hostRequire) {
   }, { global: true, prepend: true }));
   const style = document.createElement('style'); style.dataset.plugin = ID; style.textContent = css; document.head.appendChild(style);
   keep(() => style.remove());
-  function current() { return ctx.get('uiSession')?.current.getSnapshot().key; }
+  function current() { return ctx.get('sidebarRight')?.mounted.getSnapshot(); }
   function original(sessionId) {
     if (disposed || current() !== sessionId) return false;
-    shell?.setFocus('chat'); modes.set(sessionId, 'original'); publish(); return true;
+    const right = ctx.get('sidebarRight'); if (right?.isExpanded()) right.toggleExpanded(); modes.set(sessionId, 'original'); publish(); return true;
   }
   function enter(sessionId = current()) {
     if (disposed || !sessionId || current() !== sessionId) return { ok: false, reason: '请在当前真实会话中打开工作台。' };
-    if (!shell) return { ok: false, reason: reason || '应用工作空间尚未接入。' };
-    shell.ensureSession(); shell.layout.selectPanel(null); shell.setFocus('workspace'); modes.set(sessionId, 'workbench'); publish(); return { ok: true };
+    const right = ctx.get('sidebarRight'), tabs = ctx.get('sidebarRightTabs');
+    if (!right || !tabs?.get(KIND)) return { ok: false, reason: reason || '真实工作台面板尚未接入。' };
+    right.openTab(KIND); modes.set(sessionId, 'workbench'); publish(); return { ok: true };
   }
   async function createEntry(sessionId, owner, project, signal) {
     const remote = owner.scope.get('remote'), layoutStore = await createBrowserLayoutStorage({ projectId: project.key, legacyStorage: localStorage });
@@ -85,11 +86,6 @@ export function applyWorkbench(ctx, hostRequire) {
     }); shelfOwners.set(shelf, owner); shelves.set(sessionId, shelf); return shelf;
   }
   async function workspace(sessionId, signal) { return (await projectShelf(sessionId).ensure(signal)).controller; }
-  async function closeWorkspace(sessionId = current()) {
-    const shelf = shelves.get(sessionId); if (!shelf) return;
-    await shelf.closeAllNow(); shelves.delete(sessionId); workspaces.delete(sessionId); modes.delete(sessionId);
-    shell?.releaseSession(sessionId); publish();
-  }
   let referenceReady = false, referenceGeneration = 0;
 
   async function returnReference(uri, { sessionId = current(), signal } = {}) {
@@ -111,31 +107,44 @@ export function applyWorkbench(ctx, hostRequire) {
     const entered = enter(sessionId); if (!entered.ok) throw Error(entered.reason);
     return revealDocumentReference({ uri, controller, isCurrent, signal, validateScope });
   }
-  function Body({ sessionId, inputActions, activeWorkspace = true }) {
+  function Body({ sessionId, inputActions }) {
     React.useSyncExternalStore(source.subscribe, source.getSnapshot);
     const scope = activeScope, generation = referenceGeneration;
-    if (!sessionId) return h('div', { className: 'dshome-app-welcome' }, h('h2', null, '工作空间'), h('p', null, '选择或新建一个会话，开始处理项目中的文件、文档、网页和终端。'));
-    if (window.__dshomePlugin?.workbench === false) return h('p', null, '工作空间已关闭，可继续使用对话。');
     if (!shelves.has(sessionId) && !activeScope) return h('p', { role: 'status' }, reason);
     const shelf = projectShelf(sessionId);
-    return h(ProjectDeck, { shelf, inputActions, activeWorkspace, referenceReady, servicesAvailable: services.available(shelfOwners.get(shelf)), reloadNotice, onRefreshServices: reconnectFiles, onCloseWorkspace: () => closeWorkspace(sessionId),
+    return h(ProjectDeck, { shelf, inputActions, referenceReady, servicesAvailable: services.available(shelfOwners.get(shelf)), reloadNotice, onRefreshServices: reconnectFiles,
       referenceCurrent: controller => !disposed && !!scope && services.available(shelfOwners.get(shelf)) && referenceReady && scope === activeScope && generation === referenceGeneration && current() === sessionId && workspaces.get(sessionId) === controller,
       onOriginal: () => original(sessionId) });
+  }
+  function Switch({ sessionId }) {
+    React.useSyncExternalStore(source.subscribe, source.getSnapshot);
+    return h('div', { className: 'dshome-wb-switch', role: 'group', 'aria-label': '界面模式' },
+      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) !== 'workbench', onClick: () => original(sessionId) }, '原版'),
+      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) === 'workbench', onClick: () => enter(sessionId), disabled: !!reason, title: reason }, '工作台'));
   }
   const beforeUnload = e => { if ([...shelves.values()].some(s => s.hasUnsaved())) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload); keep(() => window.removeEventListener('beforeunload', beforeUnload));
   function startBindings() {
   keep(installReferenceBridge(ctx, { returnReference, onAvailability(value) { referenceReady = value; referenceGeneration++; publish(); } }));
-  // The application root is independent of a replaceable file namespace. It
-  // renders Conversation and workspace as siblings, never a sidebar tab.
-  keep(ctx.inject(['uiSession', 'dshomeApplication'], seats => {
+  // Native seats live independently of a file namespace. Its withdrawal must
+  // not unregister the tab kind, unmount React content, or dispose terminal holds.
+  keep(ctx.inject(['sidebarRight', 'sidebarRightTabs'], seats => {
     seats.effect(function* () {
-      shell = seats.get('dshomeApplication');
-      yield seats.slots.inject('dshome.application.workspace', () => seats.slots.register({ name: 'dshome.application.workspace' }, Body));
-      yield seats.uiSession.current.subscribe(publish);
-      yield () => { shell = undefined; };
+      yield seats.sidebarRightTabs.register({ id: ID, kind: KIND, multiple: false, title: () => '工作台', keepMounted: true });
+      yield seats.sidebarRight.registerCloseHandler(KIND, sessionId => {
+        const cleanup = shelves.get(sessionId)?.closeAllNow();
+        if (cleanup) { const pending = cleanup.catch(error => console.error('DSHOME project cleanup', error)).finally(() => retiring.delete(pending)); retiring.add(pending); }
+        shelves.delete(sessionId); workspaces.delete(sessionId); modes.delete(sessionId); publish();
+      });
+      yield seats.slots.inject('sidebar.right.pane.tab', () => seats.slots.register({ name: 'sidebar.right.pane.tab', key: ID }, Body));
+      yield seats.slots.inject('sidebar.right.pane.tab.title', () => seats.slots.register({ name: 'sidebar.right.pane.tab.title', key: ID }, () => h('span', null, '工作台')));
+      yield seats.slots.inject('conversation.session.header.utilities', () => seats.slots.register({ name: 'conversation.session.header.utilities', id: ID, order: -50 }, Switch));
+      // Empty Sessions hide Header utilities. Use the actual in-flow Hero options
+       // list, not a floating control over a native composer or another panel.
+       yield seats.slots.inject('conversation.hero.options', () => seats.slots.register({ name: 'conversation.hero.options', id: ID, order: -50 }, Switch));
+      yield seats.sidebarRight.mounted.subscribe(publish);
       uiReady = true; availability(); yield () => { uiReady = false; availability(); };
-    }, 'dshome-workspace: application root and native conversation seats');
+    }, 'dshome-workspace: stable native content seats');
   }));
   keep(ctx.inject(['typert', 'remote', 'remote.terminal', 'connection'], scope => {
     const owner = { scope, live: true, release: undefined, refreshing: undefined }; activeOwner = owner;
@@ -167,8 +176,8 @@ export function applyWorkbench(ctx, hostRequire) {
     })().finally(() => { owner.refreshing = undefined; }); return owner.refreshing;
   }
   const api = { setMode: (mode, sessionId = current()) => mode === 'original' ? { ok: original(sessionId) } : enter(sessionId),
-    status: () => ({ mode: modes.get(current()) ?? 'workbench', reason, sessionId: current() ?? null, geometry: 'application-root', version: 3, lifecycle: workspaceLifecycle, reload: checkReload(), lastUpdate, references: referenceReady, sessions: [...workspaces.keys()] }),
-    ready: ready.promise, checkReload, returnReference, reconnectFiles, closeWorkspace, workspace: sessionId => workspaces.get(sessionId), projects: sessionId => shelves.get(sessionId)?.getSnapshot(), checkProject: sessionId => projectShelf(sessionId).check(), openCurrentProject: sessionId => projectShelf(sessionId).openCurrent(), selectProject: (sessionId, key) => projectShelf(sessionId).select(key), subscribe: source.subscribe, teardown: dispose };
+    status: () => ({ mode: modes.get(current()) ?? 'original', reason, sessionId: current() ?? null, geometry: 'isolated-workspace-content', version: 2, lifecycle: workspaceLifecycle, reload: checkReload(), lastUpdate, references: referenceReady, sessions: [...workspaces.keys()] }),
+    ready: ready.promise, checkReload, returnReference, reconnectFiles, workspace: sessionId => workspaces.get(sessionId), projects: sessionId => shelves.get(sessionId)?.getSnapshot(), checkProject: sessionId => projectShelf(sessionId).check(), openCurrentProject: sessionId => projectShelf(sessionId).openCurrent(), selectProject: (sessionId, key) => projectShelf(sessionId).select(key), subscribe: source.subscribe, teardown: dispose };
   window.__dshomePluginWorkbench = api;
   async function disposeRun() {
     if (disposed) return; disposed = true; services.dispose(); ready.resolve({ ok: false, reason: '工作台已卸载' });

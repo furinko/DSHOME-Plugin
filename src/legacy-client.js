@@ -4358,9 +4358,11 @@ window.__ModuleLoader__.load({
       } else {
         window.__dshomePluginGlow = null;
       }
-      // The layout module owns the application shell. This pass supplies its
-      // workspace body; feature-off leaves the real chat shell available.
-      safe(function () { reentrantPass('__dshomePluginWorkbenchTeardown', function () { return applyWorkbench(ctx); }); }, 'dshome-plugin: workbench failed');
+      if (o.workbench) {
+        safe(function () { reentrantPass('__dshomePluginWorkbenchTeardown', function () { return applyWorkbench(ctx); }); }, 'dshome-plugin: workbench failed');
+      } else {
+        safe(function () { reentrantPass('__dshomePluginWorkbenchTeardown', function () { return null; }); }, 'dshome-plugin: workbench teardown failed');
+      }
     }
 
     module.exports = { name: 'dshome-plugin', inject: inject, apply: apply };

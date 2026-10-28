@@ -1,6 +1,6 @@
 {
   "name": "dshome-plugin",
-  "version": "0.3.0-shell.1-dev",
+  "version": "0.3.0-workspace.0-dev",
   "description": "DSHOME Plugin — brand theme, conversation layout, minimap and reminders, with an in-development modular workspace and policy/version-guarded document editing.",
   "keywords": [
     "dsh",
@@ -17,7 +17,7 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./workbench-entry": "./lib/entry-workbench-4f81b114fed0.js"
+    "./workbench-entry": "./lib/entry-workbench-a50fb321b249.js"
   },
   "dsh": {
     "bundle": {
@@ -28,7 +28,7 @@
       "inject": [
         "@deepseek-ai/dsh-api-terminal-controller",
         "@deepseek-ai/dsh-api-workspace-files",
-        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "immediately": true
@@ -36,8 +36,6 @@
   },
   "files": [
     "lib",
-    "layout",
-    "docs/APPLICATION-SHELL-2026-10-28.md",
     "locale",
     "cordis.patch.yml",
     "README.md"
@@ -50,7 +48,6 @@
     "test:workspace-client": "node --test test/workspace-client-assembly.mjs",
     "test:workspace-native": "node --test test/workspace-native-sidebar.mjs",
     "test:workspace-native-browser": "node --test test/workspace-native-browser.mjs",
-    "test:application-shell": "node --test test/application-shell-native.mjs",
     "test:workspace-reference-native": "node --test test/workspace-reference-native.mjs",
     "test:workspace-composer-native": "node --test test/workspace-composer-native.mjs",
     "test:workspace-session-native": "node --test test/workspace-session-native.mjs",

@@ -32,13 +32,13 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
   function action(fn) { try { Promise.resolve(fn()).catch(e => c.notify(errorText(e))); } catch (e) { c.notify(errorText(e)); } }
   const serializedPanels = Object.values(layout.panels).sort((a, b) => a.id.localeCompare(b.id));
   return h('section', { className: 'dshome-v2', 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId },
-    h('header', { className: 'wb-header' }, h('strong', null, layout.editing ? '布局编辑' : '布局'),
+    h('header', { className: 'wb-header' }, h('strong', null, layout.editing ? '布局编辑' : '操作区'), h('span', { className: 'wb-project', title: c.projectId }, c.projectId),
       layout.editing ? h(React.Fragment, null,
         button('取消', () => c.model.cancelEdit()), button('应用布局', () => action(() => c.model.applyEdit()), { className: 'wb-primary' })) : h(React.Fragment, null,
         h('select', { 'aria-label': '布局预设', value: layout.selectedPreset, onChange: e => action(() => c.model.selectPreset(e.target.value)) },
           h('option', { value: 'custom' }, '自定义'), Object.keys(layout.presets).map(name => h('option', { key: name, value: name }, name === 'development' ? '开发' : name === 'review' ? '审阅' : name))),
         button('编辑布局', () => c.model.beginEdit()), button('＋ 添加模块', () => setMenu(!menu), { 'aria-expanded': menu }),
-        button('保存布局', () => action(() => c.saveLayout()), { disabled: state.savingLayout }), button('检查布局存储', () => action(() => c.inspectLayout()), { disabled: state.savingLayout }))),
+        button('保存布局', () => action(() => c.saveLayout()), { disabled: state.savingLayout }), button('检查布局存储', () => action(() => c.inspectLayout()), { disabled: state.savingLayout }), button('返回原版', onOriginal))),
     menu && !layout.editing && h('nav', { className: 'wb-add', 'aria-label': '添加内容模块' }, c.model.modules().map(definition => button(definition.label, () => action(() => { c.model.addPanel(definition.kind); setMenu(false); }), { key: definition.kind }))),
     h(LayoutRecovery, { c, state, download }),
     state.terminalCleanup && (state.terminalCleanup.requests.length > 0 || state.terminalCleanup.overflow > 0) && h('section', { className: 'wb-terminal-cleanup', 'aria-label': '终端关闭任务', style: { padding: 8, maxHeight: 180, overflow: 'auto' } },

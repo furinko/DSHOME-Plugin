@@ -6,8 +6,7 @@ import { nativeThemeSettings } from './native-theme-settings.mjs';
 export async function nativeShellEntry({ ctx, consume, store, React, errors, transport, chrome = false, hmr: hmrOptions }) {
   const constant = value => ({ getSnapshot: () => value, subscribe: () => () => {} }), h = React.createElement;
   ctx.slots.onEntryError((key, _entry, error) => errors.push(key + ': ' + error.message));
-  const dictionaries = new Map();
-  const locale = { bind: ns => (key, values = {}) => { const text = key.split('.').reduce((value, part) => value?.[part], dictionaries.get(ns)); return typeof text === 'string' ? text.replace(/\{(\w+)\}/g, (_match, name) => values[name] ?? '') : key; }, register: (ns, languages) => { dictionaries.set(ns, languages.zh); return () => dictionaries.delete(ns); }, subscribe: () => () => {}, getVersion: () => 0, getSnapshot: () => 0 };
+  const locale = { bind: () => key => key, register: () => () => {}, subscribe: () => () => {}, getVersion: () => 0, getSnapshot: () => 0 };
   ctx.reflect.provide('locale', locale); ctx.slots.installLocale(locale);
   ctx.reflect.provide('shortcuts', { catalog: constant([]), register: () => () => {}, registerFixed: () => () => {}, describeBinding: () => ({ keys: [] }), closeWindow: async () => {} });
   ctx.reflect.provide('remoteAccess', { source: () => constant(true) });
@@ -26,11 +25,7 @@ export async function nativeShellEntry({ ctx, consume, store, React, errors, tra
   const layout = ctx.plugin(consume('@deepseek-ai/dsh-client-ui-layout')); await layout;
   const conversation = ctx.plugin(consume('@deepseek-ai/dsh-client-ui-conversation')); await conversation;
   consume('@deepseek-ai/dsh-client-ui-chat').apply(ctx);
-  const NavigationFixture = () => h('nav', { 'aria-label': '隔离测试导航夹具', style: { padding: 12, overflowWrap: 'anywhere' } }, h('p', null, '隔离项目数据'), h('button', { onClick: () => openSession('A') }, '会话 A'), h('button', { onClick: () => openSession('B') }, '会话 B'), h('button', { onClick: () => ctx.layout.selectPanel('fixture-diagnostics') }, '其他主面板'), h('button', { onClick: () => ctx.layout.selectPanel(null) }, '返回会话'), h('button', { onClick: () => ctx.layout.toggleSidebar() }, '收起导航'));
-  try {
-    const navigation = consume('@deepseek-ai/dsh-client-ui-sidebar'); await ctx.plugin(navigation);
-    ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register({ name: 'sidebar.workspaces' }, NavigationFixture));
-  } catch (error) { if (!error.message.startsWith('Missing published factory ')) throw error; ctx.slots.inject('sidebar', () => ctx.slots.register({ name: 'sidebar' }, NavigationFixture)); }
+  ctx.slots.inject('sidebar', () => ctx.slots.register({ name: 'sidebar' }, () => h('nav', { 'aria-label': '隔离测试导航夹具', style: { padding: 12, overflowWrap: 'anywhere' } }, h('h3', null, 'DSHOME 隔离验证'), h('p', null, '真实 AppFrame / Main / Header；此导航、设置、调色及 Host 数据仍是夹具。'), h('button', { onClick: () => openSession('A') }, '会话 A'), h('button', { onClick: () => openSession('B') }, '会话 B'), h('button', { onClick: () => ctx.layout.selectPanel('fixture-diagnostics') }, '其他主面板'), h('button', { onClick: () => ctx.layout.selectPanel(null) }, '返回会话'), h('button', { onClick: () => ctx.layout.toggleSidebar() }, '收起导航'))));
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: 'fixture-diagnostics' }, () => h('section', { 'aria-label': '隔离诊断面板' }, '这是独立主面板，不属于工作台内容。')));
   const native = ctx.plugin(consume('@deepseek-ai/dsh-client-ui-sidebar-right')); await native;
   await openSession('A'); const owner = ctx.sessions.binding('A'); ctx.conversation.input.for(owner.ctx).setDraft('原生会话壳中的聊天草稿');
