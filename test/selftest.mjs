@@ -318,12 +318,14 @@ check('the header comment counts exactly what apply() installs', () => {
   const bullets = [...clientSource.matchAll(/^\/\/   · (\w+)/gm)].map((m) => m[1]);
   const declared = clientSource.match(/^\/\/ (\w+) features share one plugin id:$/m);
   assert.ok(declared, 'the header no longer declares a feature count');
-  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify', 'glow', 'workbench'],
+  assert.deepEqual(gates, ['theme', 'conversation', 'sidebar', 'minimap', 'notify', 'glow'],
     'the feature gates apply() runs have changed — update header and bullets with them');
-  assert.deepEqual(bullets, gates, 'the header bullets and the applied gates disagree');
+  // The application shell is now the required root owner. Workspace-off keeps
+  // chat available instead of leaving the disabled official root blank.
+  assert.deepEqual(bullets, [...gates, 'workbench'], 'the header bullets and the applied features disagree');
   const counts = { One: 1, Two: 2, Three: 3, Four: 4, Five: 5, Six: 6, Seven: 7, Eight: 8, Nine: 9, Ten: 10 };
-  assert.equal(counts[declared[1]], gates.length,
-    `header claims ${declared[1]} features but apply() installs ${gates.length}`);
+  assert.equal(counts[declared[1]], gates.length + 1,
+    `header claims ${declared[1]} features but apply() installs ${gates.length + 1}`);
 });
 
 check('the sidebar feature is switchable and wired', () => {
@@ -825,8 +827,15 @@ check('cordis rows resolve to this package', () => {
   // otherwise the host fails to load it at startup.
   const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8');
   const names = [...patch.matchAll(/name:\s*(\S+)/g)].map((m) => m[1]);
-  assert.ok(names.length > 0, 'no rows declared');
+  assert.equal(names.length, 2, 'workspace and application-layout entries are required');
+  const layout = JSON.parse(readFileSync(join(root, 'layout/package.json'), 'utf8'));
   for (const name of names) {
+    if (name.startsWith('./layout/')) {
+      assert.equal(name, './layout/' + layout.exports['./shell-entry'].slice(2));
+      assert.match(name, /^\.\/layout\/lib\/entry-[a-f0-9]{12}\.js$/);
+      assert.ok(existsSync(join(root, name)), 'layout entry missing');
+      continue;
+    }
     assert.equal(name, manifest.exports['./workbench-entry'], 'row must name the declared package-owned host entry');
     assert.match(name, /^\.\/lib\/entry-workbench-[a-f0-9]{12}\.js$/, 'entry must remain bounded, content-keyed and package-relative');
     assert.ok(existsSync(join(root, name)), 'anchored host entry missing');

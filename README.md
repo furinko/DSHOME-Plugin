@@ -1,5 +1,19 @@
 # DSHOME-Plugin
 
+## Application-shell candidate: 0.3.0-shell.1-dev
+
+The current candidate follows the approved three V2 designs at the **application root**: project navigation, an independent native Conversation/composer, and the main files/document/terminal/web workspace. The workspace no longer registers or opens a native Sidebar tab. Its root owns geometry, resizing, narrow-window switching and global-page presentation.
+
+The bundle disables the official `ui-layout` row and inserts a package-owned layout replacement from `layout/`. That nested package retains the public `@deepseek-ai/dsh-client-ui-layout` client-module identity so existing Conversation, Settings and other dependency declarations resolve. It supplies the existing layout service and declares its own root/child slots; it neither borrows an existing owner's render binding nor edits the installed SDK. Both loader entries are content-keyed and included in `npm`/`pnpm pack`.
+
+Focus mode, layout editing, presets and global pages preserve the same current-session chat input and workspace DOM. Switching chats uses genuine Session references and explicit framework SessionProviders to retain each workspace independently; the native chat input follows the actual Session binding and restores its draft. Project settings can explicitly close a workspace, preserving confirmation/unknown-save/terminal-cleanup checks before releasing its Session reference. At most 16 session workspaces are retained, without silently evicting content. `workbench: false` leaves the required application shell in chat focus and does not initialize project content.
+
+Build with `npm ci && npm run build`. For the isolated public-SDK browser fixture, run `node scripts/bootstrap-sdk-fixture.mjs`, then `pnpm --dir .dev-sdk install --ignore-scripts --frozen-lockfile --config.auto-install-peers=false`. Set `DSH_SDK_ROOT` to a compatible actual SDK root and run `npm run test:application-shell`; `WORKBENCH_BROWSER` can name an installed Chrome executable. The committed fixture manifest/lock replaces the previous undocumented dependency preparation for this test.
+
+Windows rc.3 verification covers the real SDK native navigation shell, Conversation/composer, Session adapter, Gateway/FS file save, ThemeRuntime and a real CMD PTY. Host journal, policy/owner admission, project rows and settings storage remain explicit isolated fixtures. This is not production GUI or model acceptance. Standard selector/selftest/DOM and the real registry/boot checks pass; foundation245 has241 passes and4 Windows symlink-fixture EPERM failures, with no skips. Older Sidebar-specific wrapper scenarios have not all been migrated to this root composition and are not claimed green. See [implementation and evidence](docs/APPLICATION-SHELL-2026-10-28.md).
+
+This candidate is developed in an isolated worktree and is not loaded into the desktop profile. Loading or updating a running profile requires separate explicit approval.
+
 ## V2 development preview: 0.3.0-workspace.0-dev
 
 This branch contains the **in-development V2 workspace**, not a completed A1–A8 release. It composes a plugin-owned native Sidebar panel with files, an editable document, a real SDK terminal and a sandboxed webpage. Project/content state is separated from editable layouts; document writes use Host identity, workspace and version checks. The native conversation/composer is not moved into a second React root.

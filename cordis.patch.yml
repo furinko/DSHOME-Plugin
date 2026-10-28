@@ -13,7 +13,7 @@
     - id: dshome-plugin
       # Relative path is anchored by dsh-app-boot beside this patch.
       # The content-keyed host identity invalidates stale same-name client metadata.
-      name: ./lib/entry-workbench-a50fb321b249.js
+      name: ./lib/entry-workbench-4f81b114fed0.js
 
 # 官方品牌（ui-brand-official）与我们的品牌槽争同一组槽位
 # （sidebar.brand.mark / sidebar.brand.name）。
@@ -25,3 +25,13 @@
 # 只压视觉与槽位，不动 React 树：删掉本行，官方品牌立刻回来。
 - id: ui-brand-official
   disabled: true
+
+# Disable the official owner and insert our package-owned replacement. Loader
+# patch `name` is an assertion, not a rename operation. The nested package keeps
+# the public client module id used by Conversation and Settings dependencies.
+- id: ui-layout
+  disabled: true
+
+- insert:
+    - id: dshome-application-layout
+      name: ./layout/lib/entry-e4fa82eaf843.js
