@@ -1,0 +1,4373 @@
+// DSHOME-Plugin —browser client module.
+//
+// ── Why this is one file with no import/export ───────────────────────────────
+// The host loads this bundle as a **classic script**
+// (`document.createElement("script")` + `el.src = url`; see
+// `@deepseek-ai/dsh-client-modules/lib/client.js`: "Default bundle-load hook:
+// same-origin external classic script"). A classic script is not a module, so
+// any top-level `import` throws `SyntaxError: Cannot use import statement
+// outside a module` and the entry never activates —which fails the whole web
+// boot, not just this plugin.
+//
+// The source is therefore deliberately authored as one self-contained file.
+// Modules the host exposes (react, the UI primitives) are pulled through the
+// `require` argument of the loader factory instead.
+//
+// Seven features share one plugin id:
+//   · theme        —brand accent tokens + brand slots
+//   · conversation —card isolation + think line window
+//   · sidebar      —stack the left sidebar's foot actions into full-width rows
+//   · minimap      —VSCode-style turn thumbnail navigation
+//   · notify       —turn / member / attention reminders (software port of the
+//                    DSHOME reference's host-side `dshome/notify`, rebuilt on
+//                    the official client state this bundle can actually see)
+//   · glow         —wordmark sweep, hover light and notification halo
+//   · workbench    —original/workbench layout using native session and panels
+//
+// Every feature is optional and isolated: a failure in one leaves the others
+// running, and the worst possible outcome is a missing feature, never a broken
+// UI or a failed boot.
+
+window.__ModuleLoader__.load({
+  id: 'dshome-plugin',
+  factory: (require) => {
+    var module = { exports: {} };
+    var exports = module.exports;
+    Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+
+    var react_jsx_runtime = require('react/jsx-runtime');
+    var react = require('react');
+    var primitives = require('@deepseek-ai/dsh-client-ui-primitives');
+
+    // ═══════════════════════════════════════════════════════════════════════    // shared —selectors, style injection, small utilities
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // Selector discipline: official **semantic attributes** only
+    // (data-chat-flow-kind / data-chat-group-part / data-chat-turn /
+    // data-disclosure-row / data-chat-flow-key). CSS-Module hash class names
+    // such as `lcKema_frame` change on every upstream rebuild.
+    //
+    // Two audited exceptions (2026-10-14 review P1-12): `scrollBody` and
+    // `officialRail` still match hash-class *fragments* — upstream ships no
+    // semantic attribute for either, and an earlier attempt to guess one broke
+    // the minimap. They stay, but (a) they are the ONLY two, (b) EACH warns
+    // once when its anchor misses while a conversation is on screen
+    // (`findScroller` / `auditOfficialRails` — the rail probe was added
+    // 2026-10-15 after a field report showed that path failing silently),
+    // (c) the `_frame` fragment rides inside RAIL_RULE too — but SCOPED to the
+    // semantic `data-conversation-scroll` attribute (verified in the shipped
+    // bundle: the conversation scrollBody element itself carries it), so the
+    // constant CSS rule cannot reach navs outside the conversation, and the
+    // per-pass audit rescues anything it provably mis-caught (2026-10-16
+    // redesign — the pre-P2-29 GLOBAL rule is still gone and stays gone).
+    // If you add a third hash selector, delete this paragraph first — it is the
+    // tripwire, not decoration.
+    //
+    // Every attribute named here has been verified to exist in the shipped
+    // app.asar bundle — and in the spelling that bundle actually uses. That
+    // second half is not decorative. An earlier revision searched the archive
+    // for the literal `data-variant="think"`, found nothing, and deleted a
+    // working feature (a 12-line reasoning window that WAS running). The bundle
+    // writes it as `"data-variant": "think"` (`ui-chat` ReasoningRow, offset
+    // 19312977) while the DOM attribute is exactly `data-variant="think"`, so
+    // `[data-variant="think"]` had matched all along. A no-match is evidence
+    // only once the probe's own spelling has been proven against a known hit.
+
+    /** Official semantic attributes. */
+    var SELECTORS = {
+      /** A reasoning ("think") block — verified on the official ReasoningRow. */
+      think: '[data-variant="think"]',
+      /** The clickable header row inside a reasoning block. */
+      thinkRow: '[data-disclosure-row]',
+      /** Content wrapper that only exists once the block is expanded.
+       *
+       * 2026-10-25: upstream wrapped the row in a `data-disclosure-header`
+       * element, so the body is now that header's next sibling instead of the
+       * row's. Without this the 12-line window silently stopped applying — the
+       * synthetic click still expanded the block, but the clamp selector matched
+       * nothing and the reasoning text ran the full height. The old shape stays
+       * as a fallback for a host still on the previous bundle. */
+      thinkBody: '[data-disclosure-header] + div',
+      /** Pre-2026-10-25 nesting: body directly after the row. */
+      thinkBodyLegacy: '[data-disclosure-row] + div',
+      /** The per-turn wrapper that carries a stable flow key. */
+      flow: '[data-chat-flow-key]',
+      /** Every message block; `data-chat-turn` also marks turn boundaries. */
+      turn: '[data-chat-turn]',
+      /** The scrolling column that hosts the conversation.
+       *  ⚠ Hash-fragment exception ① (see the discipline note above). */
+      scrollBody: '[class*="_scrollBody"]',
+      /** Official turn-navigation rail (hidden in favour of our minimap).
+       *  ⚠ Hash-fragment exception ② — hidden only with rail-like geometry. */
+      officialRail: 'body nav[class*="_frame"]',
+    };
+
+    /**
+     * One-shot warnings (2026-10-14 review P1-12/P2-30): a broken anchor must be
+     * *sayable* — silent disappearance is how the 2026-10-04 think-window
+     * deletion happened — but a warning per frame is its own bug.
+     */
+    var warnedOnce = {};
+    function warnOnce(key, message) {
+      if (warnedOnce[key]) return;
+      warnedOnce[key] = true;
+      try { console.warn(message); } catch (error) { /* no console: stay quiet */ }
+    }
+
+    /**
+     * Message-block kinds that get card treatment.
+     *
+     * Two empty-block guards are required:
+     * 1) `:not([hidden])` — upstream ≤ some version marks an empty per-turn
+     *    process block with `hidden` while leaving it `display:block`.
+     * 2) `:not(:empty):not(:has(>[data-slot=...]:empty))` — newer upstream no
+     *    longer sets `hidden` there; it collapses empties purely in CSS
+     *    (`.flowItem:is(:empty,:has(>[data-slot="conversation.chat.node"]:empty)){height:0}`).
+     *    A running turn's `turn-process` block renders `null` until the turn
+     *    closes, so without guard 2 the card's padding+border inflate the
+     *    zero-height block into a ~22px blank card above the live Think panel
+     *    (reported 2026-10-12: blank bar under the user message, turn running).
+     *    Both guards mirror the host's own emptiness definition exactly.
+     */
+    var CARD_SELECTOR = [
+      'tool-call',
+      'context',
+      'system-prompt',
+      'command',
+      'manual-compaction',
+      'compaction',
+      'turn-process',
+    ].map(function (kind) {
+      return '[data-chat-flow-kind="' + kind + '"]:not([hidden])' +
+        ':not(:empty)' +
+        ':not(:has(>[data-slot="conversation.chat.node"]:empty))';
+    }).join(',');
+
+    /**
+     * Inject one <style> element per plugin id, idempotently.
+     *
+     * The DOM is the source of truth, not an in-memory flag: after a client hot
+     * reload the module state resets while any surviving <style> node is still
+     * there, and a stale flag would leave elements unstyled.
+     *
+     * The guard repairs the tag if something else removes or replaces it later
+     * (upstream remount, safe mode, another plugin clearing <head>). Without
+     * that repair elements silently fall back to bare styles until reload.
+     */
+    function installStyle(id, css, options) {
+      var useGuard = !options || options.guard !== false;
+      var selector = "style[data-plugin='" + id + "']";
+
+      function ensure() {
+        if (document.querySelector(selector)) return;
+        try {
+          var tag = document.createElement('style');
+          tag.setAttribute('data-plugin', id);
+          tag.textContent = css;
+          document.head.appendChild(tag);
+        } catch (error) {
+          console.warn(id + ': style injection failed', error);
+        }
+      }
+
+      ensure();
+      if (!useGuard) return;
+
+      try {
+        if (typeof MutationObserver !== 'function' || !document.head) return;
+        var registry = window.__dshomePluginStyleGuard || (window.__dshomePluginStyleGuard = {});
+        if (registry[id]) return;
+        registry[id] = true;
+        new MutationObserver(ensure).observe(document.head, { childList: true });
+        window.addEventListener('focus', ensure);
+        document.addEventListener('visibilitychange', ensure);
+      } catch (error) {
+        // A failed guard must not take the plugin down.
+      }
+    }
+
+    /** Read a CSS custom property, falling back when it is unset or unparsable. */
+    function readColor(variable, fallback) {
+      try {
+        var raw = getComputedStyle(document.documentElement).getPropertyValue(variable);
+        return raw && raw.trim() ? raw.trim() : fallback;
+      } catch (error) {
+        return fallback;
+      }
+    }
+
+    /**
+     * Run `fn` and swallow failures.
+     *
+     * Every feature here is a progressive enhancement: the worst outcome of any
+     * single failure is that its feature is missing, never that the UI breaks or
+     * the boot fails. That contract only holds if failures are contained here.
+     */
+    function safe(fn, label) {
+      try {
+        return fn();
+      } catch (error) {
+        if (label) console.warn(label, error);
+        return undefined;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // theme —brand accent tokens + brand slots
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // Brand blue #4D6BFE in light mode, lifted to #6B84FF in dark so it keeps
+    // contrast against the deep navy background.
+
+    var BRAND_LIGHT = '#4D6BFE';
+    var BRAND_DARK = '#6B84FF';
+    /** Label shown in the sidebar and conversation hero. */
+    var BRAND_NAME = 'DSHOME';
+    /** Shown as a badge next to the brand name. */
+    var VERSION = 'v0.1.0';
+
+    /** Token overrides handed to `theme.overrideTokens`. */
+    var TOKENS = {
+      // Accent
+      '--dsw-alias-brand-primary': { light: BRAND_LIGHT, dark: BRAND_DARK },
+      '--dsw-alias-state-business-primary': { light: BRAND_LIGHT, dark: BRAND_DARK },
+      '--dsw-alias-button-primary-fill': { light: BRAND_LIGHT, dark: BRAND_LIGHT },
+      '--dsw-alias-button-primary-hover': { light: '#3E5BF0', dark: '#5B7BFF' },
+
+      // Background layers (deep navy in dark mode)
+      '--dsw-alias-bg-base': { light: '#fbfcff', dark: '#0f1420' },
+      '--dsw-alias-bg-layer-1': { light: '#ffffff', dark: '#131a29' },
+      '--dsw-alias-bg-layer-2': { light: '#ffffff', dark: '#172032' },
+      '--dsw-alias-bg-overlay': { light: '#ffffff', dark: '#1a2338' },
+      '--dsw-alias-bg-module-platform': { light: '#ffffff', dark: '#131a29' },
+
+      // Code blocks and the plates reasoning/process blocks are drawn on.
+      //
+      // Upstream paints both with `--dsw-static-neutral-bluish-50` (a neutral
+      // #f9fafb light / #14161a-ish dark) — which is what reads as "a grey slab"
+      // on an otherwise near-white page. A soft brand tint says "this is code"
+      // instead, and the banner token sits one step deeper so a block's title
+      // row reads as that block's header rather than as a second grey box.
+      // `--shiki-background` (the `<pre class="shiki">` background, set inline by
+      // upstream) resolves to `--dsw-alias-markdown-code-block`, so overriding
+      // this one token repaints every code block in the client.
+      '--dsw-alias-markdown-code-block': { light: '#f5f8ff', dark: '#101827' },
+      '--dsw-alias-markdown-code-block-banner': { light: '#edf2fe', dark: '#162034' },
+
+      // Inline snippets (`allow pasting`) are a *separate* upstream alias:
+      // `--dsw-alias-markdown-inline-code`, which resolves to
+      // `--dsw-static-neutral-50` (#fafafa — a neutral grey; #292929 in dark).
+      // Because it is one global token, the same chip reads grey in a reply and
+      // in a reasoning block alike; that is what the owner kept pointing at.
+      // Overriding this alias repaints every inline snippet in the client, with
+      // no selector and no specificity fight. Tinted one step past the
+      // code-block plate so a short chip is still visible.
+      '--dsw-alias-markdown-inline-code': { light: '#eef3ff', dark: '#1c2740' },
+
+      // The last two plates upstream still paints grey (`--dsw-static-neutral-
+      // bluish-75`, #f1f3f5): the markdown `#tag` chip and the unselected tab of
+      // a code-segment switcher. Same tint, same reason — they read as grey bits
+      // floating in otherwise white prose.
+      '--dsw-alias-markdown-tag': { light: '#eef3ff', dark: '#1c2740' },
+      '--dsw-alias-markdown-code-segment-unselected': { light: '#eef3ff', dark: '#1c2740' },
+
+      // Sidebar sits one step deeper than the base
+      '--dsw-specific-sidebar-fill': { light: '#eef2f9', dark: '#0c111c' },
+
+      // Borders
+      '--dsw-alias-border-l1': { light: '#e3e9f3', dark: '#1e2a44' },
+      '--dsw-alias-border-l2': { light: '#d3dcea', dark: '#2a3a5c' },
+
+      // Minimap bar for rows that are neither the user's nor a reply (tool
+      // calls, commands). Deliberately a mid neutral, not a border tone: see the
+      // note at the `colorOther` read site for the composited luminances this
+      // has to sit between.
+      '--dshome-minimap-bar-quiet': { light: '#8b96a8', dark: '#5b687a' },
+
+      // Text
+      '--dsw-alias-label-primary': { light: '#1a2233', dark: '#dbe4f0' },
+      '--dsw-alias-label-secondary': { light: '#4a5a78', dark: '#c3d0e4' },
+      '--dsw-alias-label-tertiary': { light: '#6b7a99', dark: '#8fa3c0' },
+
+      // Interactive
+      '--dsw-alias-interactive-bg-hover': {
+        light: 'rgba(77,107,254,0.08)',
+        dark: 'rgba(107,132,255,0.10)',
+      },
+    };
+
+    function applyTheme(ctx) {
+      var jsx = react_jsx_runtime.jsx;
+
+      // Fall back to a simple inline mark when the primitives package does not
+      // export the logo, so the slot never renders an empty hole.
+      var Logo = primitives && primitives.FishLogo;
+      function Mark(props) {
+        props = props || {};
+        var size = props.size || 24;
+        if (Logo) return jsx(Logo, { size: size, className: props.className });
+        return jsx('span', {
+          className: props.className,
+          style: { fontSize: size * 0.8, lineHeight: 1, color: BRAND_LIGHT },
+          children: '\u25C8',
+        });
+      }
+
+      function Name() {
+        var kids = [
+          jsx('span', {
+            key: 'n',
+            // The sweep target. The inline `color` stays as the no-glow fallback;
+            // the glow sheet overrides the *fill* (via -webkit-text-fill-color)
+            // rather than the colour, so it wins without needing !important.
+            className: 'dshome-glow-name',
+            style: {
+              color: 'var(--dsw-alias-brand-primary, ' + BRAND_LIGHT + ')',
+              fontWeight: 600,
+            },
+            children: BRAND_NAME,
+          }),
+        ];
+        if (VERSION) {
+          kids.push(jsx('span', {
+            key: 'v',
+            style: {
+              height: 16,
+              lineHeight: '16px',
+              fontSize: 9,
+              fontWeight: 500,
+              fontFamily: "Consolas, 'Cascadia Mono', monospace",
+              letterSpacing: 0,
+              color: 'var(--dsw-alias-label-primary-inverted, #0f1115)',
+              background: 'var(--dsw-alias-label-primary, #f4f6fb)',
+              borderRadius: 3,
+              padding: '0 4px',
+              whiteSpace: 'nowrap',
+              alignSelf: 'center',
+            },
+            children: VERSION,
+          }));
+        }
+        return jsx('span', {
+          style: { display: 'inline-flex', alignItems: 'center', gap: 6, height: 24 },
+          children: kids,
+        });
+      }
+
+      // 1) Token overrides.
+      //    `theme` is an optional service read through ctx.get, and it may be
+      //    provided after `slots` (our only declared inject). Sampling once would
+      //    silently drop every token override, so wait for the service instead.
+      function pushTokens(themeService) {
+        if (!themeService || typeof themeService.overrideTokens !== 'function') return false;
+        themeService.overrideTokens('dshome-plugin', TOKENS);
+        return true;
+      }
+      try {
+        if (!pushTokens(ctx.get('theme')) && typeof ctx.inject === 'function') {
+          ctx.inject(['theme'], function (scoped) {
+            var late = scoped && typeof scoped.get === 'function' ? scoped.get('theme') : null;
+            if (!pushTokens(late)) {
+              console.warn('dshome-plugin: theme service appeared but exposes no overrideTokens');
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('dshome-plugin: token override failed', error);
+      }
+
+      // 2) Brand slots.
+      //
+      // `slots.inject(name, fn)` is a **dependency declaration**: `fn` runs once
+      // that slot exists, and its return value is what inject keeps. It must
+      // therefore return something —typically the registration handle.
+      //
+      // Nesting is how a group of slots is registered together: the outer inject
+      // waits for the first slot, and only inside that callback do we ask for
+      // the next. A generator function cannot be used here, because inject does
+      // not iterate its callback's result —yielding registrations would
+      // silently register nothing.
+      try {
+        var slots = ctx.slots;
+        if (!slots) throw new Error('slots service unavailable');
+
+        // 注销句柄自己攥着（P2-25）：inject 的返回契约归宿主，不把「能不能撤」
+        // 押在别人的返回值上——注册成功的 off 一律进这个数组，teardown 全撤。
+        var registered = [];
+
+        function registerBrand() {
+          var offs = [
+            slots.register({ name: 'sidebar.brand.mark' }, function (props) {
+              return jsx(Mark, { size: props && props.size, className: props && props.className });
+            }),
+            slots.register({ name: 'sidebar.brand.name' }, function () { return jsx(Name, {}); }),
+            slots.register({ name: 'conversation.hero.brand.mark' }, function (props) {
+              return jsx(Mark, { size: props && props.size, className: props && props.className });
+            }),
+          ];
+          for (var k = 0; k < offs.length; k += 1) registered.push(offs[k]);
+          return function () {
+            for (var i = 0; i < offs.length; i += 1) {
+              var off = offs[i];
+              if (typeof off === 'function') off();
+              else if (off && typeof off.dispose === 'function') off.dispose();
+            }
+          };
+        }
+
+        slots.inject('sidebar.brand.mark', function () {
+          return slots.inject('sidebar.brand.name', function () {
+            return slots.inject('conversation.hero.brand.mark', registerBrand);
+          });
+        });
+        return function () {
+          var offs = registered.splice(0);
+          for (var i = 0; i < offs.length; i += 1) {
+            var off = offs[i];
+            try {
+              if (typeof off === 'function') off();
+              else if (off && typeof off.dispose === 'function') off.dispose();
+            } catch (error) { /* 单个注销失败不影响其余 */ }
+          }
+        };
+      } catch (error) {
+        console.warn('dshome-plugin: brand slot registration failed', error);
+        return null;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // conversation —card isolation
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // Tool calls, commands, and system injections get their own card so they
+    // stop blending into prose.
+    //
+    // A "think window" lives here too: reasoning clamped to 12 visible lines,
+    // force-expanded by a synthetic click on the official disclosure row, the
+    // reader's own collapses remembered in localStorage. It was deleted by
+    // mistake on 2026-10-04 — the probe that declared its anchor absent had
+    // searched the wrong spelling (see the SELECTORS note above) — and is
+    // restored here verbatim from `7400168^`.
+    //
+    // Its anchors are the official ones: the root is `[data-variant="think"]` on
+    // ui-chat's ReasoningRow, which also carries `data-state` (`running`/`ok`)
+    // and `data-expanded`; the body is the row's next sibling and only renders
+    // once expanded, which is exactly why CSS alone cannot reach it and a real
+    // (synthetic) click is required. `data-expanded` / `data-state` live on the
+    // DisclosureRow, *not* on the flow item, so swapping the selector alone
+    // would loop forever trying to expand.
+
+    var CONV_PLUGIN = 'dshome-plugin-conversation';
+    var CARD_RADIUS = 16;
+    var THINK_LINES = 12;
+    var COLLAPSED_KEY = 'dshome-plugin.thinkCollapsed.v1';
+    var MAX_COLLAPSED = 400;
+    /** Distance from our last scroll position that counts as "the user took over". */
+    var FOLLOW_SLACK = 24;
+
+    /** Border uses border-l2 (one step deeper than l1) so cards stay visible on
+     *  the near-white light background; the soft elevation lifts them off. */
+    var CARD = [
+      'background:var(--dsw-alias-bg-layer-1,#131a29)',
+      'border:1px solid var(--dsw-alias-border-l2,#2a3a5c)',
+      'border-radius:' + CARD_RADIUS + 'px',
+      'box-sizing:border-box',
+      'box-shadow:var(--dsw-elevation-soft,none)',
+    ].join(';');
+
+    /** The think body's line height tracks the user's font-size setting. */
+    var LINE = 'calc(20px + var(--dsh-content-font-delta-secondary,0px))';
+
+    /** Colour of the plate a sticky disclosure header is drawn on. Every rule
+     *  that paints a card also sets this to that card's own background, so the
+     *  header can disappear into it while still masking the body scrolling
+     *  underneath; a stray block falls back to the conversation background. */
+    var PLATE_VAR = '--dshome-plate:var(--dsw-alias-bg-layer-1,#131a29)';
+
+    var CONV_CSS = [
+      // Think card. The card wraps the official root, not the body, so the
+      // expanded state stays inside the same card.
+      SELECTORS.think + '{' + CARD + ';' + PLATE_VAR + ';padding:8px 14px}',
+
+      // Collapsed state: upstream pins height to 24px with `contain:size
+      // layout`, which overflows once we add padding. The [data-state] attribute
+      // raises specificity to (0,3,0) so this wins even though upstream's chat
+      // CSS is injected lazily *after* ours.
+      SELECTORS.think + '[data-state]:not([data-expanded]){height:auto;contain:layout}',
+
+      // The line window applies only when expanded; a hand-collapsed block falls
+      // back to upstream's single-line summary and the card covers it naturally.
+      //
+      // New nesting only. The legacy sibling form is deliberately NOT listed
+      // here: on the current markup `[data-disclosure-row] + div` would also
+      // match the row's accessory sibling inside the header, and clamping that
+      // would break a piece of upstream's own chrome. `bodyOf()` keeps the old
+      // spelling as a JS-side fallback for rewind, where a miss just means no
+      // scroll reset instead of a wrong rule on a third-party element.
+      SELECTORS.think + '[data-expanded] ' + SELECTORS.thinkBody + '{' +
+        'max-height:calc(' + THINK_LINES + ' * (' + LINE + '));' +
+        'overflow-y:auto;overscroll-behavior:contain;padding-right:6px;' +
+        'scrollbar-width:thin;' +
+        'scrollbar-color:var(--dsw-alias-border-l2,#2a3a5c) transparent}',
+
+      // Tool / command / system-injection cards. The card wraps the official
+      // flow item, so a block's own states stay inside the same card.
+      CARD_SELECTOR + '{' + CARD + ';' + PLATE_VAR + ';padding:10px 14px}',
+
+      // Reasoning-block header.
+      //
+      // Upstream fills that sticky row (`position:sticky;top:0;z-index:1`) with
+      // `var(--dsw-alias-bg-base)` while the block is expanded —
+      // `.root[data-expanded] [data-open] [data-disclosure-row]`, specificity
+      // (0,4,0), injected *after* this sheet — so `!important` is the only thing
+      // that reliably wins here. The fill itself must stay: a transparent row
+      // no longer masks the body, so long reasoning text scrolls straight under
+      // the header and the two collide.
+      //
+      // It must not *show*, though, and upstream's colour is the wrong one: a
+      // reasoning block sits inside our card, whose plate is layer-1, not
+      // bg-base, so the upstream paint reads as a stray band across it. The
+      // variable carries the colour of the plate the header is actually drawn
+      // on (set by every card rule above), which makes the row invisible *and*
+      // keeps it masking.
+      // Scoped to disclosure rows *inside our cards* (2026-10-14 review P2-28):
+      // the rule used to be a bare `[data-disclosure-row]` with !important, which
+      // repainted every disclosure row in the host (settings panels included) —
+      // `!important` made that overwrite un-overridable from outside. Only think
+      // blocks and card-wrapped flow items carry our plate variable; a row
+      // outside them keeps upstream's own paint.
+      SELECTORS.think + ' [data-disclosure-row],' +
+        CARD_SELECTOR + ' [data-disclosure-row]' +
+        '{background:var(--dshome-plate,var(--dsw-alias-bg-base)) !important}',
+    ].join('');
+
+    function applyConversation() {
+      installStyle(CONV_PLUGIN, CONV_CSS);
+
+      // ── remembered manual collapses ──────────────────────────────────────
+      function loadCollapsed() {
+        try {
+          var parsed = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]');
+          return Object.prototype.toString.call(parsed) === '[object Array]' ? parsed : [];
+        } catch (error) {
+          return [];
+        }
+      }
+      function saveCollapsed(list) {
+        try {
+          localStorage.setItem(COLLAPSED_KEY, JSON.stringify(list.slice(-MAX_COLLAPSED)));
+        } catch (error) {
+          // No localStorage: keep the bookkeeping in memory only.
+        }
+      }
+
+      var collapsed = loadCollapsed();
+      function isCollapsed(key) { return key !== '' && collapsed.indexOf(key) >= 0; }
+
+      /** Stable identity: outer flow key + index of this think block within it. */
+      function keyOf(root) {
+        var key = safe(function () {
+          var flow = root.closest(SELECTORS.flow);
+          if (!flow) return '';
+          var flowKey = flow.getAttribute('data-chat-flow-key') || '';
+          if (!flowKey) return '';
+          var all = flow.querySelectorAll(SELECTORS.think);
+          return flowKey + '#' + Array.prototype.indexOf.call(all, root);
+        });
+        return key === undefined ? '' : key;
+      }
+
+      // ── expansion ────────────────────────────────────────────────────────
+      var autoClicking = false;
+      /**
+       * Per-root expand attempts (2026-10-14 review P2-30): the click's effect
+       * is asynchronous, so success is judged on the NEXT sweep. If upstream
+       * changes and the synthetic click stops working, streaming mutations used
+       * to re-dispatch a click through React's root every animation frame.
+       * Now: at most EXPAND_MAX_TRIES clicks per block, EXPAND_RETRY_MS apart,
+       * then we stop and say so once.
+       */
+      var expandAttempts = new WeakMap();
+      var EXPAND_RETRY_MS = 400;
+      var EXPAND_MAX_TRIES = 8;
+
+      /**
+       * The expanded body of a reasoning block.
+       *
+       * New nesting first, old second — and never as one comma list: on the new
+       * markup `[data-disclosure-row] + div` can match the row's accessory
+       * sibling, which sits *before* the body in document order, so a combined
+       * querySelector would hand back the wrong element.
+       */
+      function bodyOf(root) {
+        return safe(function () {
+          return root.querySelector(SELECTORS.thinkBody)
+            || root.querySelector(SELECTORS.thinkBodyLegacy);
+        });
+      }
+
+      /**
+       * Drive a think block into upstream's expanded state.
+       *
+       * A synthetic click on the official row is used rather than touching React
+       * state: the event bubbles to React's delegated root and runs the
+       * component's real onClick, so the renderer stays upstream's business.
+       */
+      function expand(root) {
+        if (root.hasAttribute('data-expanded')) return;
+        if (isCollapsed(keyOf(root))) return; // the user collapsed this one
+        var row = root.querySelector(SELECTORS.thinkRow);
+        if (!row) return;
+        var now = Date.now();
+        var rec = expandAttempts.get(root);
+        if (rec && rec.gaveUp) return;
+        if (rec && now - rec.at < EXPAND_RETRY_MS) return; // 退避间隔内不重派
+        expandAttempts.set(root, { at: now, tries: (rec ? rec.tries : 0) + 1, gaveUp: false });
+        autoClicking = true;
+        try {
+          row.dispatchEvent(new MouseEvent('click', {
+            bubbles: true, cancelable: true, view: window,
+          }));
+        } catch (error) {
+          // Synthetic click unavailable: degrade to card styling only.
+        } finally {
+          autoClicking = false;
+        }
+      }
+
+      // ── follow the live tail, but yield to the reader ────────────────────
+      //
+      // Detecting "the user scrolled" via scroll events does not work: they are
+      // dispatched asynchronously while streaming content keeps growing, so our
+      // own pinning gets misread as user input. Instead we remember where we
+      // last put the scroll position and compare.
+      var lastSet = new WeakMap();
+
+      function setScrollTop(body, top) {
+        body.scrollTop = top;
+        lastSet.set(body, body.scrollTop); // browser clamps; store the real value
+      }
+
+      function humanTookOver(body) {
+        var mine = lastSet.get(body);
+        if (mine === undefined) return false;
+        if (Math.abs(body.scrollTop - mine) <= 4) return false;
+        return body.scrollHeight - body.scrollTop - body.clientHeight > FOLLOW_SLACK;
+      }
+
+      function followEnd(root) {
+        var body = bodyOf(root);
+        if (!body || body.scrollHeight <= body.clientHeight) return;
+        if (humanTookOver(body)) return;
+        setScrollTop(body, body.scrollHeight);
+      }
+
+      /** Once a turn finishes, rewind to the start of the reasoning. */
+      function rewind(root) {
+        var body = bodyOf(root);
+        if (!body || body.scrollTop === 0) return;
+        if (humanTookOver(body)) return;
+        setScrollTop(body, 0);
+      }
+
+      // ── sweep (rAF-throttled) ────────────────────────────────────────────
+      var lastState = new WeakMap();
+
+      function sweep() {
+        var roots = document.querySelectorAll(SELECTORS.think);
+        for (var i = 0; i < roots.length; i += 1) {
+          var root = roots[i];
+          var state = root.getAttribute('data-state');
+          if (!root.hasAttribute('data-expanded')) {
+            // 到顶就停手并说一次（P2-30）：点击派了 8 次块还是没展开 ⇒ 上游锚点
+            // 多半改版了，继续点只是穿透 React 根的空转。
+            var rec = expandAttempts.get(root);
+            if (rec && rec.tries >= EXPAND_MAX_TRIES && !rec.gaveUp) {
+              rec.gaveUp = true;
+              warnOnce('expand-anchor',
+                'dshome-plugin: synthetic clicks stopped expanding a think block after ' + EXPAND_MAX_TRIES + ' tries — the upstream disclosure anchor may have changed; expansion is paused for that block.');
+            }
+            expand(root);
+          } else if (state === 'running') {
+            followEnd(root);
+          }
+          if (lastState.get(root) === 'running' && state !== 'running') rewind(root);
+          lastState.set(root, state);
+        }
+      }
+
+      var scheduled = false;
+      // The pending frame id, so teardown can cancel a scheduled-but-undelivered
+      // sweep instead of letting it fire after the feature is gone.
+      var frameId = null;
+      function schedule() {
+        if (scheduled) return;
+        scheduled = true;
+        try {
+          frameId = requestAnimationFrame(function () {
+            frameId = null;
+            scheduled = false;
+            safe(sweep);
+          });
+        } catch (error) {
+          scheduled = false;
+          frameId = null;
+        }
+      }
+
+      // ── distinguish our expansion from the user's ────────────────────────
+      function onClick(event) {
+        if (autoClicking) return;
+        safe(function () {
+          var target = event.target;
+          var row = target && target.closest ? target.closest(SELECTORS.thinkRow) : null;
+          if (!row) return;
+          var root = row.closest(SELECTORS.think);
+          if (!root) return;
+          var key = keyOf(root);
+          if (key === '') return;
+          if (root.hasAttribute('data-expanded')) {
+            if (!isCollapsed(key)) {
+              collapsed.push(key);
+              saveCollapsed(collapsed);
+            }
+          } else {
+            var at = collapsed.indexOf(key);
+            if (at >= 0) {
+              collapsed.splice(at, 1);
+              saveCollapsed(collapsed);
+            }
+          }
+        });
+      }
+
+      // Captured so teardown can take them down: the bundle hot-reloads, and a
+      // re-entrant apply() must not leave the previous pass's click listener and
+      // body observer alive alongside the new ones.
+      var clickListener = null;
+      var bodyObserver = null;
+
+      function start() {
+        safe(function () {
+          clickListener = onClick;
+          document.addEventListener('click', onClick, true);
+        });
+        schedule();
+        safe(function () {
+          bodyObserver = new MutationObserver(schedule);
+          bodyObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true, // streaming reasoning grows character by character
+            attributes: true,
+            attributeFilter: ['data-state', 'data-expanded'],
+          });
+        }, 'dshome-plugin: conversation observer failed');
+      }
+
+      var started = false;
+      safe(function () { start(); started = true; }, 'dshome-plugin: conversation init failed');
+
+      return function teardown() {
+        if (!started) return;
+        if (clickListener && document && typeof document.removeEventListener === 'function') {
+          try { document.removeEventListener('click', clickListener, true); } catch (error) { /* already gone */ }
+        }
+        clickListener = null;
+        if (bodyObserver) {
+          try { bodyObserver.disconnect(); } catch (error) { /* already gone */ }
+          bodyObserver = null;
+        }
+        if (frameId !== null) {
+          try {
+            if (typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+              window.cancelAnimationFrame(frameId);
+            } else if (typeof cancelAnimationFrame === 'function') {
+              cancelAnimationFrame(frameId);
+            }
+          } catch (error) { /* already gone */ }
+          frameId = null;
+        }
+        scheduled = false;
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // sidebar —stack the foot actions instead of squeezing them into one row
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // The left sidebar's foot renders `sidebar.footer.action` as a **list** slot
+    // inside a flex row (upstream's footer-actions wrapper is `display:flex`), but
+    // every registrant is authored as a full-width row:
+    //
+    //   · dsh-opencode-go-usage  `.ocg-widget{width:100%}`   (heading + usage rows)
+    //   · dsh-context            `.lc-ov-entry{width:calc(100% + 4px)}` — its own
+    //     source calls the entry "stacked directly above Settings"
+    //   · dsh-mind               `.dm-widget{width:100%}`    (dot + label + badge)
+    //   · upstream ui-cordis     the dynamic-plugin entry
+    //
+    // Four full-width rows sharing one 280px row get ~66px each, so the headings
+    // wrap mid-word ("OpenCode" / "GO", "刷" / "新") and the context entry
+    // ellipsises to "上下…". Stacking them is the layout those registrants were
+    // written for, and it is pure CSS — no upstream file, no third-party plugin,
+    // no React tree is touched.
+    //
+    // The selector is the official semantic hook: `renderSlot()` wraps every
+    // outlet in `<div data-slot="<key>" style="display:contents">`, so the slot's
+    // own anchor names the container without ever naming a hashed class (which
+    // changes on every upstream rebuild). `:has()` reaches the parent from it.
+    //
+    // Collapsed mode keeps upstream's centred row: there the registrants receive
+    // `wide:false` and render compact rail badges, which a row suits.
+
+    var SIDEBAR_PLUGIN = 'dshome-plugin-sidebar';
+    /** The footer-action outlet anchor — the slot's own semantic attribute. */
+    var FOOTER_SLOT = '[data-slot="sidebar.footer.action"]';
+    /** Its container: the element the list's registered rows are laid out in. */
+    var FOOTER_ACTIONS = 'div:has(>' + FOOTER_SLOT + ')';
+
+    var SIDEBAR_CSS = [
+      // Specificity (0,1,1) beats upstream's `._hash_footerActions{display:flex}`
+      // (0,1,0) even though upstream's sidebar sheet is injected lazily.
+      FOOTER_ACTIONS + '{flex-direction:column;align-items:stretch;gap:2px}',
+
+      // Collapsed: restore upstream's own centred row, again at a higher
+      // specificity (0,2,1) than upstream's `._collapsed ._footerActions` (0,2,0).
+      '[data-sidebar-collapsed="true"] ' + FOOTER_ACTIONS +
+        '{flex-direction:row;align-items:center;justify-content:center}',
+    ].join('');
+
+    function applySidebar() {
+      installStyle(SIDEBAR_PLUGIN, SIDEBAR_CSS);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // glow —a restrained light layer
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // Three places only, and each was chosen because it is either ours or a
+    // stable semantic anchor — an upstream rebuild must not be able to delete
+    // the effect silently (the 2026-10-25 think-window lesson):
+    //
+    //   ① the brand mark we render into the official slots ourselves
+    //   ② the cards our own conversation stylesheet already paints
+    //   ③ the minimap thumb we own
+    //
+    // Rules this layer keeps, so the light never becomes a liability:
+    //   · only `opacity` runs on a loop — a breathing `box-shadow`/`filter`
+    //     repaints every frame, which is the reported cause of scroll jank in
+    //     neon-heavy dark UIs. Static shadows elsewhere are one-off paints on
+    //     hover and cost one element.
+    //   · light stays *behind* content (`isolation` + `z-index:-1`) and never on
+    //     text: neon body text is a contrast hole, not a style.
+    //   · `prefers-reduced-motion` keeps the glow and stops the pulse.
+    //   · the colour is a low-alpha brand blue, so the same rule reads as a soft
+    //     tint on a light page instead of needing theme detection.
+    var GLOW_PLUGIN = 'dshome-plugin-glow';
+
+    var GLOW_CSS = [
+      // ⓪ brand name — a light sweep across the wordmark.
+      //
+      // The one place a *moving* light earns its keep: a gradient clipped to the
+      // glyphs keeps the letterforms intact (a halo around the mark did not), and
+      // a single pass every few seconds reads as a sheen rather than a pulse. It
+      // also survives the label's neighbours — the version badge stays untouched
+      // because the rule is scoped to the name span, not the row.
+      //
+      // `background-position` is a paint property, so this does repaint — but it
+      // moves continuously rather than in bursts.
+      //
+      // 2026-10-25, two corrections from the owner, both about timing:
+      //
+      // 1. "不流畅，经常卡住不动" — the first cut rested for 5.7s and dashed for
+      //    1.2s. The rest was 78% of the cycle; nothing moved most of the time.
+      // 2. "还是会有跳帧，应该还是时间没对齐" — exactly right, and the maths is the
+      //    trap: a percentage in `background-position` resolves against
+      //    (element width − image width), not against the image. The image is
+      //    260% wide, so one image width is 260 / 1.6 = 162.5 percentage points.
+      //    Travelling 180 → −80 moves 260 points = 1.6 image widths — not a whole
+      //    number, so every loop snapped forward by 0.6 of a period.
+      //    180 → 17.5 is exactly one image width: the gradient leaves the frame
+      //    exactly as its identical copy enters it, and the loop is seamless.
+      '.dshome-glow-name{' +
+        'background-image:linear-gradient(100deg,' +
+        'var(--dsw-alias-brand-primary,#4D6BFE) 0%,' +
+        'var(--dsw-alias-brand-primary,#4D6BFE) 40%,' +
+        'rgba(214,228,255,0.95) 50%,' +
+        'var(--dsw-alias-brand-primary,#4D6BFE) 60%,' +
+        'var(--dsw-alias-brand-primary,#4D6BFE) 100%);' +
+        'background-size:260% 100%;background-position:180% 0;' +
+        '-webkit-background-clip:text;background-clip:text;' +
+        '-webkit-text-fill-color:transparent;' +
+        'will-change:background-position;' +
+        // 5s → 3.5s on 2026-10-25 ("能不能稍微快一点"). Faithful to what the owner
+        // asked for and nothing more: the seamlessness lives in the keyframes
+        // travel, not in the duration, so speeding it up cannot break the loop.
+        'animation:dshome-name-sweep 3.5s linear infinite}',
+      '@keyframes dshome-name-sweep{' +
+        '0%{background-position:180% 0}100%{background-position:17.5% 0}}',
+      '@media (prefers-reduced-motion:reduce){' +
+        '.dshome-glow-name{animation:none;background-position:50% 0}}',
+
+      // Where the light lives now, and why the brand mark is not in this list.
+      //
+      // 2026-10-25, four rounds of owner feedback: a halo behind the logo was
+      // invisible at 9px, "看不出来" at 15px, a white blob at 26px, and still
+      // wrong once it hugged the silhouette with a drop-shadow. The conclusion is
+      // not "another value" — a permanently-lit logo next to a text label just
+      // does not read well at this size. The owner asked for it to go, so it is
+      // gone: `registerBrand` renders the plain mark again and no sheet touches
+      // it. Do not reintroduce a brand glow without a reference the owner picked.
+      //
+
+      // ① cards — hover only, so a page at rest stays flat. `:is()` re-uses the
+      // existing kind list without hand-copying it (a drifted copy is how the
+      // rail rule once began matching the whole page).
+      ':is(' + CARD_SELECTOR + '){transition:box-shadow .18s ease}',
+      ':is(' + CARD_SELECTOR + '):hover{box-shadow:' +
+        '0 0 0 1px rgba(165,185,255,0.60),0 0 26px rgba(77,107,254,0.40)}',
+
+      // ② minimap thumb — INSET light, not a halo.
+      //
+      // The thumb lives inside `.dshome-plugin-minimap-view`, which carries
+      // `overflow:hidden` + `clip-path: inset(0 round 4px)` (the clip keeps the
+      // canvas square inside the rounded strip). An outward `box-shadow` is
+      // therefore clipped away entirely — the first version of this rule painted
+      // nothing at all, which is exactly what "导航栏小方块没生效" looked like.
+      // Light has to be drawn *inside* the 24px-wide thumb.
+      //
+      // Hover only, deliberately. Dragging used to get a second, brighter rule and
+      // the owner reported it as 扎眼 mid-drag — which is the worst moment for it,
+      // since the hand is already on the strip. While dragging, the pointer is
+      // still over the strip, so the hover state alone keeps the light on.
+      //
+      // `html` prefix raises specificity above the minimap sheet's own
+      // `.…:hover .…thumb{opacity:.38}` regardless of injection order.
+      'html .dshome-plugin-minimap:hover .dshome-plugin-minimap-thumb{' +
+        'opacity:.62;background:rgba(150,175,255,0.55);' +
+        'box-shadow:inset 0 0 0 1px rgba(200,215,255,0.85),' +
+        'inset 0 0 10px rgba(130,160,255,0.75)}',
+
+      // ③ notification toasts — light *around* the card, never on it.
+      //
+      // These are the only popups this bundle can style at all: approvals and
+      // model questions are rendered by the host's own UI, and reaching into
+      // those would mean global selectors over someone else's markup (the P2-28
+      // lesson). A toast is ours, so a glow here is a local change.
+      //
+      // Two layers, same shape as the card rule: keep the existing elevation
+      // shadow first, then the ring and the halo. Hover brightens the halo a
+      // step — the card is clickable (it focuses the window), so the affordance
+      // is honest.
+      '.dshome-plugin-notify-toast{' +
+        'box-shadow:0 8px 24px rgba(15,20,32,0.28),' +
+        '0 0 0 1px rgba(122,150,255,0.22),0 0 22px rgba(77,107,254,0.30)}',
+      '.dshome-plugin-notify-toast:hover{' +
+        'box-shadow:0 8px 24px rgba(15,20,32,0.28),' +
+        '0 0 0 1px rgba(150,175,255,0.38),0 0 28px rgba(77,107,254,0.45)}',
+
+      // ⑤ upstream modals — depth by blur, not by light.
+      //
+      // The DSHOME reference has no glow anywhere; its command palette floats
+      // with `backdrop-filter: blur(2px)` plus a heavy drop shadow, and that is
+      // what "浮起来" actually reads as on a dark page. Haloes were the wrong
+      // vocabulary for this UI, which is why every glow iteration here needed
+      // another round of tuning.
+      //
+      // Anchors are semantic and stable (verified in the shipped web bundle):
+      // the dialog carries `role="dialog"` + `aria-modal="true"`, and the mask
+      // inside it carries `aria-hidden="true"`. If upstream restructures, this
+      // silently stops applying — it cannot repaint an unrelated element.
+      '[role="dialog"][aria-modal="true"] > div > div[aria-hidden="true"]{' +
+        'backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}',
+    ].join('');
+
+    /**
+     * Console handle so "I can't see it" is answered with facts, not a guess.
+     *
+     * `__dshomePluginGlow.status()` reports whether the sheet went in and the
+     * thumb's live computed style — the two states this feature can be in while
+     * looking identical to "too subtle".
+     */
+    function glowStatus() {
+      var sheet = document.querySelector('style[data-plugin="' + GLOW_PLUGIN + '"]');
+      var shell = document.querySelector('.dshome-plugin-minimap');
+      var thumb = shell && shell.querySelector('.dshome-plugin-minimap-thumb');
+      var styles = thumb && typeof window.getComputedStyle === 'function'
+        ? window.getComputedStyle(thumb) : null;
+      return {
+        sheet: !!sheet,
+        rules: sheet && sheet.sheet ? sheet.sheet.cssRules.length : null,
+        thumb: styles ? {
+          opacity: styles.opacity,
+          boxShadow: styles.boxShadow,
+        } : null,
+      };
+    }
+
+    function applyGlow() {
+      installStyle(GLOW_PLUGIN, GLOW_CSS);
+      window.__dshomePluginGlow = { status: glowStatus };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // minimap —VSCode-style turn thumbnail navigation
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // A canvas strip pinned to the right edge of the conversation shows a
+    // squashed picture of the whole session; a translucent box marks the visible
+    // viewport. Click anywhere to jump, hold and drag to scrub.
+    //
+    // Four invariants this implementation is built around. They are not
+    // stylistic preferences —each fixes a bug reproduced on a real session, and
+    // breaking any of them reintroduces it.
+    //
+    //   ⓪It belongs to the conversation, not to the window.
+    //     Every position is measured against the conversation area: the scroll
+    //     container's box, minus the composer upstream parks at its bottom
+    //     (`--dsh-composer-height`), top-aligned inside it, and as wide as the
+    //     gutter left of the text column allows. Measuring against the window is
+    //     what put the strip's top above the conversation whenever the window was
+    //     short (the window also holds the 76px conversation header), and what
+    //     made it hide as "covered" while the right sidebar was merely owning its
+    //     own grid track beside the conversation column.
+    //
+    //   ①Two heights, never mixed.
+    //     Scale, thumb height, and canvas length come from a *standard* strip
+    //     height computed from the viewport. The viewport's own height and the
+    //     thumb's travel come from live measurements. Mixing them makes short
+    //     sessions keep moving after everything is already visible.
+    //     Consequence: the thumb always occupies 8% of the standard height, and
+    //     travel is forced to zero whenever the content fits the viewport.
+    //
+    //   ②Positions come only from the browser. `fromEnd = scrollHeight −    //     rect.top −rect.height`. Estimating height from character counts uses
+    //     a different ruler than real layout, which makes "what I clicked" and
+    //     "what is on screen" disagree.
+    //
+    //   ③Never cache a dirty value. A block measuring 0px has not laid out yet,
+    //     so it gets a temporary height for this frame and no cache entry.
+    //
+    //   ④Growing content emits no DOM event. Markdown, highlighting, images,
+    //     and font loading all change height without mutating the DOM, so there
+    //     is no mutation to listen for. A re-check follows content changes and
+    //     stops once several consecutive passes agree.
+    //
+    // Zoom is deliberately fixed at 1. Above 1 the thumb (which moves on the
+    // *document* ratio) and the content (drawn in its own coordinates) only
+    // agree near the middle, so clicking jumps to the wrong place and every
+    // measurement error is magnified. At zoom 1 the two relations are identical,
+    // which is what makes "click here, land here" exact.
+
+    var MAP_PLUGIN = 'dshome-plugin-minimap';
+    /**
+     * Strip width — a *maximum*, not a fixed size.
+     *
+     * The strip lives inside the conversation column, in the gutter the official
+     * layout leaves between the end of the text column and the column's right
+     * edge. That gutter narrows when the column does (the right sidebar owns a
+     * real grid track on a wide viewport, so opening it squeezes the column), and
+     * a strip that kept 58px there is what "it just disappears when the
+     * conversation gets narrow" looked like. It now narrows with the gutter.
+     */
+    var WIDTH_PX = 58;
+    /** Narrowest the strip may shrink to. Below this it is not worth reading. */
+    var MIN_WIDTH_PX = 24;
+    /** Breathing room between the strip and the conversation area's own edges. */
+    var CONVO_GAP_PX = 8;
+    /** Strip height cap. Long sessions keep ~1px per block instead of collapsing. */
+    var MAX_HEIGHT_PX = 760;
+    /**
+     * Composer height, used **only** when the official measurement cannot be
+     * read.
+     *
+     * Upstream measures the composer and writes the result onto the scroll
+     * container (`--dsh-composer-height`, falling back to the same 152px), and
+     * the composer is a child of that container sitting sticky over the messages
+     * — so the conversation area is not the scroll container's box, it is that
+     * box minus this. Reading the variable means a composer that grows (a
+     * multi-line draft, an attachment row) moves the strip's bottom with it.
+     */
+    var COMPOSER_FALLBACK_PX = 152;
+    /** The official variables that describe the conversation column. */
+    var COMPOSER_VAR = '--dsh-composer-height';
+    var CONTENT_WIDTH_VAR = '--dsh-chat-content-width';
+    var SIDE_CLEARANCE_VAR = '--dsh-composer-side-clearance';
+    /** Horizontal padding the official scroll body keeps: clearance + 16px. */
+    var CONTENT_PAD_FALLBACK_PX = 32;
+    /**
+     * How long to keep reading the layout frame by frame after something that
+     * moves it without resizing anything — the sidebar's transform slide, whose
+     * 0.3s is upstream's own slow duration.
+     */
+    var SIDE_FOLLOW_MS = 450;
+    /** Message rows sampled (at most) to measure the text column's right edge. */
+    var TEXT_SAMPLE_ROWS = 12;
+    /** Thumb height as a fraction of the standard strip height. */
+    var THUMB_RATIO = 0.08;
+    /**
+     * Painted opacity of one message bar on the strip. The bar colours are
+     * already full-strength brand/label tokens, so the previous 0.85/0.55 read
+     * as bright blocks against the conversation behind them — worst for the
+     * user's own turns, whose brand blue is the most saturated token available.
+     * These are the *only* alpha the picture gets per bar; the strip's own
+     * opacity is a separate, much smaller multiplier (see MAP_CSS).
+     */
+    var BAR_ALPHA_MINE = 0.55;
+    var BAR_ALPHA_OTHER = 0.34;
+    /**
+     * Longest a bar may be, as a fraction of the strip's width. A bar drawn at
+     * the full width (the old cap was `stripWidthPx - 4`) puts its own square
+     * corners exactly where the strip's rounded corners are, so it reads as a
+     * bright square block instead of a slim tick. Keeping every bar clear of
+     * the edge is what makes the strip's own rounding visible.
+     */
+    var BAR_MAX_WIDTH_RATIO = 0.68;
+    /**
+     * Corner radius for a painted bar, in pixels, clamped to half the bar's
+     * width/height. Deliberately small: it is there to soften the ends, not to
+     * reshape the block (see the note at the draw site).
+     */
+    var BAR_RADIUS_PX = 2;
+    /** Absolute floor for the thumb, so it stays grabbable. */
+    var MIN_THUMB_PX = 8;
+    /** Blocks reread near the tail on an incremental pass (streaming grows there). */
+    var TAIL_REREAD = 8;
+    /** Forced full re-measure interval; higher blocks can change too. */
+    var FULL_PASS_MS = 2000;
+    /** Coalescing window for redraws. */
+    var REDRAW_MS = 120;
+    /** Fallback sync interval, for movement ResizeObserver does not cover. */
+    var SYNC_MS = 250;
+    /** Follow-up window used while content settles. */
+    var RECHECK_MS = 500;
+    /** Consecutive stable passes before the re-check loop stops. */
+    var STABLE_PASSES = 3;
+    /** Drag-state lifetime, in case pointerup is never delivered. */
+    var DRAG_TIMEOUT_MS = 30000;
+    /** Hover-tip throttle: pointer moves fire far faster than a redraw. */
+    var TIP_MS = 60;
+    /**
+     * Hover-tip labels, keyed by upstream's own value domain — the runner's key
+     * table (assistant-step, command, command-input, compaction, context,
+     * manual-compaction, model-retry, steering, system-prompt, tool-call,
+     * turn-error, turn-max-tokens, turn-process, turn-tail, unknown, user,
+     * workflow-run; there is no `thinking`, `think`, `tool` or `assistant`
+     * member, and reasoning rows arrive as `assistant-step`, so branches keyed
+     * on those literals could never match). A kind not named here falls back
+     * to 'Content' below: turn-process, turn-tail and unknown have semantics
+     * this bundle has not verified, and an unverified kind always takes the
+     * fallback — never a guessed label.
+     */
+    var TIP_LABELS = {
+      'user': 'You',
+      'steering': 'You',
+      'assistant-step': 'Assistant',
+      'tool-call': 'Tool call',
+      'command': 'Command',
+      'command-input': 'Command input',
+      'system-prompt': 'System prompt',
+      'compaction': 'Compaction',
+      'manual-compaction': 'Compaction',
+      'context': 'Context',
+      'model-retry': 'Retry',
+      'turn-error': 'Error',
+      'turn-max-tokens': 'Max tokens',
+      'workflow-run': 'Workflow',
+    };
+    /**
+     * Coefficients for the placeholder height of a block the browser has not laid
+     * out yet. Taken from the reference implementation, and the reason they exist:
+     * a block that measures 0 still has to be drawn *somewhere*, and a flat guess
+     * is wrong in both directions — too small collapses a long message into a few
+     * pixels (which reads as "that message is missing"), too large stretches a
+     * short one over its neighbour. Estimating from the block's own text keeps the
+     * placeholder in the same league as the real height.
+     */
+    var EST_CHARS_PER_LINE = 45;
+    var EST_LINE_PX = 21;
+    var EST_PAD_PX = 36;
+    /**
+     * A pass in which fewer than this fraction of blocks report a real height is
+     * treated as "layout is not ready yet" and paints nothing at all: an absent
+     * picture beats a wrong one. The pass is retried instead.
+     */
+    var READY_RATIO = 0.6;
+    /** Retry interval and cap (~2s) used while layout is still settling. */
+    var RETRY_MS = 60;
+    var RETRY_MAX = 34;
+    /**
+     * How long to wait, after the right sidebar opens or closes, before reading
+     * its final position.
+     *
+     * The panel slides in with a transform, so its rect is still off-window at
+     * the instant the attribute flips; measuring then would give way by too
+     * little. Deliberately a timer rather than `transitionend`: upstream drops
+     * the transition under `prefers-reduced-motion`, in which case that event
+     * never arrives, and any transition inside the panel would bubble one event
+     * per animated descendant. 320ms = upstream's slow duration plus margin.
+     */
+    var SIDEBAR_SETTLE_MS = 320;
+    /**
+     * Official right sidebar. Both are **semantic attributes**, never hashed
+     * class names (those are build output and change on the next upstream
+     * bundle): one panel element is permanently marked, and carries `-open` only
+     * while expanded.
+     */
+    var SIDEBAR_OPEN_SELECTOR = '[data-sidebar-right-open]';
+    var SIDEBAR_FULLSCREEN_SELECTOR = '[data-sidebar-right-panel="fullscreen"]';
+    /**
+     * The three shapes the official sidebar can take on screen: the docked panel
+     * while it is open, the dock host inside it, and a floating pane.
+     *
+     * The host is included because it is what actually carries the visual box:
+     * upstream hides it while closed by translating it out with
+     * `translateX(var(--dsh-sidebar-width))`, so the viewport test below drops it
+     * on its own. A floating pane is on screen whether or not its owner is open,
+     * which is the case `[data-sidebar-right-open]` alone misses.
+     */
+    var SIDEBAR_SURFACE_SELECTOR =
+      '[data-sidebar-right-open], [data-dockkit-host=dock], [data-dockkit-float]';
+    /**
+     * Stamp for the strip's behaviour, so the build actually running in the
+     * client can be named from the console without a rebuild.
+     */
+    var MINIMAP_VERSION = 'v16-sidebar-navigation-lane';
+
+    var MAP_CSS = [
+      '[data-dshome-minimap-inset]{box-sizing:border-box;' +
+        'padding-right:calc(var(--dshome-minimap-base-padding,0px) + var(--dshome-minimap-inset,0px))!important}',
+      '.dshome-plugin-minimap{position:fixed;z-index:6;cursor:pointer;border-radius:4px;' +
+        'opacity:.72;transition:opacity .15s ease}',
+      '.dshome-plugin-minimap:hover,.dshome-plugin-minimap[data-active]{opacity:1}',
+      // This window is what cuts the picture off at the strip's edges: the canvas
+      // is translated far past it, so the clip has to be here rather than on the
+      // canvas. `overflow:hidden` alone is sufficient for that, and it already
+      // rounds the corners: `overflow` clips to the overflow clip edge, which is
+      // shaped by `border-radius`. The explicit `clip-path` is belt-and-braces —
+      // it pins the same 4px round independently of `overflow`'s used value.
+      //
+      // (An earlier revision of this comment claimed `contain:paint` ignored
+      // `border-radius`. That was wrong and is corrected here: css-contain-2 §3.4
+      // clips to the overflow clip edge "taking corner clipping into account", so
+      // paint containment DID honour the radius. It was never the cause of the
+      // square corners; removing it changed nothing visually.)
+      '.dshome-plugin-minimap-view{position:absolute;inset:0;overflow:hidden;' +
+        'border-radius:4px}' +
+        '.dshome-plugin-minimap-view{clip-path:inset(0 round 4px)}',
+      '.dshome-plugin-minimap canvas{position:absolute;left:0;top:0;width:100%;will-change:transform}',
+      '.dshome-plugin-minimap-thumb{position:absolute;left:0;right:0;border-radius:3px;' +
+        'background:var(--dsw-alias-label-tertiary);opacity:.22;pointer-events:none;' +
+        'transition:opacity .15s ease}',
+      // Hover ring is purely cosmetic: the thumb's geometry (the part that is
+      // clicked and dragged) does not move by a single pixel.
+      ".dshome-plugin-minimap-thumb::after{content:'';position:absolute;left:-1px;right:-1px;top:50%;" +
+        'height:18px;transform:translateY(-50%);border-radius:5px;' +
+        'background:var(--dsw-alias-label-tertiary);opacity:.10;' +
+        'border:1px solid var(--dsw-alias-label-tertiary)}',
+      '.dshome-plugin-minimap:hover .dshome-plugin-minimap-thumb::after,' +
+        '.dshome-plugin-minimap[data-active] .dshome-plugin-minimap-thumb::after{opacity:.22}',
+      '.dshome-plugin-minimap:hover .dshome-plugin-minimap-thumb,' +
+        '.dshome-plugin-minimap[data-active] .dshome-plugin-minimap-thumb{opacity:.38}',
+      // Hover tip. Sits to the *left* of the strip, over the conversation, and
+      // takes no pointer events, so it can never steal the hover it describes.
+      '.dshome-plugin-minimap-tip{position:absolute;right:calc(100% + 10px);' +
+        'transform:translateY(-50%);width:max-content;max-width:360px;min-width:96px;' +
+        'padding:6px 10px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);' +
+        'background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);' +
+        'font-size:12px;line-height:1.5;box-shadow:0 4px 16px rgba(0,0,0,.18);' +
+        'pointer-events:none;opacity:0;transition:opacity .12s ease;' +
+        'white-space:pre-line;overflow-wrap:break-word;overflow:hidden}',
+      '.dshome-plugin-minimap-tip[data-show]{opacity:1}',
+    ].join('');
+
+    /**
+     * Whether an element sits inside a subtree the official code treats as
+     * hidden. Upstream's own test is
+     * `pane.closest('[hidden], [aria-hidden="true"]') === null`, and it matters
+     * here: every mounted session renders its own sidebar owner, marked `hidden`
+     * while that session is not the active one, so a stale owner can still carry
+     * `data-sidebar-right-panel="fullscreen"` with nothing on screen at all.
+     *
+     * Walks parents rather than calling `closest`, so the rule is built from the
+     * same primitives the DOM double can reproduce.
+     */
+    /** Parent element, across the browser (`parentElement`) and the DOM double. */
+    function parentOf(el) {
+      return el ? (el.parentElement || el.parentNode || el.parent || null) : null;
+    }
+
+    /** Laid-out height, or 0 when the element is not laid out (or unreadable). */
+    function laidOutHeight(el) {
+      try {
+        return typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect().height : 0;
+      } catch (error) {
+        return 0;
+      }
+    }
+
+    function insideHiddenSubtree(el) {
+      var node = el;
+      while (node) {
+        if (typeof node.hasAttribute === 'function') {
+          if (node.hasAttribute('hidden')) return true;
+          if (typeof node.getAttribute === 'function'
+            && node.getAttribute('aria-hidden') === 'true') return true;
+        }
+        node = parentOf(node);
+      }
+      return false;
+    }
+
+    /**
+     * Every official sidebar surface that is actually on screen, as rects.
+     *
+     * A zero-width or off-window match is not on screen; anything unreadable
+     * yields none — i.e. no avoidance, which is exactly the behaviour before any
+     * of this existed, so an upstream change degrades instead of breaking the
+     * strip.
+     */
+    function visibleSidebarRects() {
+      var out = [];
+      try {
+        if (typeof document.querySelectorAll !== 'function') return out;
+        var list = document.querySelectorAll(SIDEBAR_SURFACE_SELECTOR);
+        var width = Number(window.innerWidth) || 0;
+        for (var i = 0; i < list.length; i += 1) {
+          var el = list[i];
+          if (!el || typeof el.getBoundingClientRect !== 'function') continue;
+          if (insideHiddenSubtree(el)) continue;
+          var rect = el.getBoundingClientRect();
+          if (!rect || !(rect.width > 0) || !(rect.height > 0)) continue;
+          if (!(rect.right > 0) || !(rect.left < width)) continue;   // off to the side
+          if (!(rect.bottom > 0) || !(rect.top < (Number(window.innerHeight) || 0))) continue;
+          out.push(rect);
+        }
+      } catch (error) {
+        return out;
+      }
+      return out;
+    }
+
+    /** Right edge still available to the conversation beside visible sidebar surfaces. */
+    function sidebarFreeRight(box) {
+      var rects = visibleSidebarRects();
+      var right = box.right;
+      // Work from the conversation box, never the shell's visibility or the
+      // text width changed by our own inset. Repeated syncs then stay stable.
+      for (var pass = 0; pass < rects.length; pass += 1) {
+        var before = right;
+        for (var i = 0; i < rects.length; i += 1) {
+          var rect = rects[i];
+          if (rect.bottom <= box.top || rect.top >= box.bottom) continue;
+          if (rect.left < right && rect.right > right - CONVO_GAP_PX - WIDTH_PX) {
+            right = Math.max(box.left, Math.min(right, rect.left));
+          }
+        }
+        if (right === before) break;
+      }
+      return right;
+    }
+
+    /**
+     * Whether the right sidebar is on screen in its fullscreen state.
+     *
+     * `data-sidebar-right-panel` is not a switch, it is a permanent attribute
+     * (`fullscreen ? "fullscreen" : "push"`), and every mounted session renders
+     * its own owner. Reading the attribute alone therefore matched a *stale*
+     * owner from an inactive session and hid the strip in every session for good.
+     */
+    function sidebarFullscreen() {
+      try {
+        if (typeof document.querySelector !== 'function') return false;
+        var el = document.querySelector(SIDEBAR_FULLSCREEN_SELECTOR);
+        if (el === null || el === undefined) return false;
+        if (insideHiddenSubtree(el)) return false;
+        if (typeof el.getBoundingClientRect !== 'function') return false;
+        var rect = el.getBoundingClientRect();
+        return rect !== null && rect !== undefined && rect.width > 0;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    /**
+     * @param {object} [options]
+     * @param {boolean} [options.hideOfficialRail=true] hide upstream's own rail
+     * @returns {Function} teardown
+     */
+    function applyMinimap(options) {
+      // Re-entrant: this bundle hot-reloads, so apply() runs again while the
+      // previous shell is still in the DOM. Without this each pass stacks another
+      // shell plus another set of window/document listeners.
+      if (typeof window.__dshomePluginTeardown === 'function') {
+        try { window.__dshomePluginTeardown(); } catch (error) { /* already gone */ }
+      }
+      window.__dshomePluginTeardown = null;
+      window.__dshomePluginMinimapVersion = MINIMAP_VERSION;
+      var hideOfficialRail = !options || options.hideOfficialRail !== false;
+      /** Current strip width: WIDTH_PX unless the conversation gutter is narrower. */
+      var stripWidthPx = WIDTH_PX;
+      installStyle(MAP_PLUGIN, MAP_CSS);
+
+      // Upstream's rail spaces turns evenly (a fixed distance per turn), so it
+      // cannot express "this passage is longer". Rather than draw beside it, we
+      // hide it visually and pointer-wise —no React tree is touched.
+      //
+      // 方案沿革（三代，每代都是真机教训）：
+      // ① 全局 CSS `body nav[class*="_frame"]`——常态生效但误伤一切带该哈希
+      //   碎片的 nav，2026-10-14 审查 P2-29 拆除；
+      // ② JS 几何闸（v12）：只在 scroller 变更那拍藏一次——官方 nav 要到
+      //   第 2 个回合才挂载，一次性动作对它无能为力（2026-10-16 现场）；
+      // ③ 现行（v14）：**作用域 CSS 常态规则 + 每拍只做探针和救错杀**。
+      //   官方会话滚动区元素自带语义属性 data-conversation-scroll（已在
+      //   app.asar 里核实：与 _scrollBody 类名同元素，ui-conversation
+      //   `scrollBody`/`"data-conversation-scroll": ""`），rail 的 nav 是它的
+      //   后代（ChatView 把 slot 挂在 frame 下、frame 在 scrollBody 内）。规则
+      //   圈死在会话滚动区里 ⇒ 误伤面从「全页」缩到「会话区内带 _frame 的
+      //   nav」，对未来挂载/重挂载零延迟零轮询。P2-29 的几何闸保留但方向反转：
+      //   不再「像 rail 才藏」（漏判=漏藏），而是「确凿不像 rail 才救回」
+      //   （inline !important 压过规则；漏判=多藏 250ms，错的方向更安全）。
+      var RAIL_MIN_W = 8;
+      var RAIL_MAX_W = 200;  // sidebar panes are 240px+; leave them a 40px margin
+      var RAIL_MIN_H = 40;   // toolbar strips are shorter than this
+      var RAIL_STYLE_ID = 'dshome-plugin-minimap-rail';
+      /** The constant hide: semantic-attribute scope + the audited hash fragment. */
+      var RAIL_RULE = '[data-conversation-scroll] nav[class*="_frame"]';
+      var RAIL_CSS = RAIL_RULE + '{opacity:0!important;pointer-events:none!important}';
+      /** 每拍自查规则的在场（无 guard 观察器：可选开关要求拆除也要走得干净）。 */
+      function ensureRailStyle() {
+        if (document.querySelector("style[data-plugin='" + RAIL_STYLE_ID + "']")) return;
+        try {
+          var tag = document.createElement('style');
+          tag.setAttribute('data-plugin', RAIL_STYLE_ID);
+          tag.textContent = RAIL_CSS;
+          document.head.appendChild(tag);
+        } catch (error) { /* no head yet: the next pass retries */ }
+      }
+      function removeRailStyle() {
+        var tag = document.querySelector("style[data-plugin='" + RAIL_STYLE_ID + "']");
+        if (tag && typeof tag.remove === 'function') safe(function () { tag.remove(); });
+      }
+      // 开关分派（须在定义之后：RAIL_STYLE_ID 是 var，提前执行会是 undefined）：
+      // 开 ⇒ 装常态规则；关 ⇒ 摘掉热重载上一轮启用时留下的规则。
+      if (hideOfficialRail) ensureRailStyle();
+      else removeRailStyle();
+      /**
+       * Sync passes already spent on THIS scroller. The official rail mounts
+       * mid-conversation (turn 2), so "selector matched nothing" is normal for
+       * the first passes after a view mounts; the rail-anchor probe waits this
+       * race out instead of crying wolf on every session load.
+       */
+      var railSeenPasses = 0;
+      /** Rescued navs (inline !important overrides) — cleared on teardown. */
+      var rescuedRails = [];
+      /**
+       * 上游挂 rail 的门槛：TurnNavigator 在 items.length < 2 时直接 render null
+       * （dsh-client-ui-chat：`if (items.length < 2) return null`），所以「一条
+       * nav 都没有」只有在屏上还不足两个回合时才是正常的。行上 data-chat-turn
+       * 的值就是回合号——去重计数即近似 items.length。
+       */
+      function railDueOnScreen() {
+        try {
+          var rows = document.querySelectorAll(SELECTORS.turn);
+          var seen = {};
+          var count = 0;
+          for (var i = 0; i < rows.length; i += 1) {
+            var value = rows[i].getAttribute('data-chat-turn');
+            if (value === null || value === '' || seen[value]) continue;
+            seen[value] = true;
+            count += 1;
+            if (count >= 2) return true;
+          }
+        } catch (error) { /* not measurable here: stay quiet */ }
+        return false;
+      }
+      /**
+       * 像素层面的「确凿不是 rail」：量得出尺寸且明显超界（比窗格宽、或铺开
+       * 了却矮过工具条）。0×0（刚挂载未布局）不算——那正是 CSS 规则该盖住而
+       * 不该被救的时刻，救了反而闪一拍。
+       */
+      function confidentlyNotARail(rect) {
+        if (!rect) return false;
+        if (rect.width > RAIL_MAX_W) return true;
+        return rect.width >= RAIL_MIN_W && rect.height > 0 && rect.height < RAIL_MIN_H;
+      }
+      /**
+       * The hide itself is CSS (constant). This pass-level audit only:
+       * (a) re-ensures the rule survived a head clearing,
+       * (b) speaks when either anchor broke (probe),
+       * (c) rescues navs the rule caught but that are provably not the rail.
+       */
+      function auditOfficialRails() {
+        if (!hideOfficialRail) return;
+        safe(function () {
+          ensureRailStyle();
+          var navs = document.querySelectorAll(SELECTORS.officialRail);
+          // 锚点失效要能说（P1-12 补遗，2026-10-15 现场；2026-10-16 收紧口径：
+          // 官方 nav 本来就要到第 2 个回合才挂载，且挂载与首个 sync 之间有竞态，
+          // 所以「≥2 回合在场 + 竞态窗口已过」才报，否则每次开屏都误报一次）。
+          if (navs.length === 0 && railSeenPasses >= 2 && railDueOnScreen()) {
+            warnOnce('rail-anchor',
+              'dshome-plugin: rail selector ' + SELECTORS.officialRail + ' matched nothing although ≥2 turns are on screen — upstream hash class names may have changed; the official rail will show alongside the minimap.');
+          }
+          railSeenPasses += 1;
+          var keep = [];
+          for (var i = 0; i < rescuedRails.length; i += 1) {
+            // React 重挂载会把旧 nav 换成新节点：清掉脱链的，restore 名单才
+            // 诚实，数组也不会随会话数无限长。
+            if (rescuedRails[i].parentNode) keep.push(rescuedRails[i]);
+          }
+          var scoped = document.querySelectorAll(RAIL_RULE);
+          for (var i = 0; i < scoped.length; i += 1) {
+            var nav = scoped[i];
+            if (typeof nav.getBoundingClientRect !== 'function') continue;
+            var rect = nav.getBoundingClientRect();
+            if (confidentlyNotARail(rect)) {
+              if (typeof nav.style.setProperty === 'function') {
+                // inline !important 压过样式表里的 !important（级联规则：
+                // 同为 important 时 style attribute 胜出）。
+                nav.style.setProperty('opacity', '1', 'important');
+                nav.style.setProperty('pointer-events', 'auto', 'important');
+              } else {
+                nav.style.opacity = '1';
+                nav.style.pointerEvents = 'auto';
+              }
+              if (keep.indexOf(nav) < 0) keep.push(nav);
+              continue;
+            }
+            // 像 rail（或还没量出来）：交给 CSS 常态规则，并撤掉历史误救。
+            if (keep.indexOf(nav) >= 0) {
+              if (typeof nav.style.setProperty === 'function') {
+                nav.style.setProperty('opacity', '', 'important');
+                nav.style.setProperty('pointer-events', '', 'important');
+              } else {
+                nav.style.opacity = '';
+                nav.style.pointerEvents = '';
+              }
+            }
+          }
+          rescuedRails = keep;
+          // 探针第二臂（2026-10-16）：规则在场却没咬住——比如 data-conversation-scroll
+          // 或 _frame 任一锚点改名，选择器还能匹配到 nav 但规则不再作用于它。
+          // computed opacity 解析得出来且不是 0 ⇒ 该藏的没藏住，说一次。
+          for (var i = 0; i < navs.length; i += 1) {
+            var nav = navs[i];
+            if (typeof nav.getBoundingClientRect !== 'function') continue;
+            if (confidentlyNotARail(nav.getBoundingClientRect())) continue;
+            if (rescuedRails.indexOf(nav) >= 0) continue;
+            try {
+              var opacity = parseFloat(getComputedStyle(nav).opacity);
+              if (Number.isNaN(opacity) || opacity === 0) continue;
+            } catch (error) { continue; }
+            warnOnce('rail-anchor',
+              'dshome-plugin: the scoped rail rule (' + RAIL_RULE + ') is present but a rail-like nav still computes opacity ' + opacity + ' — an anchor name may have changed; the official rail will show alongside the minimap.');
+          }
+        });
+      }
+      function restoreOfficialRails() {
+        for (var i = 0; i < rescuedRails.length; i += 1) {
+          safe(function () {
+            var nav = rescuedRails[i];
+            if (typeof nav.style.setProperty === 'function') {
+              nav.style.setProperty('opacity', '', 'important');
+              nav.style.setProperty('pointer-events', '', 'important');
+            } else {
+              nav.style.opacity = '';
+              nav.style.pointerEvents = '';
+            }
+          });
+        }
+        rescuedRails = [];
+        // CSS 规则随插件生命周期（与 MAP_CSS 同待遇：teardown 不摘样式表，
+        // 重挂/重载由下一次 apply 或页面刷新收敛）。
+      }
+
+      var shell = document.createElement('div');
+      shell.className = 'dshome-plugin-minimap';
+      shell.style.width = stripWidthPx + 'px';
+      shell.style.display = 'none';
+
+      // The canvas lives inside a clipping window, never directly in the shell:
+      // the shell is the fixed window, the canvas is the long scroll behind it.
+      var view = document.createElement('div');
+      view.className = 'dshome-plugin-minimap-view';
+      var canvas = document.createElement('canvas');
+      var thumb = document.createElement('div');
+      thumb.className = 'dshome-plugin-minimap-thumb';
+      // The hover tip lives in the shell too, so it moves and dies with it, and
+      // never enters the React tree (same reason as the shell itself).
+      var tip = document.createElement('div');
+      tip.className = 'dshome-plugin-minimap-tip';
+      view.appendChild(canvas);
+      shell.appendChild(view);
+      shell.appendChild(thumb);
+      shell.appendChild(tip);
+      document.body.appendChild(shell);
+
+      var ctx2d = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+
+      // ── geometry ─────────────────────────────────────────────────────────
+      //
+      // The strip is a fixed window. The canvas is exactly as long as the scaled
+      // document and is translated behind that window, which is what lets
+      // scrolling touch only a transform (no layout, no repaint of the picture).
+      var scroller = null;
+      var stripScale = 1;      // canvas px per document px
+      var canvasH = 0;         // total canvas length
+      var bandPx = 0;          // standard strip height (invariant ①
+      var drawnTotal = 0;      // scrollHeight at the last successful measure
+      /**
+       * The standard band the current picture was scaled with. A window resize
+       * changes the band, which changes the canvas length — and the scroll
+       * container's own height may not change at all, so its ResizeObserver
+       * stays silent and the picture would keep the old scale. Comparing this
+       * is what re-scales it.
+       */
+      var drawnBand = -1;
+      var drawnWidth = -1;
+      var lastFullPassAt = 0;
+      var lastSignature = '';
+      var measureCache = [];
+      var blocks = [];
+      /** Hover-tip throttle stamp. */
+      var lastTipAt = 0;
+      /** Pending "layout was not ready" retry, and how many have been spent. */
+      var retryTimer = 0;
+      var retryCount = 0;
+      /**
+       * Content changed since the last successful measure. This — plus a
+       * changed scrollHeight — is what decides whether a sync has to redraw;
+       * without it the 250ms tick redraws unconditionally.
+       */
+      var totalDirty = true;
+      /** Watches the scroll container's content (new turns, streaming text). */
+      var mutationObserver = null;
+      /** Watches the official right sidebar's open/fullscreen attributes. */
+      var sidebarObserver = null;
+      var sidebarSettleTimer = 0;
+      var insetScroller = null;
+
+      function clearSidebarInset() {
+        if (!insetScroller) return;
+        insetScroller.removeAttribute('data-dshome-minimap-inset');
+        insetScroller.style.setProperty('--dshome-minimap-inset', '');
+        insetScroller.style.setProperty('--dshome-minimap-base-padding', '');
+        insetScroller = null;
+      }
+
+      /** Reflow text and the composer, leaving an actual lane beside an overlay. */
+      function reserveSidebarInset(px) {
+        if (!(px > 0)) { clearSidebarInset(); return; }
+        if (insetScroller !== scroller) {
+          clearSidebarInset();
+          insetScroller = scroller;
+          var base = readPx(scroller, 'padding-right', 0);
+          scroller.style.setProperty('--dshome-minimap-base-padding', base + 'px');
+          scroller.setAttribute('data-dshome-minimap-inset', '');
+        }
+        var value = Math.ceil(px) + 'px';
+        if (scroller.style.getPropertyValue
+          && scroller.style.getPropertyValue('--dshome-minimap-inset') === value) return;
+        scroller.style.setProperty('--dshome-minimap-inset', value);
+      }
+
+      function totalOf() { return scroller ? scroller.scrollHeight : 0; }
+      function viewH() { return Math.max(1, scroller ? scroller.clientHeight : 0); }
+
+      /**
+       * Height to draw a block at while the browser has not laid it out yet.
+       *
+       * Used for one frame only and **never cached**: the real value replaces it as
+       * soon as it is readable. See EST_* for why this is estimated from the text
+       * instead of being a flat number.
+       */
+      function tempHeightOf(el) {
+        var len = el && el.textContent ? String(el.textContent).trim().length : 0;
+        return EST_PAD_PX + Math.max(1, Math.ceil(len / EST_CHARS_PER_LINE)) * EST_LINE_PX;
+      }
+
+      /** Upper bound on the zoom, so a runaway ratio cannot allocate a huge canvas. */
+      var ZOOM_MAX = 32;
+
+      /**
+       * Numeric value of a CSS custom property, in px.
+       *
+       * The official layout publishes its own measurements as variables on the
+       * elements that own them — the composer's height is written by JS after
+       * measuring it — so this reads the running layout instead of trusting a
+       * constant that merely matches today's defaults. An unreadable value is
+       * never an error: every caller supplies its own fallback.
+       */
+      function readPx(el, name, fallback) {
+        if (!el || typeof getComputedStyle !== 'function') return fallback;
+        try {
+          var raw = getComputedStyle(el).getPropertyValue(name);
+          var value = parseFloat(raw);
+          return isFinite(value) && value >= 0 ? value : fallback;
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      /** How tall the official composer currently is, in px. */
+      function composerHeight() {
+        return readPx(scroller, COMPOSER_VAR, COMPOSER_FALLBACK_PX);
+      }
+
+      /** Horizontal padding the official text column keeps on each side. */
+      function contentPad() {
+        return readPx(scroller, SIDE_CLEARANCE_VAR, CONTENT_PAD_FALLBACK_PX - 16) + 16;
+      }
+
+      /**
+       * The conversation area: the scroll container's box, minus the composer
+       * that upstream parks at its bottom.
+       *
+       * Everything the strip does is measured against this box, never against the
+       * window. The window also contains the conversation header — 76px tall
+       * while the tab strip is shown — and whatever chrome sits above it, so a
+       * window-anchored strip starts *above* the conversation as soon as the
+       * window is short: reported as "the top is too high, and worse in a
+       * non-maximised window".
+       *
+       * `known: false` is a window-based approximation, used while the column is
+       * not measurable (still laying out, or parked off screen).
+       */
+      function columnBox() {
+        var windowHeight = Number(window.innerHeight) || 0;
+        var windowWidth = Number(window.innerWidth) || 0;
+        var fallback = {
+          top: 0,
+          bottom: Math.max(0, windowHeight - composerHeight()),
+          left: 0,
+          right: windowWidth,
+          width: windowWidth,
+          known: false,
+        };
+        if (!scroller || typeof scroller.getBoundingClientRect !== 'function') return fallback;
+        var rect = null;
+        try { rect = scroller.getBoundingClientRect(); } catch (error) { rect = null; }
+        if (!rect || !(rect.height > 0) || !(rect.width > 0)) return fallback;
+        // A column parked outside the viewport is not a place to put a strip —
+        // findScroller deliberately returns one so the strip attaches rather than
+        // staying hidden. Approximate until it is on screen.
+        if (rect.top > windowHeight - 40 || rect.bottom < 40) return fallback;
+        return {
+          top: rect.top,
+          bottom: rect.bottom - composerHeight(),
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          known: true,
+        };
+      }
+
+      /**
+       * Standard strip height: the conversation area, *not* the viewport and not
+       * the content — so it is identical for a two-message session and a
+       * two-thousand-message one, and it never leaves the conversation.
+       */
+      function computeBand() {
+        var box = columnBox();
+        var available = (box.bottom - box.top) - CONVO_GAP_PX * 2;
+        return Math.max(120, Math.min(MAX_HEIGHT_PX, available));
+      }
+
+      /**
+       * The text column's own right edge, measured from message rows.
+       *
+       * Measured rather than derived, for two reasons found in the official
+       * bundle: the column element itself is a hashed CSS-module class name (this
+       * bundle never depends on those), and the width it is limited by,
+       * `--dsh-chat-content-width`, is published as
+       * `clamp(680px, calc(var(--dsh-conversation-column-width) * .64), 920px)` —
+       * a custom property keeps its token stream, so reading it back yields that
+       * expression, not a number. Rows are semantic
+       * (`[data-chat-flow-key]`), every one of them is laid out inside the
+       * column, and the widest of a small sample ends at the column's right edge.
+       *
+       * `null` = nothing to measure yet (the strip attached before the first row
+       * painted).
+       */
+      function textColumnRight() {
+        if (!scroller || typeof scroller.querySelectorAll !== 'function') return null;
+        var rows = null;
+        try { rows = scroller.querySelectorAll(SELECTORS.flow); } catch (error) { return null; }
+        if (!rows || rows.length === 0) return null;
+        var limit = Math.min(rows.length, TEXT_SAMPLE_ROWS);
+        var right = null;
+        for (var i = 0; i < limit; i += 1) {
+          var rect = null;
+          try { rect = rows[i].getBoundingClientRect(); } catch (error) { continue; }
+          if (!rect || !(rect.width > 0)) continue;
+          if (right === null || rect.right > right) right = rect.right;
+        }
+        return right;
+      }
+
+      /**
+       * Free room to the right of the text column, inside the conversation
+       * column.
+       *
+       * The space between the text's right edge and the column's right edge is
+       * the only place a strip can sit without covering a line of text — and it
+       * is what shrinks when the column shrinks (the sidebar's track takes width
+       * from the column, the text column stays 680-920px, so the gutter absorbs
+       * the difference). `null` = not knowable, and the caller then keeps the
+       * full width rather than guessing.
+       */
+      function gutterRight(box) {
+        var textRight = textColumnRight();
+        if (textRight !== null && textRight <= box.right) {
+          return Math.max(0, box.right - textRight);
+        }
+        // Fallback: the width the user prefers, when upstream writes it as a px
+        // value (`--dsh-chat-user-width` is set only while a preference exists).
+        var content = readPx(scroller, CONTENT_WIDTH_VAR, -1);
+        if (!(content > 0) || !(box.width > 0)) return null;
+        var pad = contentPad();
+        var inner = Math.max(0, box.width - pad * 2);
+        return pad + Math.max(0, (inner - Math.min(inner, content)) / 2);
+      }
+
+      /** Strip width for the conversation column as it is now. */
+      function computeStripWidth(box) {
+        var gutter = gutterRight(box);
+        if (gutter === null) return WIDTH_PX;
+        return Math.max(MIN_WIDTH_PX, Math.min(WIDTH_PX, Math.round(gutter - 4)));
+      }
+
+      /**
+       * Zoom = how much longer the canvas is than the strip.
+       *
+       * Derived from the thumb, because the thumb has to satisfy two things at
+       * once: stay a constant THUMB_RATIO of the *standard* band, and cover
+       * exactly one viewport of content.
+       *   thumb = (view / total) * (band * zoom)   and   thumb = THUMB_RATIO * band
+       *   =>  zoom = THUMB_RATIO * total / view
+       *
+       * Deliberately NOT clamped to a minimum of 1: a short session keeps the same
+       * thumb size and simply uses less of the strip. A minimum of 1 would send
+       * short sessions back to "squeeze the whole document into the strip", which
+       * makes their thumb *bigger* than a long session's.
+       */
+      function zoomOf(total) {
+        var forced = window.__dshomePluginMinimapZoom;
+        if (typeof forced === 'number' && forced >= 1) return Math.min(ZOOM_MAX, forced);
+        var view = viewH();
+        if (view <= 0 || bandPx <= 0 || !(total > 0)) return 1;
+        return Math.max(0.01, Math.min(ZOOM_MAX, (THUMB_RATIO * total) / view));
+      }
+
+      /** Canvas length: the whole document at this zoom, capped so the backing
+       *  store stays under Chrome's 32767px canvas limit at the worst DPR we
+       *  use (2). 2026-10-14 review P2-27: an uncapped 32× band on a long
+       *  session reached ~48k device px and Chrome silently blanked the whole
+       *  canvas — the strip rendered as empty space. */
+      var CONTENT_MAX_PX = Math.floor(32767 / 2);
+      function contentOf(total) {
+        var raw = bandPx > 0 ? bandPx * zoomOf(total) : 0;
+        return raw > CONTENT_MAX_PX ? CONTENT_MAX_PX : raw;
+      }
+
+      /** Document -> canvas scale. */
+      function recomputeScale() {
+        var total = totalOf();
+        if (total <= 0 || bandPx <= 0) return false;
+        var content = contentOf(total);
+        stripScale = content / total;
+        canvasH = Math.max(1, Math.round(content));
+        return true;
+      }
+
+      /**
+       * Distance from the window's right edge to the strip's right edge.
+       *
+       * The preferred anchor is upstream's own rail, which already sits in the
+       * gutter (28px wide, 12px inside the scroll body's padding, i.e. clear of
+       * the scrollbar) — aligning to it is what keeps the strip beside the text
+       * instead of over it. That rail hides itself when the conversation
+       * container is narrow, and a missing or degenerate one must not hide the
+       * strip: the fallback is then the *conversation column's* right edge, never
+       * the window's. While the right sidebar owns a grid track, the window's
+       * right edge belongs to the sidebar, which is not where the conversation
+       * is.
+       */
+      function freeRightOffset(box) {
+        var windowWidth = Number(window.innerWidth) || 0;
+        var right = Math.max(CONVO_GAP_PX, windowWidth - box.right + CONVO_GAP_PX);
+        safe(function () {
+          var rail = scroller && scroller.querySelector(SELECTORS.officialRail);
+          if (!rail) return;
+          var rect = rail.getBoundingClientRect();
+          if (rect.width >= 4 && rect.height >= 40) {
+            right = Math.max(CONVO_GAP_PX,
+              windowWidth - rect.right + (rect.width - stripWidthPx) / 2);
+          }
+        });
+        return right;
+      }
+
+      /**
+       * Where the strip sits: inside the conversation area, top-aligned.
+       *
+       * Top-aligned rather than centred in the window, because the strip is a
+       * column *of the conversation*: it starts where the conversation starts,
+       * and it is only as tall as the conversation is — capped by MAX_HEIGHT_PX,
+       * and shorter still when the session is short (a tall strip that is mostly
+       * blank is worse than a short one).
+       */
+      function placeShell() {
+        var box = columnBox();
+        var freeRight = sidebarFreeRight(box);
+        var available = freeRight - box.left;
+        if (available < MIN_WIDTH_PX + CONVO_GAP_PX * 2) {
+          clearSidebarInset();
+          return null;
+        }
+        var overlap = Math.max(0, box.right - freeRight);
+        stripWidthPx = overlap > 0
+          ? Math.max(MIN_WIDTH_PX, Math.min(WIDTH_PX, Math.round(available * 0.08)))
+          : computeStripWidth(box);
+        reserveSidebarInset(overlap > 0 ? overlap + stripWidthPx + CONVO_GAP_PX * 2 : 0);
+        shell.style.width = stripWidthPx + 'px';
+        var content = contentOf(totalOf());
+        var boxH = Math.max(24, Math.min(bandPx, content > 0 ? content : bandPx));
+        var top = Math.round(box.top + CONVO_GAP_PX);
+        var windowWidth = Number(window.innerWidth) || 0;
+        var right = overlap > 0 ? freeRight - CONVO_GAP_PX
+          : Math.min(box.right - CONVO_GAP_PX,
+            Math.max(box.left + CONVO_GAP_PX + stripWidthPx, windowWidth - freeRightOffset(box)));
+        var rightOffset = Math.round(windowWidth - right);
+        var height = Math.round(boxH);
+        shell.style.top = top + 'px';
+        shell.style.right = rightOffset + 'px';
+        shell.style.height = height + 'px';
+        // This is also the overlap-test geometry. It must not depend on the
+        // previous visibility state, and must follow layout changes while hidden.
+        right = windowWidth - rightOffset;
+        return {
+          top: top, bottom: top + height,
+          left: right - stripWidthPx, right: right,
+          width: stripWidthPx, height: height,
+        };
+      }
+
+      /** 0..1 scroll progress through the document. */
+      function progress() {
+        if (!scroller) return 0;
+        var range = totalOf() - viewH();
+        if (range <= 0) return 0;
+        return Math.min(1, Math.max(0, scroller.scrollTop / range));
+      }
+
+      /**
+       * Thumb height = one viewport of content, in canvas pixels.
+       *
+       * No rounding and no generous floor: the thumb height is exactly what makes
+       * (window - thumb) / (total - view) equal window / total, so rounding it
+       * becomes hundreds of content pixels of error once divided by the scale.
+       */
+      function thumbHeight() {
+        var total = totalOf();
+        var view = viewH();
+        if (total <= 0 || view <= 0) return MIN_THUMB_PX;
+        return Math.max(2, (view / total) * contentOf(total));
+      }
+
+      /**
+       * Canvas translation - the single source of coordinates shared by painting,
+       * hover and click. Keeping exactly one of these is what keeps the three in
+       * agreement: top of document => 0, bottom of document => the canvas bottom
+       * aligned with the window bottom, so the window is always exactly filled.
+       */
+      function canvasOffsetOf() {
+        var total = totalOf();
+        var H = shell.clientHeight;
+        var content = contentOf(total);
+        if (total <= 0 || content <= 0) return 0;
+        // Everything fits: do not move at all.
+        if (content <= H + 1) return 0;
+        return (scroller ? scroller.scrollTop : 0) * stripScale - progress() * Math.max(0, H - thumbHeight());
+      }
+
+      // （shiftFor 已删——2026-10-14 审查 P3：它只转调 canvasOffsetOf，全文零调用，
+      //  多一层别名只会让「唯一事实源」读起来像有两份。）
+
+      function paintShift() {
+        canvas.style.transform = 'translateY(' + (-Math.round(canvasOffsetOf())) + 'px)';
+      }
+
+      /** Position and size the viewport box. */
+      function paintThumb() {
+        var h = thumbHeight();
+        var railH = shell.clientHeight > 0 ? shell.clientHeight : bandPx;
+        var travel = Math.max(0, railH - h);
+        thumb.style.height = h + 'px';
+        thumb.style.top = Math.round(Math.max(0, Math.min(travel, progress() * travel))) + 'px';
+      }
+
+      // ── measuring ────────────────────────────────────────────────────────
+      // ── painting ─────────────────────────────────────────────────────────
+      //
+      // Colour hierarchy: the user's own messages get brand blue, assistant
+      // replies mid grey, reasoning and tool blocks light grey.
+      function paint(total) {
+        if (!ctx2d || canvasH <= 0) return;
+        var dpr = Math.min(2, window.devicePixelRatio || 1);
+        // The strip's current width, not the nominal one: the canvas has to be
+        // rebuilt whenever the gutter narrows it, or the picture keeps drawing at
+        // the old width and gets clipped by the shell.
+        var w = stripWidthPx;
+        var h = canvasH;
+        // Round before comparing (2026-10-14 review P2-26): canvas.width/height are
+        // integers, so under a fractional DPR (125%/150% scaling) `canvas.width !==
+        // w * dpr` was ALWAYS true and every paint rebuilt the backing store —
+        // during streaming that is a fresh canvas allocation every 120ms.
+        var targetW = Math.max(1, Math.round(w * dpr));
+        var targetH = Math.max(1, Math.round(h * dpr));
+        if (canvas.width !== targetW || canvas.height !== targetH) {
+          canvas.width = targetW;
+          canvas.height = targetH;
+          canvas.style.height = h + 'px';
+        }
+        ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx2d.clearRect(0, 0, w, h);
+        if (!stripScale || !total) return;
+
+        for (var i = 0; i < blocks.length; i += 1) {
+          var b = blocks[i];
+          if (!b) continue;
+          var y = h - (b.fromEnd + b.height) * stripScale;
+          var bh = Math.max(1, b.height * stripScale);
+          // Remember where the block was actually drawn. Hover hit-testing reads
+          // this rectangle rather than recomputing a position from content
+          // coordinates: painting applies its own scale and a 1px floor, so a
+          // recomputation would name the neighbouring message. Written for every
+          // block, before the height guard, so the table stays sorted by drawY.
+          b.drawY = y;
+          b.drawH = bh;
+          if (b.height <= 0) continue;
+          ctx2d.globalAlpha = b.mine ? BAR_ALPHA_MINE : BAR_ALPHA_OTHER;
+          ctx2d.fillStyle = b.fill;
+          var bw = Math.min(w - 4, Math.max(6, b.width));
+          var x = b.mine ? w - 2 - bw : 2;
+          // Rounded ends. A `fillRect` here produced the hard corners; a small
+          // fixed radius is enough to take the edge off without changing the
+          // block's silhouette.
+          //
+          // Keep this SMALL. A proportional radius (half the short side) was
+          // tried and rejected on sight: on a 40x80 slab it shrinks the corners
+          // by 8x as much and the block reads as a lozenge rather than a map
+          // tick. "More corner loss" is not the goal here — the strip is a
+          // miniature of the conversation, and the bars should stay
+          // rectangular-ish so the map stays legible. 2px is the approved value.
+          var r = Math.min(BAR_RADIUS_PX, bw / 2, bh / 2);
+          ctx2d.beginPath();
+          if (typeof ctx2d.roundRect === 'function' && r > 0.5) {
+            ctx2d.roundRect(Math.max(0, x), Math.max(0, y), bw, bh, r);
+          } else {
+            // Older engines (and the DOM double) keep the plain rect; the shape
+            // is then square-ended but every other property is unchanged.
+            ctx2d.rect(Math.max(0, x), Math.max(0, y), bw, bh);
+          }
+          ctx2d.fill();
+        }
+        ctx2d.globalAlpha = 1;
+      }
+      /**
+       * The rows to draw — one per visible message.
+       *
+       * Upstream marks **two** kinds of element with `data-chat-turn`: every message
+       * row (`div.flowItem`) and the group seat that wraps a run of them
+       * (`ChatGroupSeat`, carrying `data-chat-group-key`). Taking every match counts
+       * a wrapper *and* its own children as separate messages, and their rectangles
+       * overlap by construction — which is what made grey bars overlap on the strip.
+       *
+       * Upstream's own row queries drop the seat by attribute, plus empty rows and
+       * anything under `[hidden]`. Dropping the seat by attribute would also drop a
+       * *collapsed* group, whose rows are not laid out while the seat is the only
+       * thing representing that run. So this is structural instead:
+       *   - anything inside a hidden subtree is off screen: gone;
+       *   - a candidate with a *laid-out* candidate inside it is a wrapper: gone,
+       *     its rows are the messages;
+       *   - a candidate that is not laid out and sits inside another candidate is
+       *     one of those collapsed rows: gone, the wrapper stands for it.
+       * Both halves matter: dropping wrappers unconditionally would replace a
+       * collapsed group with a column of estimated bars, and keeping them would
+       * draw one bar across their own contents.
+       */
+      function turnRows() {
+        var candidates = scroller.querySelectorAll(SELECTORS.turn);
+        var visible = [];
+        var i;
+        for (i = 0; i < candidates.length; i += 1) {
+          if (!insideHiddenSubtree(candidates[i])) visible.push(candidates[i]);
+        }
+        var n = visible.length;
+        var index = new Map();
+        var laidOut = new Array(n);
+        var wrappers = new Array(n);        // how many candidates sit inside this one
+        var wrapperHasRow = new Array(n);   // ... and whether any of them is laid out
+        var nested = new Array(n);          // whether this one sits inside a candidate
+        for (i = 0; i < n; i += 1) {
+          index.set(visible[i], i);
+          laidOut[i] = laidOutHeight(visible[i]) > 0;
+          wrappers[i] = 0;
+          wrapperHasRow[i] = false;
+          nested[i] = false;
+        }
+        // One ancestor walk per row marks every candidate ancestor, so this stays
+        // linear in rows x nesting depth instead of comparing every pair.
+        for (i = 0; i < n; i += 1) {
+          var up = parentOf(visible[i]);
+          while (up) {
+            var at = index.has(up) ? index.get(up) : -1;
+            if (at >= 0) {
+              wrappers[at] += 1;
+              if (laidOut[i]) wrapperHasRow[at] = true;
+              nested[i] = true;
+            }
+            up = parentOf(up);
+          }
+        }
+        var rows = [];
+        for (i = 0; i < n; i += 1) {
+          if (wrappers[i] > 0) {
+            if (wrapperHasRow[i]) continue;   // a wrapper over rows that are on screen
+            rows.push(visible[i]);            // collapsed: it stands for the whole run
+            continue;
+          }
+          if (nested[i] && !laidOut[i]) continue;   // a collapsed row under a wrapper
+          rows.push(visible[i]);
+        }
+        return rows;
+      }
+
+      function draw(forceFull) {
+        if (!scroller || bandPx <= 0) return;
+        if (!recomputeScale()) return;
+
+        var scrollTop = scroller.scrollTop;
+        var scrollHeight = scroller.scrollHeight;
+        var boxTop = scroller.getBoundingClientRect().top - scrollTop; // content origin
+        var now = Date.now();
+
+        var all = turnRows();
+        var count = all.length;
+        var sameSet = measureCache.length === count && (function () {
+          for (var k = 0; k < count; k += 1) {
+            var c = measureCache[k];
+            if (c === undefined || c.el !== all[k]) return false;
+          }
+          return true;
+        })();
+        var totalChanged = scrollHeight !== drawnTotal;
+        var needFull = !sameSet || now - lastFullPassAt > FULL_PASS_MS || forceFull === true;
+
+        // Incremental passes reread only the tail and the blocks near the
+        // viewport; those are the only ones that can have changed. A stable
+        // total means a block's height cannot have changed, so nothing is
+        // reread at all.
+        var reread = null;
+        if (!needFull && totalChanged) {
+          reread = {};
+          var t;
+          for (t = Math.max(0, count - TAIL_REREAD); t < count; t += 1) reread[t] = true;
+          var lo = scrollHeight - scrollTop - viewH() * 1.5;
+          var hi = scrollHeight - scrollTop + viewH() * 0.5;
+          for (t = 0; t < count; t += 1) {
+            var cc = measureCache[t];
+            if (cc === undefined) { reread[t] = true; continue; }
+            var near = scrollHeight - cc.top - cc.height;
+            if (near >= lo && near <= hi) reread[t] = true;
+          }
+        }
+        if (needFull) lastFullPassAt = now;
+
+        var colorMine = readColor('--dsw-alias-brand-primary', '#4D6BFE');
+        var colorReply = readColor('--dsw-alias-label-tertiary', '#6b7a99');
+        // Tool calls, commands and everything that is not a reply.
+        //
+        // This used to read `--dsw-alias-border-l4`, which this bundle does not
+        // define (the token table stops at border-l2) and the host does not
+        // publish, so `readColor` always fell through to the hardcoded `#c9d2e3`
+        // — a *border* colour, near-white. Composited at 0.34 over the strip it
+        // landed near #3d4350, brighter than an assistant bar's #2e3747 and even
+        // brighter than the user's own brand bar at #283678: the least important
+        // rows were the most visible ones.
+        //
+        // The first correction (point it at border-l2, dark #2a3a5c) overshot
+        // the other way — it composites to only ~#161d2f, so ordinary tool rows
+        // vanished next to the big reply slabs. border-l2 is simply too dark for
+        // a 0.34-alpha bar; no alpha of it clears ~lum 39 against this backdrop.
+        //
+        // So the quiet tone is now a deliberate mid grey rather than a border
+        // token doing a bar's job. These are the composited luminances the three
+        // classes land on against the conversation (#0f1420) at the alphas below:
+        //     mine  brand   @0.55 -> ~55.8   (most visible)
+        //     reply tertiary@0.34 -> ~54.2
+        //     other grey    @0.34 -> ~40.5   (clearly present, clearly secondary)
+        // `#5b687a` is chosen for that last row: it is the neutral that solves to
+        // ~40.5 at 0.34, keeping the ordering without erasing the row. The custom
+        // property name lets the value be themed later without another patch.
+        var colorOther = readColor('--dshome-minimap-bar-quiet', '#5b687a');
+
+        var next = new Array(count);
+        var valid = 0;
+        var signature = 0;
+
+        for (var i = 0; i < count; i += 1) {
+          var block = all[i];
+          var cached = measureCache[i];
+          var fresh = cached !== undefined && cached.el === block;
+          var mustRead = !fresh || needFull || (reread !== null && reread[i] === true);
+
+          var top;
+          var height;
+          if (!mustRead) {
+            top = cached.top;
+            height = cached.height;
+            if (height > 1) valid += 1; // a cached real value still counts as laid out
+          } else {
+            var rect = block.getBoundingClientRect();
+            top = rect.top - boxTop;
+            if (rect.height > 0) {
+              height = rect.height;
+              valid += 1;
+              measureCache[i] = { el: block, top: top, height: height };
+            } else {
+              // Not laid out yet: this is a dirty value, so it is used for this
+              // frame only and never cached (invariant ③). Estimated from the
+              // block's own text rather than guessed flat — see EST_* above.
+              height = tempHeightOf(block);
+              measureCache[i] = undefined;
+            }
+          }
+
+          signature += Math.round(height) * (i + 1) + Math.round(top);
+          var kind = block.getAttribute('data-chat-flow-kind') || '';
+          var mine = kind === 'user' || kind === 'steering';
+          var span = mine ? stripWidthPx * 0.62 : stripWidthPx * 0.9;
+          next[i] = {
+            // Same ruler as the scrollbar.
+            fromEnd: Math.max(0, scrollHeight - top - height),
+            height: height,
+            turn: block.getAttribute('data-chat-turn') || '',
+            kind: kind,
+            mine: mine,
+            // `assistant-step`, not `assistant`: the kind is upstream's own
+            // value domain and it has no `assistant` member (see the runner's
+            // key table — assistant-step, command, …, user, workflow-run).
+            fill: mine ? colorMine : (kind === 'assistant-step' ? colorReply : colorOther),
+            // Bar length proxies content volume using real block height,
+            // avoiding a text serialisation per block.
+            //
+            // Capped well below the strip's own width. The cap used to be
+            // `stripWidthPx - 4`, which let a long message's bar span almost the
+            // whole strip — a ~60×90px slab that reads as a bright block and
+            // shows four hard corners, because a wide bar's own square corners
+            // ARE the strip's corners. Keeping the bars narrow enough that no
+            // single one can reach the strip edge is what makes both the
+            // brightness and the "no rounded corners" complaint go away; the
+            // rounding in paint() handles the rest.
+            width: Math.max(6, Math.min(stripWidthPx * BAR_MAX_WIDTH_RATIO,
+              span * Math.min(1, 0.35 + height / 1200))),
+            // Where paint() actually drew it. Kept on the block so the hover hit
+            // test and the picture can never disagree.
+            drawY: 0,
+            drawH: 0,
+            // Only the hover tip reads a block's text, and only for the one under
+            // the pointer; serialising hundreds of blocks during a redraw is what
+            // made an earlier version slow.
+            el: block,
+          };
+        }
+
+        measureCache.length = count;
+        blocks = next;
+        drawnTotal = scrollHeight;
+        // Layout was not ready: most blocks measured 0. That makes this pass
+        // void — it paints nothing, because a picture built from placeholder
+        // heights is worse than no picture. Drop the cache, queue a retry, and
+        // stay dirty so the 250ms tick retries too (a slow layout must not be
+        // able to leave the strip blank for good).
+        if (count > 0 && valid < count * READY_RATIO) {
+          measureCache.length = 0;
+          totalDirty = true;
+          if (retryTimer === 0 && retryCount < RETRY_MAX) {
+            retryCount += 1;
+            retryTimer = window.setTimeout(function () {
+              retryTimer = 0;
+              safe(function () { draw(); }, 'dshome-plugin: minimap retry failed');
+            }, RETRY_MS);
+          }
+          return;
+        }
+        retryCount = 0;
+        drawnBand = bandPx;
+        drawnWidth = stripWidthPx;
+
+        lastSignature = count + '|' + Math.round(scrollHeight) + '|' + signature;
+
+        paint(scrollHeight);
+        paintShift();
+        paintThumb();
+      }
+
+      // ── re-check while content settles (invariant ④ ─────────────────────
+      var recheckTimer = 0;
+      var stablePasses = 0;
+      var lastSeenSignature = '';
+
+      function stopRecheck() {
+        if (recheckTimer !== 0) {
+          try { window.clearTimeout(recheckTimer); } catch (error) { /* removed */ }
+          recheckTimer = 0;
+        }
+      }
+
+      function recheck() {
+        recheckTimer = 0;
+        safe(function () { draw(); });
+        if (lastSignature === lastSeenSignature) {
+          stablePasses += 1;
+          if (stablePasses >= STABLE_PASSES) return; // settled: stop reading entirely
+        } else {
+          stablePasses = 0;
+          lastSeenSignature = lastSignature;
+        }
+        try {
+          recheckTimer = window.setTimeout(recheck, RECHECK_MS);
+        } catch (error) {
+          // unavailable
+        }
+      }
+
+      function startRecheck() {
+        stablePasses = 0;
+        lastSeenSignature = '';
+        if (recheckTimer === 0) {
+          try {
+            recheckTimer = window.setTimeout(recheck, RECHECK_MS);
+          } catch (error) {
+            // unavailable
+          }
+        }
+      }
+
+      // ── coalesced redraw ─────────────────────────────────────────────────
+      var redrawTimer = 0;
+      function scheduleRedraw() {
+        if (redrawTimer !== 0) return;
+        try {
+          redrawTimer = window.setTimeout(function () {
+            redrawTimer = 0;
+            safe(function () { draw(); });
+          }, REDRAW_MS);
+        } catch (error) {
+          redrawTimer = 0;
+        }
+      }
+
+      // ── attaching to a conversation ──────────────────────────────────────
+      //
+      // When panels switch, a previous conversation's scroller can still be in
+      // the DOM with a non-zero height, so pick the candidate that actually
+      // intersects the viewport. "Intersects" is four-way on purpose: a column
+      // parked outside the window still reports a positive height and a vertical
+      // overlap, and a vertical-only test would hand us that stale session.
+      function findScroller() {
+        var candidates = document.querySelectorAll(SELECTORS.scrollBody);
+        // 锚点失效要能说（P1-12）：一个 `_scrollBody` 都没匹配到、但会话明明在屏上
+        // （有 data-chat-turn）⇒ 上游 hash 类名多半改版了，缩略图会无声消失——说一次。
+        if (candidates.length === 0) {
+          safe(function () {
+            if (document.querySelector(SELECTORS.turn)) {
+              warnOnce('scrollBody-anchor',
+                'dshome-plugin: minimap anchor ' + SELECTORS.scrollBody + ' matched nothing while a conversation is on screen — upstream hash class names may have changed; the minimap stays hidden until this is fixed.');
+            }
+          });
+        }
+        var firstOk = null;
+        for (var i = 0; i < candidates.length; i += 1) {
+          var el = candidates[i];
+          if (el.clientHeight <= 0) continue;
+          if (!el.querySelector(SELECTORS.turn)) continue;
+          var rect = el.getBoundingClientRect();
+          var onScreen = rect.bottom > 0 && rect.top < (window.innerHeight || 0) &&
+            rect.right > 0 && rect.left < (window.innerWidth || 0);
+          if (onScreen) return el;
+          // Nothing intersects yet (the column is still being laid out at its
+          // final position): return the first usable candidate rather than
+          // nothing, so the strip attaches instead of staying hidden.
+          if (firstOk === null) firstOk = el;
+        }
+        return firstOk;
+      }
+
+      var observer = null;
+      var syncTimer = 0;
+
+      function sync() {
+        var found = findScroller();
+        if (found !== scroller) {
+          clearSidebarInset();
+          scroller = found;
+          measureCache = [];
+          blocks = [];
+          drawnTotal = 0;
+          drawnBand = -1;
+          drawnWidth = -1;
+          lastFullPassAt = 0;
+          totalDirty = true;
+          if (observer) {
+            try { observer.disconnect(); } catch (error) { /* already gone */ }
+            observer = null;
+          }
+          if (mutationObserver) {
+            try { mutationObserver.disconnect(); } catch (error) { /* already gone */ }
+            mutationObserver = null;
+          }
+          if (!scroller) {
+            shell.style.display = 'none';
+            return;
+          }
+          railSeenPasses = 0;   // a new view: the rail-mount race starts over
+          safe(function () {
+            // A resize of the conversation column *is* the thing the strip has
+            // to keep up with: the layout animates `grid-template-columns` when
+            // the right sidebar opens or closes, and the column's width changes
+            // on every frame of that 0.3s. Redrawing on the coalescing window
+            // (what this did) left the geometry waiting for the 250ms tick, i.e.
+            // the strip slid in visible steps and jumped at the end. sync() is
+            // cheap when nothing about the picture changed: it re-places, and
+            // only draws when the band or the total moved.
+            observer = new ResizeObserver(function () { safe(sync); });
+            observer.observe(scroller);
+          });
+          // Content changes — a new turn, streaming text, markup settling —
+          // arrive as mutations. They are what should drive a redraw; the 250ms
+          // tick remains the fallback for movement no observer reports, such as
+          // a block that grew without touching the DOM.
+          if (typeof MutationObserver === 'function') {
+            safe(function () {
+              mutationObserver = new MutationObserver(function () {
+                totalDirty = true;
+                // Redraw on the coalescing window (120ms) rather than waiting
+                // for the next tick, so a message paints as it arrives.
+                scheduleRedraw();
+                // Re-arm the settle re-check: heights here keep growing after
+                // the DOM has stopped changing, so one pass is never enough.
+                startRecheck();
+              });
+              mutationObserver.observe(scroller, {
+                childList: true, subtree: true, characterData: true,
+              });
+            });
+          }
+          startRecheck();
+        }
+        if (!scroller) return;
+        // 官方 rail 的隐藏本体是常态 CSS 规则（见 RAIL_RULE），这里每拍只做
+        // 审计（2026-10-16，主人问「不能常态隐藏吗」之后的重设计）：
+        // 官方 TurnNavigator 的 nav 在 items.length < 2 时不挂载
+        // （dsh-client-ui-chat：`if (items.length < 2) return null`），JS 追藏
+        // 永远慢挂载竞态一拍；规则圈在 data-conversation-scroll 里则对新挂载
+        // 零延迟。每拍搭 minimap 本来就有的 tick 检查：规则在场、锚点没改名
+        // （探针）、被规则误伤的非 rail nav 救回。
+        auditOfficialRails();
+        if (sidebarFullscreen()) {
+          clearSidebarInset();
+          shell.style.display = 'none';
+          return;
+        }
+        bandPx = computeBand();
+        // Geometry first, including while hidden: test the intended position
+        // rather than display:none's empty DOM rect.
+        var placedStrip = placeShell();
+        // Ordinary sidebars keep a visible navigation lane. Only a view with
+        // no remaining conversation area has nowhere to place the strip.
+        if (!placedStrip) {
+          shell.style.display = 'none';
+          return;
+        }
+        // A session that fits on one screen has nothing to navigate: hide the whole
+        // strip rather than showing a box that cannot move.
+        var fits = scroller.scrollHeight <= scroller.clientHeight * 1.05;
+        shell.style.display = fits ? 'none' : 'block';
+        if (fits) return;
+        // Only redraw when the picture can actually be stale. This is the
+        // difference between "the tick is a fallback" and "the tick is a redraw
+        // loop that re-measures every block five times a second". The band is
+        // part of the test because it is the picture's scale, not its contents.
+        if (totalDirty || scroller.scrollHeight !== drawnTotal || bandPx !== drawnBand || stripWidthPx !== drawnWidth) {
+          totalDirty = false;
+          safe(function () { draw(); });
+          return;
+        }
+        paintThumb();
+        paintShift();
+      }
+
+      // ── frame-by-frame follow ────────────────────────────────────────────
+      //
+      // Read the layout on animation frames for a bounded window, so motion that
+      // no observer reports — a transform slide — is followed as it happens
+      // instead of sampled on a timer.
+      var followUntil = 0;
+      var followHandle = 0;
+      var followScheduled = false;
+
+      /** requestAnimationFrame, or 0 when the environment has none. */
+      function requestFrame(fn) {
+        try {
+          if (typeof window.requestAnimationFrame === 'function') {
+            return window.requestAnimationFrame(fn);
+          }
+        } catch (error) { /* unavailable */ }
+        return 0;
+      }
+
+      function cancelFrame(handle) {
+        try {
+          if (handle && typeof window.cancelAnimationFrame === 'function') {
+            window.cancelAnimationFrame(handle);
+          }
+        } catch (error) { /* already gone */ }
+      }
+
+      function followFrame() {
+        followHandle = 0;
+        followScheduled = false;
+        safe(function () { sync(); });
+        if (Date.now() < followUntil) {
+          followScheduled = true;
+          followHandle = requestFrame(followFrame);
+        }
+      }
+
+      /** Start (or extend) a bounded run of per-frame reads. */
+      function followLayout() {
+        followUntil = Date.now() + SIDE_FOLLOW_MS;
+        if (followScheduled) return;
+        followScheduled = true;
+        followHandle = requestFrame(followFrame);
+      }
+
+      /**
+       * The sidebar opens and closes by attribute, but it *moves* by transform
+       * and by an animated grid track — so the instant its rect is readable it is
+       * still off-window, and reading once on the attribute flip plus once after
+       * a fixed settle (what this used to do) left the strip motionless through
+       * the whole slide and then jumping into place. Instead: read at once, then
+       * keep reading frame by frame for as long as the slide can last. That costs
+       * nothing once the follow window closes.
+       *
+       * `attributeFilter` is what stops this feeding itself: the strip is itself
+       * a child of body, so an unfiltered observer would wake on every style
+       * write the strip makes.
+       */
+      function resyncForSidebar() {
+        safe(function () { sync(); });
+        followLayout();
+        if (sidebarSettleTimer !== 0) {
+          try { window.clearTimeout(sidebarSettleTimer); } catch (error) { /* gone */ }
+        }
+        // Kept as the fallback for environments without animation frames: it is
+        // the last read either way.
+        sidebarSettleTimer = window.setTimeout(function () {
+          sidebarSettleTimer = 0;
+          safe(function () { sync(); });
+        }, SIDEBAR_SETTLE_MS);
+      }
+
+      if (typeof MutationObserver === 'function') {
+        try {
+          sidebarObserver = new MutationObserver(resyncForSidebar);
+          sidebarObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['data-sidebar-right-open', 'data-sidebar-right-panel'],
+            subtree: true,
+          });
+        } catch (error) {
+          sidebarObserver = null;   // degrade to the 250ms tick
+        }
+      }
+
+      // ── pointer interaction ──────────────────────────────────────────────
+      /** Scroll so the content at `contentY` lands in the middle of the viewport. */
+      function scrollToContent(contentY) {
+        if (!scroller) return;
+        var max = Math.max(0, totalOf() - viewH());
+        scroller.scrollTop = Math.max(0, Math.min(max, contentY - viewH() / 2));
+        paintShift();
+        paintThumb();
+      }
+
+      /** Document position under a client Y, inverted through the canvas offset. */
+      function contentAtPointer(clientY) {
+        if (!(stripScale > 0)) return 0;
+        var rect = shell.getBoundingClientRect();
+        return (canvasOffsetOf() + (clientY - rect.top)) / stripScale;
+      }
+
+      /** Thumb top for a 0..1 progress, in the current window. */
+      function thumbTopFor(p) {
+        var h = thumbHeight();
+        var railH = shell.clientHeight > 0 ? shell.clientHeight : bandPx;
+        return Math.max(0, Math.min(Math.max(0, railH - h), p * Math.max(0, railH - h)));
+      }
+
+      /**
+       * The block whose painted rectangle contains `canvasY`.
+       *
+       * Binary search over `drawY`, which paint() keeps ascending (blocks are in
+       * document order, and a later block is drawn lower). Deliberately the
+       * *painted* rectangle: the drawn height has a 1px floor, so a lookup that
+       * recomputed the position from content coordinates would land on the
+       * neighbouring message.
+       */
+      function blockAt(canvasY) {
+        var low = 0;
+        var high = blocks.length - 1;
+        var found = null;
+        while (low <= high) {
+          var mid = (low + high) >> 1;
+          var y = blocks[mid] && typeof blocks[mid].drawY === 'number' ? blocks[mid].drawY : 0;
+          if (y <= canvasY) {
+            found = blocks[mid];
+            low = mid + 1;
+          } else {
+            high = mid - 1;
+          }
+        }
+        return found;
+      }
+
+      /**
+       * Name the block under the pointer, with the opening words of the message
+       * as a second line: a turn number alone does not say what the message is.
+       *
+       * Throttled — pointermove fires far faster than a redraw, and reading a
+       * block's textContent forces layout.
+       */
+      function showTip(clientY) {
+        if (!scroller || blocks.length === 0) return;
+        var now = Date.now();
+        if (now - lastTipAt < TIP_MS) return;
+        lastTipAt = now;
+        var rect = shell.getBoundingClientRect();
+        if (!(rect.height > 0)) return;
+        var local = clientY - rect.top;
+        var block = blockAt(canvasOffsetOf() + local);
+        // Only a block that was actually drawn can be named: while layout is
+        // still settling the block table exists but nothing is on the canvas,
+        // and naming an invisible block would be a confident lie.
+        if (!block || !(block.drawH > 0)) {
+          tip.removeAttribute('data-show');
+          return;
+        }
+        // Keyed by the official kind domain; see TIP_LABELS for why an
+        // unverified kind takes 'Content' instead of a guessed word.
+        var label = TIP_LABELS[block.kind] || 'Content';
+        var raw = block.el && block.el.textContent ? String(block.el.textContent) : '';
+        var text = raw.replace(/\s+/g, ' ').trim();
+        var preview = text.length > 90 ? text.slice(0, 90) + '…' : text;
+        var head = (block.turn ? 'Turn ' + block.turn + ' · ' : '') + label;
+        tip.textContent = preview === '' ? head : head + '\n' + preview;
+        tip.style.top = Math.round(local) + 'px';
+        tip.setAttribute('data-show', '1');
+      }
+
+      var dragging = false;
+      var dragUntil = 0;
+      var dragGrab = null;   // clientY minus the thumb top, when the grab started on the thumb
+
+      shell.addEventListener('pointerdown', function (event) {
+        if (typeof event.button === 'number' && event.button !== 0) return;
+        dragging = true;
+        dragUntil = Date.now() + DRAG_TIMEOUT_MS;
+        shell.setAttribute('data-active', '1');
+        // A drag is not a hover: drop the tip rather than leave it frozen.
+        tip.removeAttribute('data-show');
+        safe(function () { shell.setPointerCapture(event.pointerId); });
+        var rect = shell.getBoundingClientRect();
+        var h = thumbHeight();
+        var local = event.clientY - rect.top;
+        var thumbTop = thumbTopFor(progress());
+        // Planting the pointer on the thumb keeps the grab point under it (no
+        // jump); planting it anywhere else centres the clicked content.
+        dragGrab = local >= thumbTop - 8 && local <= thumbTop + h + 8 ? local - thumbTop : null;
+        if (dragGrab === null) scrollToContent(contentAtPointer(event.clientY));
+        safe(function () { event.preventDefault(); });
+      });
+
+      shell.addEventListener('pointermove', function (event) {
+        if (!dragging) {
+          // Not dragging, so this is a hover: name the block under the pointer.
+          showTip(event.clientY);
+          return;
+        }
+        if (Date.now() > dragUntil) { endDrag(); return; }
+        // Self-heal: a pointerup delivered elsewhere must not leave us dragging.
+        if (event.buttons === 0) { endDrag(); return; }
+        if (dragGrab !== null) {
+          var rect = shell.getBoundingClientRect();
+          var h = thumbHeight();
+          var railH = shell.clientHeight > 0 ? shell.clientHeight : bandPx;
+          var travel = Math.max(0, railH - h);
+          if (travel <= 0 || !scroller) return;
+          var p = Math.max(0, Math.min(1, (event.clientY - rect.top - dragGrab) / travel));
+          scroller.scrollTop = p * Math.max(0, totalOf() - viewH());
+          paintShift();
+          paintThumb();
+          return;
+        }
+        scrollToContent(contentAtPointer(event.clientY));
+      });
+
+      /**
+       * deltaY is only pixels when deltaMode says so. Firefox sends line counts
+       * (DOM_DELTA_LINE) and some drivers send pages (DOM_DELTA_PAGE); adding
+       * either straight to scrollTop scrolls a fraction of what the user asked
+       * for. Lines convert through the scroller's own measured line height
+       * (~16px when no style will name one), pages through the scroller's
+       * viewport height.
+       */
+      function wheelDeltaPx(event) {
+        var d = typeof event.deltaY === 'number' ? event.deltaY : 0;
+        if (event.deltaMode === 1) return d * wheelLineHeightPx();        // DOM_DELTA_LINE
+        if (event.deltaMode === 2) return d * (scroller.clientHeight || 0); // DOM_DELTA_PAGE
+        return d;                                                          // DOM_DELTA_PIXEL
+      }
+
+      /**
+       * The scroller's line height when the browser will name one. A unitless
+       * or "normal" answer is not a pixel count, so those take the 16px
+       * estimate rather than a number that would understate every notch.
+       */
+      function wheelLineHeightPx() {
+        try {
+          if (typeof getComputedStyle !== 'function') return 16;
+          var raw = getComputedStyle(scroller).lineHeight;
+          if (typeof raw === 'string' && raw.slice(-2) === 'px') {
+            var px = parseFloat(raw);
+            if (px > 0) return px;
+          }
+        } catch (error) { /* not measurable here; the estimate carries it */ }
+        return 16;
+      }
+
+      // The wheel belongs to the conversation: swallowing it here is what makes the
+      // strip feel like it has taken the mouse away.
+      shell.addEventListener('wheel', function (event) {
+        if (!scroller) return;
+        scroller.scrollTop += wheelDeltaPx(event);
+        safe(function () { event.preventDefault(); });
+      }, { passive: false });
+
+      function endDrag() {
+        if (!dragging) return;
+        dragging = false;
+        dragGrab = null;
+        shell.removeAttribute('data-active');
+      }
+      window.addEventListener('pointerup', endDrag, true);
+      window.addEventListener('pointercancel', endDrag, true);
+      window.addEventListener('blur', endDrag, true);
+      shell.addEventListener('pointerleave', function () {
+        tip.removeAttribute('data-show');
+        if (dragging) endDrag();
+      });
+
+      // Keep the picture current when the scroll position moves by any means.
+      function onScrollCapture() {
+        if (!scroller) return;
+        paintShift();
+        paintThumb();
+      }
+      document.addEventListener('scroll', onScrollCapture, true);
+
+      // Observers alone do not catch every way the conversation can move; this
+      // is the fallback, not the primary path.
+      try {
+        syncTimer = window.setInterval(function () { safe(sync); }, SYNC_MS);
+      } catch (error) {
+        syncTimer = 0;
+      }
+
+      function onResize() {
+        safe(sync);
+        // A window resize can be followed by a layout that keeps settling (the
+        // sidebar's auto-collapse below 1024px), so follow it for a moment.
+        followLayout();
+      }
+      window.addEventListener('resize', onResize);
+      safe(sync);
+
+      // Everything this pass attached, so a hot reload can undo it before the next
+      // pass installs its own. The shell's own listeners go away with the shell.
+      return function () {
+        clearSidebarInset();
+        try { window.clearInterval(syncTimer); } catch (error) { /* not started */ }
+        followScheduled = false;
+        cancelFrame(followHandle);
+        followHandle = 0;
+        stopRecheck();
+        if (retryTimer !== 0) {
+          try { window.clearTimeout(retryTimer); } catch (error) { /* already fired */ }
+          retryTimer = 0;
+        }
+        if (sidebarSettleTimer !== 0) {
+          try { window.clearTimeout(sidebarSettleTimer); } catch (error) { /* already fired */ }
+          sidebarSettleTimer = 0;
+        }
+        if (observer) safe(function () { observer.disconnect(); });
+        if (mutationObserver) safe(function () { mutationObserver.disconnect(); });
+        if (sidebarObserver) safe(function () { sidebarObserver.disconnect(); });
+        if (document.removeEventListener) document.removeEventListener('scroll', onScrollCapture, true);
+        if (window.removeEventListener) {
+          window.removeEventListener('resize', onResize);
+          window.removeEventListener('pointerup', endDrag, true);
+          window.removeEventListener('pointercancel', endDrag, true);
+          window.removeEventListener('blur', endDrag, true);
+        }
+        safe(function () { shell.remove(); });
+        restoreOfficialRails(); // 救回过的 nav 撤销 inline 覆盖；常态 CSS 规则与 MAP_CSS 同生命周期，不在此摘
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // notify —turn / member / attention reminders
+    // ═══════════════════════════════════════════════════════════════════════    //
+    // The DSHOME reference implements this as a *host* plugin
+    // (`packages/dshome/lib/host/notify.js`): it subscribes to `session/event`
+    // and POSTs `{title, body, sound}` to the Electron shell's local notify
+    // listener. This bundle is a client plugin whose node half carries no host
+    // behaviour, so the same moments are derived from client state the official
+    // UI already computes, and delivered with browser APIs instead:
+    //
+    //   · `sessions`  —the session catalog. `list` is a snapshot store; every row
+    //                  carries `running`, `origin` and the `retainedBy.mainView`
+    //                  tag, which is the official rule for "the session the user
+    //                  is looking at" (`dsh-client-ui-session` uses the same one).
+    //   · `uiSession` —the official status projection
+    //                  `{running, pendingInteraction, completionUnread}` per
+    //                  session. `pendingInteraction.kind` is `approval`,
+    //                  `question` or `plan-review`.
+    //   · `remote`    —`api-session/error` for the failure branches.
+    //
+    // Categories, copy and the two throttles mirror the reference one for one;
+    // delivery degrades rather than failing: a system notification when the
+    // browser grants it, an in-page toast otherwise, plus a title flash while the
+    // tab is hidden. Without those services the feature is simply absent.
+    //
+    // Two divergences from the reference, both forced by the platform:
+    //   · Sounds are synthesised with WebAudio instead of naming a file under
+    //     `%WINDIR%\Media` —a web page cannot read those.
+    //   · There is no client-side `turn/end{reason}` to read, so failures come
+    //     from `api-session/error`, and there is no client-side background *job*
+    //     feed, so the reference's `job-*` scenes are covered by the member
+    //     branch (a finished session that is not the one in view).
+
+    var NOTIFY_PLUGIN = 'dshome-plugin-notify';
+    /** Per-(scene, session) gap, the same value and intent as `deliverAttention`. */
+    var NOTIFY_THROTTLE_MS = 5000;
+    /** Every member/background reminder shares one sound window (reference contract v2). */
+    var NOTIFY_SOUND_WINDOW_MS = 5000;
+    /** How long one in-page toast stays: a reminder, not a dialog. */
+    var NOTIFY_TOAST_MS = 9000;
+    /** How long the tab title carries the flash while the page is hidden. */
+    var NOTIFY_TITLE_MS = 8000;
+    /** Above this many stacked toasts the oldest is dropped, never a wall of them. */
+    var NOTIFY_TOAST_MAX = 3;
+    /** How long to wait for late services before declaring the feature unwired. */
+    var NOTIFY_WIRING_GRACE_MS = 5000;
+
+    /** The reference's `COPY`, kept verbatim so both products read alike. */
+    var NOTIFY_COPY = {
+      'turn-completed': { title: 'DSHOME 回合完成', body: '一个由你发起的回合已处理完毕，可查看结果。' },
+      'turn-failed': { title: 'DSHOME 回合失败', body: '一个由你发起的回合未能完成，请查看详情。' },
+      'member-completed': { title: 'DSHOME 成员任务完成', body: '一个成员任务已完成。' },
+      'member-failed': { title: 'DSHOME 成员任务失败', body: '一个成员任务未能完成，请查看详情。' },
+      'approval-asked': { title: 'DSHOME 需要你确认', body: '有一个操作在等你确认后才会继续。' },
+      'user-question': { title: 'DSHOME 有个问题等你回答', body: '模型在等你选择或补充信息。' },
+    };
+
+    /** Scene → tone pair. Three distinguishable shapes, not six near-identical beeps. */
+    var NOTIFY_TONES = {
+      turn: [660, 990],
+      background: [520, 660],
+      attention: [784, 1046],
+    };
+    /** Gap between the two tones of one chime, in seconds. */
+    var NOTIFY_TONE_MS = 0.16;
+
+    /**
+     * Normalise `window.__dshomePlugin.notify`, which may be `true`, `false`, or an
+     * object. Field names follow the reference's settings schema so the two
+     * products stay readable side by side.
+     */
+    function notifyOptions(raw) {
+      var out = {
+        enabled: true,
+        notifyOnTurnCompletion: true,
+        notifyOnBackground: true,
+        notifyOnApproval: true,
+        notifyOnUserQuestion: true,
+        sound: true,
+        soundPreset: 'scene',
+        volume: 70,
+        toast: true,
+        titleFlash: true,
+        // 系统通知的时机：auto = 只有页面不在前台时才发（前台已有页内卡片，
+        // 不重复）；always = 任何时候都发；never = 只发页内卡片。
+        systemNotification: 'auto',
+      };
+      if (raw === false) {
+        out.enabled = false;
+        return out;
+      }
+      if (raw && typeof raw === 'object') {
+        for (var key in out) {
+          if (Object.prototype.hasOwnProperty.call(out, key) &&
+              Object.prototype.hasOwnProperty.call(raw, key)) {
+            if (key === 'systemNotification') {
+              var mode = raw[key];
+              out[key] = mode === 'always' || mode === 'never' ? mode : 'auto';
+            } else if (key === 'volume') {
+              out[key] = typeof raw[key] === 'number' && isFinite(raw[key])
+                ? Math.max(0, Math.min(100, raw[key])) : 70;
+            } else if (key === 'soundPreset') {
+              out[key] = ['scene', 'soft', 'bell'].indexOf(raw[key]) >= 0 ? raw[key] : 'scene';
+            } else {
+              out[key] = raw[key] !== false;
+            }
+          }
+        }
+      }
+      return out;
+    }
+
+    /**
+     * Whether the feature attached to anything at all.
+     *
+     * Each source is an optional read, but *all three* missing means no reminder
+     * can ever fire — and the only witness to that would otherwise be a console
+     * nobody opens. Returning the gap lets the feature say so once, in-page.
+     *
+     * @param {{catalog:boolean, status:boolean, remote:boolean}} wired attachment flags
+     * @returns {{title:string, body:string}|null} the gap, or null when wired
+     */
+    function notifyWiringGap(wired) {
+      if (wired && (wired.catalog || wired.status || wired.remote)) return null;
+      return {
+        title: '提醒功能未接入',
+        body: '缺少会话状态服务（sessions / uiSession / remote），本页未启用提醒。',
+      };
+    }
+
+    var NOTIFY_CSS = [
+      // 底部让位用官方量出来的输入框高度（与 minimap 同一套口径）：卡片贴着
+      // 输入框上沿，不会被输入区压住。变量取不到时回退官方默认值 152px。
+      '.dshome-plugin-notify-stack{position:fixed;right:16px;',
+      'bottom:calc(var(--dsh-composer-height, 152px) + 16px);z-index:2147483000;',
+      'display:flex;flex-direction:column;gap:8px;max-width:380px;pointer-events:none}',
+      '.dshome-plugin-notify-toast{pointer-events:auto;cursor:pointer;display:flex;',
+      'flex-direction:column;gap:4px;padding:12px 16px;border-radius:10px;',
+      'border:1px solid var(--dsw-alias-border-l2,#d3dcea);',
+      'border-left:4px solid var(--dsw-alias-brand-primary,#4D6BFE);',
+      'background:var(--dsw-alias-bg-overlay,#fff);',
+      'box-shadow:0 8px 24px rgba(15,20,32,.28);',
+      'font-size:13.5px;line-height:19px;color:var(--dsw-alias-label-primary,#1a2233)}',
+      '.dshome-plugin-notify-toast-title{font-weight:600}',
+      '.dshome-plugin-notify-toast-body{color:var(--dsw-alias-label-secondary,#4a5a78)}',
+    ].join('');
+
+    // ── 设置页卡片：把六个开关摆到界面上 ─────────────────────────────────────
+    //
+    // 官方设置页给插件留的槽位是 `settings.section`（list 协议，见
+    // `dsh-client-ui-settings-plugins` 的注册形状：name / id / order / label）。
+    // 本插件没有 host 半，设置值就存浏览器本地（localStorage），不进宿主的
+    // 配置文档——这是客户端偏好，跟着这台浏览器走。
+    var NOTIFY_STORE_KEY = 'dshome-plugin.notify.v1';
+
+    /** 本地存储：真浏览器里 `window.localStorage` 与全局同一个，两种读法都兜住。 */
+    function notifyStorage() {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+      } catch (error) { /* 继续试全局 */ }
+      try {
+        if (typeof localStorage !== 'undefined' && localStorage) return localStorage;
+      } catch (error) { /* 没有就没有 */ }
+      return null;
+    }
+
+    /** 读回用户在卡片上点过的开关；读不到 / 坏数据都当"没设过"。 */
+    function readStoredNotify() {
+      try {
+        var store = notifyStorage();
+        if (!store) return {};
+        var raw = store.getItem(NOTIFY_STORE_KEY);
+        if (!raw) return {};
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (error) {
+        return {};
+      }
+    }
+
+    /** 合并优先级：代码里的全局（显式 false 才算关）低于用户点过的开关。 */
+    function mergeNotifyOptions(rawOptions, stored) {
+      if (rawOptions === false) return false;
+      if (rawOptions && typeof rawOptions === 'object') {
+        return Object.assign({}, rawOptions, stored);
+      }
+      return stored;
+    }
+
+    /** 只写用户点过的那几个键，别把整份默认值灌进存储。 */
+    function writeStoredNotify(patch) {
+      try {
+        var store = notifyStorage();
+        if (!store) return;
+        var next = Object.assign({}, readStoredNotify(), patch);
+        store.setItem(NOTIFY_STORE_KEY, JSON.stringify(next));
+      } catch (error) { /* 存储失败不影响本次生效 */ }
+    }
+
+    /** 卡片上的六行：总开关 + 四类提醒 + 提示音。 */
+    var NOTIFY_SETTINGS_FIELDS = [
+      { field: 'enabled', label: '提醒总开关', hint: '关掉后下列提醒全部静音，也不再弹卡片。' },
+      { field: 'notifyOnTurnCompletion', label: '回合完成时提醒', hint: '你发起的回合处理完毕时提醒。' },
+      { field: 'notifyOnBackground', label: '成员任务完成时提醒', hint: '派出去的成员做完时提醒。' },
+      { field: 'notifyOnApproval', label: '需要我确认时提醒', hint: '出现确认弹窗、等你点按钮时提醒。' },
+      { field: 'notifyOnUserQuestion', label: '有问题等我回答时提醒', hint: '模型提问、等你选择时提醒。' },
+      { field: 'sound', label: '提示音', hint: '提醒时响一声（合成音，不读音频文件）。' },
+    ];
+
+    /** 一行：左边标题与说明，右边开关。 */
+    function notifySettingsRow(item, on, onToggle) {
+      var jsx = react_jsx_runtime.jsx;
+      return jsx('div', {
+        key: item.field,
+        style: {
+          display: 'flex', alignItems: 'center', gap: 16, padding: '14px 0',
+          borderBottom: '1px solid var(--dsw-alias-border-l2, #d3dcea)',
+        },
+        children: [
+          jsx('div', {
+            key: 'text',
+            style: { flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+            children: [
+              jsx('div', {
+                key: 'label',
+                style: { fontSize: 14, lineHeight: '22px', color: 'var(--dsw-alias-label-primary, #1a2233)' },
+                children: item.label,
+              }),
+              jsx('div', {
+                key: 'hint',
+                style: { fontSize: 12.5, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary, #6b7a99)' },
+                children: item.hint,
+              }),
+            ],
+          }),
+          jsx('button', {
+            key: 'switch',
+            type: 'button',
+            role: 'switch',
+            'aria-checked': on ? 'true' : 'false',
+            'aria-label': item.label,
+            'data-dshome-notify-field': item.field,
+            onClick: onToggle,
+            style: {
+              flex: '0 0 auto', width: 40, height: 22, padding: 0, borderRadius: 11, position: 'relative',
+              border: '1px solid var(--dsw-alias-border-l2, #d3dcea)', cursor: 'pointer',
+              background: on ? 'var(--dsw-alias-brand-primary, #4D6BFE)' : 'var(--dsw-alias-bg-layer-3, #d5dbe6)',
+              transition: 'background .15s',
+            },
+            children: jsx('span', {
+              key: 'knob',
+              style: {
+                position: 'absolute', top: 2, left: on ? 20 : 2, width: 16, height: 16, display: 'block',
+                borderRadius: '50%', background: '#fff', transition: 'left .15s',
+              },
+            }),
+          }),
+        ],
+      });
+    }
+
+    /**
+     * 设置页里的「提醒」分区。
+     *
+     * 值一律现读 `window.__dshomePluginNotify`（那是唯一真源），点一下就把新值
+     * 写进去并重渲染——不维护第二份状态，避免"界面显示的和实际生效的不一致"。
+     */
+    function NotifySettingsSection() {
+      var jsx = react_jsx_runtime.jsx;
+      var api = window.__dshomePluginNotify;
+      var revision = react.useState(0);
+      var bump = revision[1];
+      var options = api && typeof api.status === 'function' ? api.status().options : null;
+      if (!options) {
+        return jsx('div', {
+          style: { padding: '16px 0', fontSize: 13, color: 'var(--dsw-alias-label-tertiary, #6b7a99)' },
+          children: '提醒功能未启用。',
+        });
+      }
+      var rows = NOTIFY_SETTINGS_FIELDS.map(function (item) {
+        return notifySettingsRow(item, options[item.field] !== false, function () {
+          api.set(item.field === 'enabled' ? { enabled: options[item.field] === false }
+            : defineNotifyPatch(item.field, options[item.field] === false));
+          if (typeof bump === 'function') bump(revision[0] + 1);
+        });
+      });
+      function update(field, value) {
+        api.set(defineNotifyPatch(field, value));
+        bump(function (n) { return n + 1; });
+      }
+      function select(field, label, values) {
+        return jsx('label', { key: field, style: { padding: '12px 0', display: 'flex', gap: 16 }, children: [
+          label,
+          jsx('select', { 'aria-label': label, value: options[field],
+            onChange: function (e) { update(field, e.target.value); },
+            children: values.map(function (v) { return jsx('option', { key: v[0], value: v[0], children: v[1] }); }),
+          }),
+        ] });
+      }
+      rows.push(select('systemNotification', '通知方式', [
+        ['auto', '智能：前台站内，后台系统'], ['always', '始终尝试系统通知'], ['never', '仅站内提醒'],
+      ]));
+      rows.push(select('soundPreset', '提示音类型', [
+        ['scene', '按场景区分'], ['soft', '轻柔'], ['bell', '清铃'],
+      ]));
+      rows.push(jsx('label', { key: 'volume', style: { padding: '12px 0', display: 'flex', gap: 16 }, children: [
+        '提示音音量 ' + options.volume + '%',
+        jsx('input', { type: 'range', min: 0, max: 100, step: 1, value: options.volume,
+          'aria-label': '提示音音量', onChange: function (e) { update('volume', Number(e.target.value)); } }),
+      ] }));
+      var permission = api.status().permission;
+      rows.push(jsx('div', { key: 'actions', style: { padding: '12px 0', display: 'flex', gap: 12 }, children: [
+        jsx('button', { type: 'button', disabled: !options.sound || !options.enabled || options.volume === 0,
+          onClick: function () { api.previewSound(); }, children: '试听提示音' }),
+        jsx('button', { type: 'button', disabled: permission !== 'default',
+          onClick: function () { api.requestPermission().then(function () { bump(function (n) { return n + 1; }); }); },
+          children: '系统通知权限：' + permission + (permission === 'default' ? '（点击授权）' : '') }),
+      ] }));
+      rows.push(jsx('p', { key: 'limits', children: '音量按听感递增曲线分配，高段留有增强余量；请先从低音量开始试听。后台保留站内卡片，返回后可查看。点击提醒打开来源会话；审批与提问在会话交互区处理。拒绝权限可在浏览器设置恢复。声音需先交互解锁，系统静音和后台策略可能限制播放。' }));
+      return jsx('div', {
+        style: { display: 'flex', flexDirection: 'column', paddingTop: 4 },
+        children: rows,
+      });
+    }
+
+    /** 组装一次点击的补丁（单独出来是为了可读，也便于测试）。 */
+    function defineNotifyPatch(field, next) {
+      var patch = {};
+      patch[field] = next;
+      return patch;
+    }
+
+    /** 把「提醒」分区注册进官方设置页。返回注销句柄（HMR 重入时由 apply 先撤）。
+     *  句柄自己攥着（P2-25，与 applyTheme 同一条）：不押 inject 的返回契约。 */
+    function applyNotifySettings(ctx) {
+      var slots = ctx && typeof ctx.get === 'function' ? ctx.get('slots') : (ctx ? ctx.slots : null);
+      if (!slots || typeof slots.inject !== 'function' || typeof slots.register !== 'function') return null;
+      var registered = [];
+      slots.inject('settings.section', function () {
+        var off = slots.register({
+          name: 'settings.section',
+          id: 'dshome-notify',
+          order: 40,
+          label: function () { return '提醒'; },
+        }, NotifySettingsSection);
+        registered.push(off);
+        return off;
+      });
+      return function () {
+        var offs = registered.splice(0);
+        for (var i = 0; i < offs.length; i += 1) {
+          var off = offs[i];
+          try {
+            if (typeof off === 'function') off();
+            else if (off && typeof off.dispose === 'function') off.dispose();
+          } catch (error) { /* 单个注销失败不影响其余 */ }
+        }
+      };
+    }
+
+    /**
+     * Install the reminder feature.
+     *
+     * Every upstream read is optional: a missing service means a missing reminder
+     * scene, never a failed activation. The returned function is the teardown,
+     * because this bundle hot-reloads and a second pass must not stack
+     * subscriptions (the same reason the minimap owns one).
+     *
+     * @param {object} ctx client context
+     * @param {boolean|object} rawOptions `window.__dshomePlugin.notify`
+     * @returns {Function|null} teardown, or null when the feature is switched off
+     */
+    function applyNotify(ctx, rawOptions) {
+      // 代码里写 `notify: false` ⇒ 彻底不装（不订阅、不建句柄、也没有设置卡片）。
+      // 但**从卡片上关掉总开关**是另一回事：功能要留着（卡片得在，否则关了就
+      // 再也开不回来），只是不投递。
+      if (rawOptions === false) return null;
+      var opts = notifyOptions(mergeNotifyOptions(rawOptions, readStoredNotify()));
+
+      // Re-entrant: a hot reload runs apply() again while the previous pass still
+      // holds store subscriptions, listeners and DOM.
+      if (typeof window.__dshomePluginNotifyTeardown === 'function') {
+        try { window.__dshomePluginNotifyTeardown(); } catch (error) { /* already gone */ }
+      }
+      window.__dshomePluginNotifyTeardown = null;
+
+      installStyle(NOTIFY_PLUGIN, NOTIFY_CSS);
+
+      var stops = [];
+      var disposed = false;
+      /** sessionId → {running, main, title} as last seen (the diff's left side). */
+      var sessions = new Map();
+      /** sessionId → pending interaction kind as last seen. */
+      var pending = new Map();
+      /** The first ready catalog is a baseline: loading the page must not fire a burst. */
+      var catalogBaseline = false;
+      var statusBaseline = false;
+      var lastAttentionAt = new Map();
+      var lastSoundAt = 0;
+      var audio = null;
+      var titleBase = null;
+      var titleTimer = 0;
+      var titleWatching = false;
+      var stack = null;
+      var stackAttached = false;
+      var wired = { catalog: false, status: false, remote: false };
+      var notificationHandles = new Set();
+      var toastHandles = new Map();
+      var deliveryTimers = new Set();
+
+      function later(fn, delay) {
+        var timer = window.setTimeout(function () {
+          deliveryTimers.delete(timer);
+          if (!disposed) fn();
+        }, delay);
+        deliveryTimers.add(timer);
+        return timer;
+      }
+      function cancelLater(timer) {
+        window.clearTimeout(timer);
+        deliveryTimers.delete(timer);
+      }
+
+      /** Register one disposer. */
+      function stop(fn) {
+        if (typeof fn === 'function') stops.push(fn);
+      }
+
+      /** One-line, truncated text: a notification is no place for a whole command. */
+      function oneLine(text, max) {
+        var flat = String(text === null || text === undefined ? '' : text).replace(/\s+/g, ' ');
+        flat = flat.replace(/^\s+|\s+$/g, '');
+        if (flat === '') return '';
+        return flat.length > max ? flat.slice(0, max - 1) + '\u2026' : flat;
+      }
+
+      function focusWindow() {
+        try { window.focus(); } catch (error) { /* nothing to do */ }
+      }
+
+      // The supported host navigation action also reveals the Conversation panel.
+      // No hash routes, synthetic sidebar clicks or guessed DOM selectors.
+      function openSource(detail) {
+        if (disposed) return;
+        focusWindow();
+        stopTitleFlash();
+        var id = detail && detail.sessionId;
+        function failed() {
+          if (!disposed) toast('无法打开提醒来源', '请从侧栏打开会话' + (id ? '：' + oneLine(id, 80) : '（此提醒没有会话地址）') + '。', null, true);
+        }
+        if (!id) { failed(); return; }
+        try {
+          var navigation = ctx.get('uiWorkspace');
+          if (!navigation || typeof navigation.openSession !== 'function') { failed(); return; }
+          var result = navigation.openSession(id);
+          if (result && typeof result.catch === 'function') result.catch(failed);
+        } catch (error) { failed(); }
+      }
+
+      /**
+       * The platform's Notification constructor, read defensively: the browser
+       * may not have one at all and a probe must not throw.
+       */
+      function notificationCtor() {
+        try {
+          if (typeof window !== 'undefined' && typeof window.Notification === 'function') {
+            return window.Notification;
+          }
+        } catch (error) { /* fall through */ }
+        try {
+          if (typeof Notification === 'function') return Notification;
+        } catch (error) { /* fall through */ }
+        return null;
+      }
+
+      function permissionState() {
+        var ctor = notificationCtor();
+        if (!ctor) return 'unavailable';
+        return typeof ctor.permission === 'string' ? ctor.permission : 'default';
+      }
+
+      /** @returns {boolean} constructor accepted; NOT an OS-visible delivery receipt. */
+      function systemNotify(title, body, tag, detail) {
+        var ctor = notificationCtor();
+        if (!ctor || permissionState() !== 'granted') return false;
+        try {
+          var note = new ctor(title, { body: body, tag: tag, silent: true });
+          notificationHandles.add(note);
+          var closeTimer = 0, failed = false;
+          function closeNote() {
+            notificationHandles.delete(note);
+            if (closeTimer) cancelLater(closeTimer);
+            try { if (note && typeof note.close === 'function') note.close(); } catch (error) { /* gone */ }
+          }
+          function clicked() { if (!disposed) openSource(detail); closeNote(); }
+          if (note && typeof note.addEventListener === 'function') {
+            note.addEventListener('click', clicked);
+            note.addEventListener('close', function () { notificationHandles.delete(note); });
+            note.addEventListener('error', function () {
+              if (disposed || failed) return;
+              failed = true;
+              closeNote();
+              if (!opts.toast) toast(title, body, detail, true);
+            });
+          } else if (note) {
+            note.onclick = clicked;
+          }
+          if (typeof window.setTimeout === 'function') closeTimer = later(closeNote, 12000);
+          return true;
+        } catch (error) {
+          // A refused Notification must not swallow the reminder: the toast below
+          // still runs, so a reminder is never silently lost.
+          return false;
+        }
+      }
+
+      function ensureStack() {
+        // `stackAttached` rather than `stack.parent`/`parentNode`: a real
+        // Element has no `parent` at all, and a double may only carry one of the
+        // two, either of which would silently re-create the container per toast.
+        if (stack && stackAttached) return stack;
+        if (!document || !document.body) return null;
+        var box = document.createElement('div');
+        box.className = 'dshome-plugin-notify-stack';
+        box.setAttribute('aria-live', 'polite');
+        document.body.appendChild(box);
+        stack = box;
+        stackAttached = true;
+        return box;
+      }
+
+      /**
+       * The in-page card: the delivery that cannot be silently dropped.
+       *
+       * It stays for `NOTIFY_TOAST_MS`, and hovering it stops the countdown so a
+       * card cannot vanish while it is being read. Clicking it dismisses the card
+       * and brings the window forward.
+       */
+      function toast(title, body, detail, essential) {
+        if (disposed || (!opts.toast && !essential)) return;
+        var box = ensureStack();
+        if (!box) return;
+        var card = document.createElement('div');
+        card.className = 'dshome-plugin-notify-toast';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', title + (detail ? '，打开来源会话' : '，关闭提醒'));
+        var head = document.createElement('div');
+        head.className = 'dshome-plugin-notify-toast-title';
+        head.textContent = '\uD83D\uDD14 ' + title;
+        var text = document.createElement('div');
+        text.className = 'dshome-plugin-notify-toast-body';
+        text.textContent = body;
+        card.appendChild(head);
+        card.appendChild(text);
+        function activate() {
+          if (disposed) return;
+          dismiss();
+          if (detail) openSource(detail);
+          else { stopTitleFlash(); focusWindow(); }
+        }
+        card.addEventListener('click', activate);
+        card.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(); }
+        });
+        box.appendChild(card);
+        while (box.children.length > NOTIFY_TOAST_MAX) {
+          var oldest = box.children[0];
+          var removeOldest = toastHandles.get(oldest);
+          if (removeOldest) removeOldest();
+          else try { oldest.remove(); } catch (error) { break; }
+        }
+        if (typeof window.setTimeout !== 'function') return;
+        var timer = 0;
+        var paused = false;
+        function dismiss() {
+          toastHandles.delete(card);
+          if (timer) cancelLater(timer);
+          document.removeEventListener('visibilitychange', arm);
+          window.removeEventListener('focus', arm);
+          window.removeEventListener('blur', arm);
+          try { card.remove(); } catch (error) { /* gone */ }
+        }
+        function arm() {
+          if (timer) cancelLater(timer);
+          timer = 0;
+          if (!card.parentNode || disposed) { dismiss(); return; }
+          if (pageInFront() && !paused) timer = later(dismiss, NOTIFY_TOAST_MS);
+        }
+        // Background cards survive until the user returns, capped by TOAST_MAX.
+        document.addEventListener('visibilitychange', arm);
+        window.addEventListener('focus', arm);
+        window.addEventListener('blur', arm);
+        toastHandles.set(card, dismiss);
+        arm();
+        card.addEventListener('mouseenter', function () { paused = true; arm(); });
+        card.addEventListener('mouseleave', function () { paused = false; arm(); });
+        card.addEventListener('focus', function () { paused = true; arm(); });
+        card.addEventListener('blur', function () { paused = false; arm(); });
+      }
+
+      function stopTitleFlash() {
+        if (titleTimer) {
+          try { window.clearTimeout(titleTimer); } catch (error) { /* gone */ }
+          titleTimer = 0;
+        }
+        if (titleBase !== null) {
+          try { document.title = titleBase; } catch (error) { /* gone */ }
+          titleBase = null;
+        }
+        if (titleWatching) {
+          titleWatching = false;
+          try { window.removeEventListener('focus', stopTitleFlash); } catch (error) { /* gone */ }
+          try { document.removeEventListener('visibilitychange', stopTitleFlash); } catch (error) { /* gone */ }
+        }
+      }
+
+      /**
+       * Flash the tab title, but only while the page is hidden: a visible client
+       * already shows the turn, and rewriting its title there would be noise.
+       */
+      function flashTitle(text) {
+        if (!opts.titleFlash) return;
+        try {
+          if (document.visibilityState === 'visible') return;
+          if (titleBase === null) titleBase = document.title;
+          document.title = '\uD83D\uDD14 ' + text;
+          if (!titleWatching) {
+            titleWatching = true;
+            window.addEventListener('focus', stopTitleFlash);
+            document.addEventListener('visibilitychange', stopTitleFlash);
+          }
+          if (titleTimer) window.clearTimeout(titleTimer);
+          titleTimer = window.setTimeout(stopTitleFlash, NOTIFY_TITLE_MS);
+        } catch (error) { /* a title flash is never worth an exception */ }
+      }
+
+      /** A two-tone chime; silence is the right failure mode for a sound. */
+      function playTones(scene) {
+        if (disposed || !opts.enabled || !opts.sound || opts.volume === 0) return;
+        try {
+          var ctor = window.AudioContext || window.webkitAudioContext;
+          if (typeof ctor !== 'function') return;
+          if (!audio) audio = new ctor();
+          if (audio.state === 'suspended' && typeof audio.resume === 'function') {
+            var resumed = audio.resume();
+            // Autoplay policy rejects this promise before the first gesture; an
+            // unconsumed rejection would surface as a page error for a mute tap.
+            if (resumed && typeof resumed.catch === 'function') {
+              resumed.catch(function () { /* sound is optional */ });
+            }
+          }
+          // Never queue old beeps while autoplay is blocked; a gesture unlocks
+          // the context for future reminders, without replaying missed ones.
+          if (audio.state === 'suspended') return;
+          var tones = opts.soundPreset === 'soft' ? [440, 554]
+            : opts.soundPreset === 'bell' ? [880, 1320]
+            : NOTIFY_TONES[scene] || NOTIFY_TONES.background;
+          var at = audio.currentTime;
+          for (var i = 0; i < tones.length; i += 1) {
+            var start = at + i * NOTIFY_TONE_MS;
+            var osc = audio.createOscillator();
+            var gain = audio.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = tones[i];
+            // Smooth perceptual proxy over the whole slider, not a 70% branch.
+            // Keep v5's 70% RMS reference; leave ~6dB between 70 and 100.
+            // This signal curve is not a guarantee of equal perceived steps.
+            var level = Math.expm1(1.8 * opts.volume / 100) / Math.expm1(1.8);
+            var peak = 0.98 * level;
+            var floor = peak * 0.0001;
+            gain.gain.setValueAtTime(floor, start);
+            gain.gain.exponentialRampToValueAtTime(peak, start + 0.02);
+            gain.gain.setValueAtTime(peak, start + 0.0637);
+            gain.gain.exponentialRampToValueAtTime(floor, start + 0.24);
+            osc.connect(gain);
+            gain.connect(audio.destination);
+            osc.start(start);
+            osc.stop(start + 0.26);
+          }
+        } catch (error) { /* a reminder must survive a mute device */ }
+      }
+
+      function sceneOf(key) {
+        if (key === 'turn-completed' || key === 'turn-failed') return 'turn';
+        if (key === 'approval-asked' || key === 'user-question') return 'attention';
+        return 'background';
+      }
+
+      /** `turn` and `attention` always sound; `background` shares the 5s window. */
+      function soundAllowed(scene, now) {
+        if (scene !== 'background') return true;
+        if (now - lastSoundAt < NOTIFY_SOUND_WINDOW_MS) return false;
+        lastSoundAt = now;
+        return true;
+      }
+
+      /** Whether the page is in front of the user right now. */
+      function pageInFront() {
+        try {
+          if (document.visibilityState === 'hidden') return false;
+          if (typeof document.hasFocus === 'function' && document.hasFocus() === false) return false;
+        } catch (error) { /* unreadable: assume the user can see the page */ }
+        return true;
+      }
+
+      /**
+       * One reminder, end to end.
+       *
+       * Delivery order is the whole lesson of 2026-10-06: a constructed
+       * `Notification` proves nothing. On Windows an Electron renderer without an
+       * application id builds the object and the shell drops it silently, so
+       * "sound but no popup" was exactly what the owner got while this code
+       * skipped the card on a `true` return. The default backup card is therefore retained
+       * (it cannot be dropped by the OS), and the system notification is the
+       * addition: only while the page is not in front, unless forced.
+       */
+      function deliver(key, detail) {
+        // 实时读总开关（不用启动时的快照）：卡片上点一下立刻生效。
+        if (disposed || opts.enabled === false) return;
+        var copy = NOTIFY_COPY[key];
+        if (!copy) return;
+        var title = detail && detail.title ? detail.title : copy.title;
+        var body = detail && detail.body ? detail.body : copy.body;
+        var sessionId = detail && detail.sessionId ? detail.sessionId : '';
+        var scene = sceneOf(key);
+        var now = Date.now();
+        try {
+          if (soundAllowed(scene, now)) playTones(scene);
+          var inFront = pageInFront();
+          var mode = opts.systemNotification;
+          var systemSent = false;
+          if (mode === 'always' || (mode === 'auto' && !inFront)) {
+            systemSent = systemNotify(title, body, 'dshome-plugin:' + key + (sessionId ? ':' + sessionId : ''), { sessionId: sessionId });
+          }
+          // toast:false suppresses only a redundant backup, never the sole
+          // visible delivery when system notification is absent or fails.
+          toast(title, body, { sessionId: sessionId }, !systemSent);
+          if (!inFront) flashTitle(title);
+        } catch (error) {
+          console.warn('dshome-plugin: notify delivery failed', error);
+        }
+      }
+
+      /** Waiting scenes are throttled per session, exactly like `deliverAttention`. */
+      function deliverAttention(key, sessionId, detail) {
+        var throttleKey = key + ':' + sessionId;
+        var now = Date.now();
+        if (now - (lastAttentionAt.get(throttleKey) || 0) < NOTIFY_THROTTLE_MS) return;
+        lastAttentionAt.set(throttleKey, now);
+        var outgoing = { sessionId: sessionId };
+        if (detail && detail.title) outgoing.title = detail.title;
+        if (detail && detail.body) outgoing.body = detail.body;
+        deliver(key, outgoing);
+      }
+
+      function pendingKindOf(interaction) {
+        if (!interaction) return '';
+        if (interaction.kind === 'approval') return 'approval';
+        if (interaction.kind === 'question' || interaction.kind === 'plan-review') return 'question';
+        return '';
+      }
+
+      /** First question of a batch, the same summary the reference sends. */
+      function questionSummary(questions) {
+        var first = Array.isArray(questions) ? questions[0] : null;
+        if (!first || typeof first !== 'object') return '';
+        return oneLine(first.header || first.question, 80);
+      }
+
+      /** The catalog is the completion source: a running flag that flips to false. */
+      function onCatalog() {
+        if (disposed) return;
+        var service = ctx.get('sessions');
+        if (!service || !service.list || typeof service.list.getSnapshot !== 'function') return;
+        var snapshot = service.list.getSnapshot();
+        if (!snapshot || !snapshot.byId) return;
+        var ids = snapshot.ids || Object.keys(snapshot.byId);
+        var next = new Map();
+        for (var i = 0; i < ids.length; i += 1) {
+          var id = String(ids[i]);
+          var row = snapshot.byId[ids[i]];
+          if (!row) continue;
+          next.set(id, {
+            running: row.running === true,
+            main: !!(row.retainedBy && row.retainedBy.mainView > 0),
+            title: oneLine(row.displayTitle || row.title, 40),
+          });
+        }
+        // The baseline snapshot records state without announcing history; only a
+        // live transition after the catalog is ready is a reminder.
+        if (!catalogBaseline) {
+          catalogBaseline = snapshot.phase === 'ready';
+          sessions = next;
+          return;
+        }
+        next.forEach(function (current, id) {
+          var before = sessions.get(id);
+          if (!before || before.running !== true || current.running !== false) return;
+          var detail = { sessionId: id };
+          if (current.main) {
+            if (!opts.notifyOnTurnCompletion) return;
+            if (current.title) detail.body = '「' + current.title + '」已处理完毕，可查看结果。';
+            deliver('turn-completed', detail);
+            return;
+          }
+          if (!opts.notifyOnBackground) return;
+          detail.body = current.title
+            ? '成员「' + current.title + '」的回合已完成，可查看结果。'
+            : NOTIFY_COPY['member-completed'].body;
+          deliver('member-completed', detail);
+        });
+        sessions = next;
+      }
+
+      /** Approvals and questions come from the official pending-interaction projection. */
+      function onStatus() {
+        if (disposed) return;
+        var service = ctx.get('uiSession');
+        if (!service || !service.sessionStatus ||
+            typeof service.sessionStatus.getSnapshot !== 'function') return;
+        var snapshot = service.sessionStatus.getSnapshot();
+        if (!snapshot || typeof snapshot.forEach !== 'function') return;
+        var next = new Map();
+        snapshot.forEach(function (entry, id) {
+          if (!entry || !entry.pendingInteraction) return;
+          var kind = pendingKindOf(entry.pendingInteraction);
+          if (kind === '') return;
+          next.set(String(id), { kind: kind, interaction: entry.pendingInteraction });
+        });
+        if (!statusBaseline) {
+          statusBaseline = true;
+          pending = next;
+          return;
+        }
+        next.forEach(function (current, id) {
+          var before = pending.get(id);
+          if (before && before.kind === current.kind) return;
+          var interaction = current.interaction;
+          if (current.kind === 'approval') {
+            if (!opts.notifyOnApproval) return;
+            var tool = oneLine(interaction.toolName, 40) || '未知工具';
+            // `reason` is the raw string; `displayReason` is a *localized* token
+            // that may be an object, so it is only used when it is already text
+            // (otherwise a notification would read "[object Object]").
+            var reason = oneLine(interaction.reason, 120);
+            if (reason === '' && typeof interaction.displayReason === 'string') {
+              reason = oneLine(interaction.displayReason, 120);
+            }
+            deliverAttention('approval-asked', id, {
+              body: reason
+                ? '工具「' + tool + '」请求确认：' + reason
+                : '工具「' + tool + '」在等你确认后才会继续。',
+            });
+            return;
+          }
+          if (!opts.notifyOnUserQuestion) return;
+          var summary = questionSummary(interaction.questions);
+          deliverAttention('user-question', id, summary ? { body: summary } : undefined);
+        });
+        pending = next;
+      }
+
+      /**
+       * Failures: the client receives the host's `api-session/error` forwarding.
+       * A session the catalog does not know yet is treated as main, because the
+       * reference only reports failures for user-initiated turns.
+       */
+      function wireRemote(service) {
+        if (!service || typeof service.$on !== 'function') return false;
+        var off = null;
+        try {
+          off = service.$on('api-session/error', function (sessionId, message) {
+            if (disposed) return;
+            var id = String(sessionId === null || sessionId === undefined ? '' : sessionId);
+            var row = sessions.get(id);
+            var isMain = !row || row.main;
+            if (isMain && !opts.notifyOnTurnCompletion) return;
+            if (!isMain && !opts.notifyOnBackground) return;
+            var detail = { sessionId: id };
+            var text = oneLine(message, 120);
+            if (row && row.title) {
+              detail.body = isMain
+                ? '「' + row.title + '」未能完成，请查看详情。'
+                : '成员「' + row.title + '」的回合未能完成，请查看详情。';
+            } else if (text) {
+              detail.body = text;
+            }
+            deliver(isMain ? 'turn-failed' : 'member-failed', detail);
+          });
+        } catch (error) {
+          console.warn('dshome-plugin: notify remote subscription failed', error);
+          return false;
+        }
+        if (typeof off === 'function') stop(off);
+        return true;
+      }
+
+      function wireStore(store, handler, label) {
+        if (!store || typeof store.subscribe !== 'function') return false;
+        try {
+          var off = store.subscribe(handler);
+          if (typeof off === 'function') stop(off);
+          return true;
+        } catch (error) {
+          console.warn('dshome-plugin: notify ' + label + ' subscription failed', error);
+          return false;
+        }
+      }
+
+      /** Attach whatever the client currently offers; idempotent per source. */
+      function attach() {
+        if (disposed) return;
+        if (!wired.catalog) {
+          var sessionsService = ctx.get('sessions');
+          if (sessionsService && sessionsService.list) {
+            wired.catalog = wireStore(sessionsService.list, onCatalog, 'sessions');
+            if (wired.catalog) onCatalog();
+          }
+        }
+        if (!wired.status) {
+          var uiService = ctx.get('uiSession');
+          if (uiService && uiService.sessionStatus) {
+            wired.status = wireStore(uiService.sessionStatus, onStatus, 'uiSession');
+            if (wired.status) onStatus();
+          }
+        }
+        if (!wired.remote) {
+          var remoteService = ctx.get('remote');
+          if (remoteService) wired.remote = wireRemote(remoteService);
+        }
+      }
+
+      attach();
+
+      // `sessions` / `uiSession` / `remote` may be provided after this plugin
+      // activates (`slots` is our only declared inject), so wait for each instead
+      // of sampling once — the same reason the theme feature waits for `theme`.
+      if (typeof ctx.inject === 'function') {
+        ['sessions', 'uiSession', 'remote'].forEach(function (name) {
+          if (ctx.get(name)) return;
+          try {
+            ctx.inject([name], function () { attach(); });
+          } catch (error) { /* an absent service is a missing scene, not a failure */ }
+        });
+      }
+
+      // Give late services their chance, then say it once, in-page, if nothing
+      // attached: a reminder feature that can never fire must not look identical
+      // to a working one just because its only witness is a console log.
+      if (typeof window.setTimeout === 'function') {
+        var grace = window.setTimeout(function () {
+          if (disposed) return;
+          attach();
+          var gap = notifyWiringGap(wired);
+          if (gap) toast(gap.title, gap.body, null, true);
+        }, NOTIFY_WIRING_GRACE_MS);
+        stop(function () {
+          try { window.clearTimeout(grace); } catch (error) { /* gone */ }
+        });
+      }
+
+      // Only the explicitly labelled Settings button requests notification rights.
+      // Ordinary pointer/key gestures unlock optional audio, never permission prompts.
+      function requestPermission() {
+        var ctor = notificationCtor();
+        if (disposed || !ctor || permissionState() !== 'default' ||
+            typeof ctor.requestPermission !== 'function') return Promise.resolve(permissionState());
+        try {
+          return Promise.resolve(ctor.requestPermission()).then(function () { return permissionState(); },
+            function () { return permissionState(); });
+        } catch (error) { return Promise.resolve(permissionState()); }
+      }
+      function unlockAudio() {
+        if (disposed || !opts.enabled || !opts.sound || opts.volume === 0) return;
+        try {
+          var ctor = window.AudioContext || window.webkitAudioContext;
+          if (typeof ctor !== 'function') return;
+          if (!audio) audio = new ctor();
+          if (audio.state === 'suspended') {
+            var result = audio.resume();
+            if (result && typeof result.catch === 'function') return result.catch(function () {});
+          }
+        } catch (error) { /* browser can remain muted */ }
+      }
+      window.addEventListener('pointerdown', unlockAudio, true);
+      document.addEventListener('keydown', unlockAudio, true);
+      stop(function () {
+        window.removeEventListener('pointerdown', unlockAudio, true);
+        document.removeEventListener('keydown', unlockAudio, true);
+      });
+
+      function teardown() {
+        if (disposed) return;
+        disposed = true;
+        while (stops.length > 0) {
+          var off = stops.pop();
+          try { off(); } catch (error) { /* already gone */ }
+        }
+        stopTitleFlash();
+        toastHandles.forEach(function (dismiss) { dismiss(); });
+        toastHandles.clear();
+        deliveryTimers.forEach(function (timer) { window.clearTimeout(timer); });
+        deliveryTimers.clear();
+        notificationHandles.forEach(function (note) {
+          try { note.close(); } catch (error) { /* already gone */ }
+        });
+        notificationHandles.clear();
+        if (stack) {
+          try { stack.remove(); } catch (error) { /* gone */ }
+          stack = null;
+        }
+        stackAttached = false;
+        try {
+          if (audio && typeof audio.close === 'function') {
+            var closing = audio.close();
+            if (closing && typeof closing.catch === 'function') closing.catch(function () {});
+          }
+        } catch (error) { /* gone */ }
+        audio = null;
+        if (window.__dshomePluginNotify === api) window.__dshomePluginNotify = null;
+        if (window.__dshomePluginNotifyTeardown === teardown) window.__dshomePluginNotifyTeardown = null;
+      }
+
+      /**
+       * Live handle, so the feature can be inspected and verified from the console
+       * without waiting for a real turn (`__dshomePluginNotify.emit('turn-completed')`).
+       */
+      var api = {
+        version: 'v6',
+        requestPermission: requestPermission,
+        previewSound: function () {
+          return Promise.resolve(unlockAudio()).then(function () { playTones('attention'); });
+        },
+        /** 现读活值（不是重新归一化），设置卡片与排障都看这一份。 */
+        status: function () {
+          return {
+            options: Object.assign({}, opts),
+            permission: permissionState(),
+            scenes: Object.keys(NOTIFY_COPY),
+            sessions: sessions.size,
+            pending: pending.size,
+            catalogBaseline: catalogBaseline,
+          };
+        },
+        /** 写回一个开关：立即生效 + 落本地存储（设置卡片点一下走这里）。 */
+        set: function (patch) {
+          if (disposed || !patch || typeof patch !== 'object') return Object.assign({}, opts);
+          var normalized = notifyOptions(Object.assign({}, opts, patch));
+          var accepted = {};
+          for (var key in opts) {
+            if (!Object.prototype.hasOwnProperty.call(opts, key) ||
+                !Object.prototype.hasOwnProperty.call(patch, key)) continue;
+            opts[key] = normalized[key];
+            accepted[key] = normalized[key];
+          }
+          if (opts.enabled === false) stopTitleFlash();
+          writeStoredNotify(accepted);
+          return Object.assign({}, opts);
+        },
+        emit: function (key, detail) {
+          return safe(function () { deliver(key, detail || {}); }, 'dshome-plugin: notify emit failed');
+        },
+        teardown: teardown,
+      };
+      window.__dshomePluginNotify = api;
+
+      return teardown;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // workbench — presentation over the resident Conversation + native rightbar
+    // ═══════════════════════════════════════════════════════════════════════
+    // No replacement main/conversation slot, portals, copied transcript, file RPC,
+    // storage write or simulated editor. Current workspaceFiles has NO write API.
+    // All file/terminal/browser operations remain the official panel's business.
+    var WORKBENCH_PLUGIN = 'dshome-plugin-workbench';
+    var WORKBENCH_ATTR = 'data-dshome-workbench';
+    var WORKBENCH_CSS = [
+      '.dshome-wb-switch{display:inline-flex;flex:none;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2,#3b4b64);border-radius:7px;-webkit-app-region:no-drag}',
+      '.dshome-wb-switch button,.dshome-wb-tools button{font:inherit;font-size:12px;line-height:20px;padding:3px 9px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary,#b8c8e0);cursor:pointer;white-space:nowrap}',
+      '.dshome-wb-switch button[aria-pressed="true"]{background:var(--dsw-alias-interactive-bg-hover,#283d61);color:var(--dsw-alias-brand-primary,#87a9ff)}',
+      '.dshome-wb-switch button:focus-visible,.dshome-wb-tools button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#87a9ff);outline-offset:2px}',
+      '.dshome-wb-tools{pointer-events:auto;position:absolute;right:16px;bottom:16px;max-width:calc(100% - 32px);display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:7px 9px;border:1px solid var(--dsw-alias-border-l2,#3b4b64);border-radius:9px;background:var(--dsw-specific-menu,#162131);box-shadow:0 5px 20px #0002;-webkit-app-region:no-drag}',
+      '.dshome-wb-tools small{color:var(--dsw-alias-label-tertiary,#91a3bc);font-size:11px;margin:0 5px}',
+      '.dshome-wb-tools button:hover{background:var(--dsw-alias-interactive-bg-hover,#283d61)}',
+      '.dshome-wb-tools button:disabled{opacity:.45;cursor:not-allowed}',
+      '.dshome-wb-custom{order:10;flex-basis:100%;width:360px;max-width:100%;max-height:50dvh;overflow:auto;border-top:1px solid var(--dsw-alias-border-l2,#3b4b64);padding-top:6px}',
+      '.dshome-wb-custom p{max-width:420px;margin:0 0 6px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-secondary,#b8c8e0)}',
+      '.dshome-wb-module{display:flex;align-items:center;gap:6px;min-height:32px}.dshome-wb-module label{display:flex;align-items:center;flex:1;gap:6px;min-width:0;font-size:12px;overflow-wrap:anywhere}.dshome-wb-module input{accent-color:var(--dsw-alias-brand-primary,#87a9ff)}',
+      '.dshome-wb-message{flex-basis:100%;max-width:420px;white-space:normal;font-size:11px;color:var(--dsw-alias-label-tertiary,#91a3bc)}',
+      // The host solves both grid tracks AND the absolute right-panel width.
+      // Overriding only the tracks leaves a blank gutter (0.2.1-rc.2).
+      // Keep native geometry, resize handles, split budgets and fullscreen rules
+      // authoritative at every width; Workbench adds tools, not a second solver.
+      '@media(max-width:767px){.dshome-wb-tools{right:8px;bottom:8px;max-width:calc(100% - 16px)}.dshome-wb-tools small{display:none}.dshome-wb-switch button{padding:3px 6px}}'
+    ].join('');
+
+    function applyWorkbench(ctx) {
+      var slots = ctx && typeof ctx.get === 'function' ? ctx.get('slots') : ctx && ctx.slots;
+      if (!slots || typeof slots.inject !== 'function' || typeof slots.register !== 'function') return null;
+      var disposed = false, frame = null, frameObserver = null, frameBefore = null;
+      var source = null, sourceOff = null, frameRequest = null;
+      var modes = new Map(), initialized = new Set(), expandedBefore = new Map(), listeners = new Set(), cleanups = new Set();
+      var reason = '', lastSession = undefined;
+      var modules = new Map(), modulePreferences = new Map(), customizing = new Set();
+      // Definitions describe registered native panel kinds only. Extensions cannot
+      // inject file RPCs or terminal commands through this presentation API.
+      function registerModule(definition) {
+        if (disposed) throw new Error('工作台已卸载。');
+        if (!definition || typeof definition.id !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(definition.id) ||
+            typeof definition.kind !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(definition.kind) ||
+            typeof definition.label !== 'string' || !definition.label.trim() || definition.label.length > 40) {
+          throw new Error('模块需要有效的 id、原生面板 kind 与名称。');
+        }
+        if (modules.has(definition.id)) throw new Error('模块 id 已注册：' + definition.id);
+        var item = { id: definition.id, kind: definition.kind, label: definition.label.trim(),
+          description: typeof definition.description === 'string' ? definition.description.slice(0, 160) : '',
+          defaultEnabled: definition.defaultEnabled !== false };
+        modules.set(item.id, item); publish();
+        return function () {
+          if (modules.get(item.id) !== item) return;
+          modules.delete(item.id);
+          modulePreferences.forEach(function (prefs) {
+            prefs.order = prefs.order.filter(function (id) { return id !== item.id; });
+            prefs.enabled.delete(item.id);
+          });
+          publish();
+        };
+      }
+      function moduleList(sessionId) {
+        var prefs = modulePreferences.get(sessionId), order = prefs ? prefs.order.slice() : [];
+        modules.forEach(function (item, id) { if (order.indexOf(id) < 0) order.push(id); });
+        return order.filter(function (id) { return modules.has(id); }).map(function (id) {
+          var item = modules.get(id);
+          return { id: id, kind: item.kind, label: item.label, description: item.description,
+            enabled: prefs && prefs.enabled.has(id) ? prefs.enabled.get(id) : item.defaultEnabled,
+            available: hasKind(item.kind) && !!service('sidebarRight') && typeof service('sidebarRight').openTab === 'function' };
+        });
+      }
+      function configureModule(id, change, expectedSession) {
+        var sessionId = current();
+        if (disposed) return { ok: false, reason: '工作台已卸载。' };
+        if (!sessionId || (expectedSession !== undefined && sessionId !== expectedSession)) return fail('会话已切换，请在当前会话重新操作。');
+        if (!modules.has(id)) return fail('模块已卸载或不存在。');
+        if (!change || !['enable', 'disable', 'up', 'down'].includes(change)) return fail('未知模块配置操作。');
+        var prefs = modulePreferences.get(sessionId);
+        if (!prefs) { prefs = { order: moduleList(sessionId).map(function (item) { return item.id; }), enabled: new Map() }; modulePreferences.set(sessionId, prefs); }
+        modules.forEach(function (item, key) { if (prefs.order.indexOf(key) < 0) prefs.order.push(key); });
+        if (change === 'enable' || change === 'disable') prefs.enabled.set(id, change === 'enable');
+        else {
+          var from = prefs.order.indexOf(id), to = from + (change === 'up' ? -1 : 1);
+          if (to >= 0 && to < prefs.order.length) { prefs.order.splice(from, 1); prefs.order.splice(to, 0, id); }
+        }
+        reason = ''; publish(); return { ok: true };
+      }
+      function toggleCustomize(expectedSession) {
+        if (disposed) return { ok: false, reason: '工作台已卸载。' };
+        var sessionId = current();
+        if (!sessionId || (expectedSession !== undefined && sessionId !== expectedSession)) return fail('会话已切换，请在当前会话重新操作。');
+        if (customizing.has(sessionId)) customizing.delete(sessionId); else customizing.add(sessionId);
+        publish(); return { ok: true };
+      }
+      function resetModules(expectedSession) {
+        if (disposed) return { ok: false, reason: '工作台已卸载。' };
+        var sessionId = current();
+        if (!sessionId || (expectedSession !== undefined && sessionId !== expectedSession)) return fail('会话已切换，请在当前会话重新操作。');
+        modulePreferences.delete(sessionId); reason = ''; publish(); return { ok: true };
+      }
+      registerModule({ id: 'files', kind: 'files', label: '文件', description: '宿主只读文件预览' });
+      registerModule({ id: 'browser', kind: 'browser', label: '网页', description: '宿主网页面板' });
+      registerModule({ id: 'terminal', kind: 'terminal', label: '终端', description: '仅在点击时打开；不自动执行命令' });
+      function service(name) {
+        try { return ctx && typeof ctx.get === 'function' ? ctx.get(name) : ctx && ctx[name]; }
+        catch (error) { return undefined; }
+      }
+      function release(handle) {
+        if (typeof handle === 'function') handle();
+        else if (handle && typeof handle.dispose === 'function') handle.dispose();
+      }
+      function keep(handle) { if (handle) cleanups.add(handle); return handle; }
+      function current() {
+        try {
+          var right = service('sidebarRight');
+          return right && right.mounted && typeof right.mounted.getSnapshot === 'function'
+            ? right.mounted.getSnapshot() : undefined;
+        } catch (error) { return undefined; }
+      }
+      function hasKind(kind) {
+        try {
+          var registry = service('sidebarRightTabs');
+          return !!(registry && typeof registry.get === 'function' && registry.get(kind));
+        } catch (error) { return false; }
+      }
+      function capabilities() {
+        var right = service('sidebarRight');
+        return {
+          files: hasKind('files') && !!right && typeof right.openTab === 'function',
+          terminal: hasKind('terminal') && !!right && typeof right.openTab === 'function',
+          browser: hasKind('browser') && !!right && typeof right.openTab === 'function',
+          split: !!right && typeof right.split === 'function'
+        };
+      }
+      function publish() { listeners.forEach(function (fn) { try { fn(); } catch (error) { /* independent UI subscribers */ } }); }
+      function clearFrame() {
+        if (frameObserver) { frameObserver.disconnect(); frameObserver = null; }
+        if (frame && frameBefore) {
+          if (frameBefore.marker === null) frame.removeAttribute(WORKBENCH_ATTR);
+          else frame.setAttribute(WORKBENCH_ATTR, frameBefore.marker);
+        }
+        frame = null; frameBefore = null;
+      }
+      function findFrame(sessionId) {
+        var found = [];
+        var seats = document.querySelectorAll('[data-shell-bottom]');
+        for (var i = 0; i < seats.length; i += 1) {
+          var candidate = seats[i].parentElement || seats[i].parentNode;
+          if (!candidate || !candidate.querySelector('[data-rightbar-col]')) continue;
+          var contents = candidate.querySelectorAll('[data-conversation-session]');
+          for (var j = 0; j < contents.length; j += 1) {
+            if (contents[j].getAttribute('data-conversation-session') === sessionId && found.indexOf(candidate) < 0) found.push(candidate);
+          }
+        }
+        return found.length === 1 ? found[0] : null;
+      }
+      function paint(sessionId) {
+        var target = findFrame(sessionId);
+        if (!target) { clearFrame(); return false; }
+        if (frame !== target) {
+          clearFrame(); frame = target;
+          frameBefore = {
+            marker: frame.getAttribute(WORKBENCH_ATTR)
+          };
+        }
+        frame.setAttribute(WORKBENCH_ATTR, 'true');
+        if (!frameObserver && typeof MutationObserver === 'function') {
+          frameObserver = new MutationObserver(function () {
+            if (disposed || !frame) return;
+            if (frame.isConnected === false) {
+              modes.delete(sessionId); clearFrame(); reason = '宿主布局已变化，已恢复原版。'; publish();
+            }
+          });
+          frameObserver.observe(frame, { attributes: true, attributeFilter: ['style'] });
+        }
+        return true;
+      }
+      function refresh() {
+        if (disposed) return;
+        var sessionId = current();
+        if (sessionId !== lastSession) { clearFrame(); reason = ''; lastSession = sessionId; }
+        if (!sessionId || modes.get(sessionId) !== true) clearFrame();
+        else if (!paint(sessionId)) { modes.delete(sessionId); reason = '未找到兼容的会话布局，已保留原版。'; }
+        publish();
+      }
+      function scheduleRefresh() {
+        if (disposed) return;
+        // mounted changes before React commits the arriving Session. Clear old
+        // layout synchronously, then locate the arriving DOM after that commit.
+        clearFrame();
+        if (frameRequest !== null && typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frameRequest);
+        if (typeof window.requestAnimationFrame === 'function') frameRequest = window.requestAnimationFrame(function () { frameRequest = null; refresh(); });
+        else refresh();
+      }
+      function attachSource() {
+        var right = service('sidebarRight');
+        var next = right && right.mounted;
+        if (next === source) return;
+        if (sourceOff) { release(sourceOff); sourceOff = null; }
+        source = next;
+        if (source && typeof source.subscribe === 'function') sourceOff = source.subscribe(scheduleRefresh);
+        scheduleRefresh();
+      }
+      function fail(message) { reason = message; publish(); return { ok: false, reason: message }; }
+      function setMode(mode, expectedSession) {
+        if (disposed) return { ok: false, reason: '工作台已卸载。' };
+        if (mode !== 'original' && mode !== 'workbench') return fail('未知界面模式。');
+        var sessionId = current();
+        if (expectedSession !== undefined && expectedSession !== sessionId) return fail('会话已切换，请在当前会话重新操作。');
+        if (mode === 'original') {
+          // Restore visibility only; never close native tabs or touch their data.
+          var restoreError = '';
+          try {
+            var existingRight = service('sidebarRight');
+            if (sessionId && expandedBefore.get(sessionId) === false && existingRight && existingRight.isExpanded()) existingRight.toggleExpanded();
+          } catch (error) { restoreError = '已恢复原版布局；原生面板可用其关闭按钮收起。'; }
+          if (sessionId) { modes.delete(sessionId); expandedBefore.delete(sessionId); }
+          clearFrame(); reason = restoreError; publish(); return { ok: true };
+        }
+        var right = service('sidebarRight');
+        if (!sessionId) return fail('请先打开一个真实会话。');
+        if (!right || !right.mounted || typeof right.mounted.subscribe !== 'function' ||
+            typeof right.isExpanded !== 'function' || typeof right.toggleExpanded !== 'function' || typeof right.openTab !== 'function') {
+          return fail('当前宿主未提供兼容的原生工作区，已保留原版。');
+        }
+        attachSource();
+        var compatibleFrame = findFrame(sessionId);
+        if (!compatibleFrame) return fail('当前会话没有兼容的布局锚点，未修改界面。');
+        try {
+          if (modes.get(sessionId) !== true) expandedBefore.set(sessionId, right.isExpanded());
+          // Seed once; later toggles reveal the same native tabs, never replace
+          // or close a document and never start a terminal automatically.
+          if (!initialized.has(sessionId)) {
+            var files = moduleList(sessionId).find(function (item) { return item.id === 'files'; });
+            if (files && files.enabled && files.available) right.openTab(files.kind);
+            else if (!right.isExpanded()) right.toggleExpanded();
+            initialized.add(sessionId);
+          } else if (!right.isExpanded()) right.toggleExpanded();
+          modes.set(sessionId, true);
+          if (!paint(sessionId)) { modes.delete(sessionId); return fail('宿主布局不兼容，已恢复原版。'); }
+          reason = ''; publish(); return { ok: true };
+        } catch (error) { modes.delete(sessionId); clearFrame(); return fail('无法打开原生工作区：' + String(error.message || error)); }
+      }
+      function open(id, expectedSession) {
+        if (disposed) return { ok: false, reason: '工作台已卸载。' };
+        var sessionId = current();
+        if (!sessionId || (expectedSession !== undefined && expectedSession !== sessionId)) return fail('会话已切换，请在当前会话重新操作。');
+        var item = moduleList(sessionId).find(function (entry) { return entry.id === id; });
+        if (!item) return fail('模块已卸载或不存在。');
+        if (!item.enabled) return fail('模块入口已隐藏，请在自定义中启用。');
+        if (!item.available) return fail('当前宿主未安装此原生面板。');
+        var right = service('sidebarRight');
+        try { right.openTab(item.kind); reason = ''; publish(); return { ok: true }; }
+        catch (error) { return fail('打开面板失败：' + String(error.message || error)); }
+      }
+      function split(expectedSession) {
+        if (disposed) return { ok: false, reason: '工作台已卸载。' };
+        if (!current() || (expectedSession !== undefined && expectedSession !== current())) return fail('会话已切换，请在当前会话重新操作。');
+        var right = service('sidebarRight');
+        if (!right || typeof right.split !== 'function') return fail('当前宿主不支持分栏。');
+        try {
+          var pane = right.split();
+          if (pane === undefined) return fail('当前栏宽不足或已达原生分栏上限，可拖宽工作区后重试。');
+          reason = ''; publish(); return { ok: true };
+        } catch (error) { return fail('分栏失败：' + String(error.message || error)); }
+      }
+      var api = {
+        status: function () {
+          var sessionId = current();
+          return { mode: sessionId && modes.get(sessionId) === true ? 'workbench' : 'original', sessionId: sessionId || null,
+            reason: reason, capabilities: capabilities(), layoutApplied: !!frame, geometry: 'native', fileWrite: false,
+            modules: moduleList(sessionId), customizing: customizing.has(sessionId), preferences: 'session-memory-only' };
+        },
+        setMode: setMode, open: open, split: split, refresh: refresh,
+        registerModule: registerModule, configureModule: configureModule, resetModules: resetModules, toggleCustomize: toggleCustomize,
+        subscribe: function (fn) { listeners.add(fn); return function () { listeners.delete(fn); }; },
+        teardown: dispose
+      };
+      function useWorkbench() {
+        var revision = react.useState(0);
+        react.useEffect(function () {
+          if (disposed) return undefined;
+          var off = api.subscribe(function () { revision[1](function (n) { return n + 1; }); });
+          refresh();
+          return off;
+        }, []);
+        return api.status();
+      }
+      function WorkbenchSwitch(props) {
+        var state = useWorkbench();
+        react.useEffect(function () { refresh(); }, [props.sessionId]);
+        return react_jsx_runtime.jsx('div', { className: 'dshome-wb-switch', role: 'group', 'aria-label': '界面模式', title: state.reason || '切换布局，不替换当前会话和输入框', children: [
+          react_jsx_runtime.jsx('button', { type: 'button', 'aria-pressed': state.mode === 'original', onClick: function () { setMode('original', props.sessionId); }, children: '原版' }, 'original'),
+          react_jsx_runtime.jsx('button', { type: 'button', 'aria-pressed': state.mode === 'workbench', onClick: function () { setMode('workbench', props.sessionId); }, children: '工作台' }, 'workbench')
+        ] });
+      }
+      function WorkbenchTools() {
+        var state = useWorkbench();
+        var sessionId = state.sessionId;
+        if (state.mode !== 'workbench' && !state.reason) {
+          // The native blank-session Hero may hide its title utilities. Keep an
+          // additive entry reachable without replacing that header or composer.
+          if (!sessionId) return null;
+          return react_jsx_runtime.jsx('div', { className: 'dshome-wb-tools', children:
+            react_jsx_runtime.jsx('button', { type: 'button', title: '进入工作台，保留当前真实会话与输入', onClick: function () { setMode('workbench', sessionId); }, children: '进入工作台 ↗' })
+          });
+        }
+        return react_jsx_runtime.jsx('div', { className: 'dshome-wb-tools', 'aria-label': '工作台操作', children: [
+          react_jsx_runtime.jsx('small', { children: state.mode === 'workbench' ? '工作台 · 模块化操作区' : '工作台未启用' }, 'caption'),
+          state.mode === 'workbench' && state.modules.filter(function (item) { return item.enabled; }).map(function (item) {
+            return react_jsx_runtime.jsx('button', { type: 'button', disabled: !item.available, title: item.available ? item.description || '打开宿主原生面板' : '当前宿主未提供此模块', onClick: function () { open(item.id, sessionId); }, children: item.label }, item.id);
+          }),
+          state.mode === 'workbench' && react_jsx_runtime.jsx('button', { type: 'button', 'aria-expanded': state.customizing, onClick: function () { toggleCustomize(sessionId); }, children: state.customizing ? '收起自定义' : '自定义' }, 'customize'),
+          state.mode === 'workbench' && state.customizing && react_jsx_runtime.jsx('section', { className: 'dshome-wb-custom', 'aria-label': '自定义操作区', children: [
+            react_jsx_runtime.jsx('p', { children: '模块入口 · 仅本会话，刷新后重置。隐藏入口不关闭已打开的面板；面板位置请用原生标签拖动及分栏调整。' }, 'hint'),
+            state.modules.map(function (item, index) {
+              return react_jsx_runtime.jsx('div', { className: 'dshome-wb-module', children: [
+                react_jsx_runtime.jsx('label', { children: [
+                  react_jsx_runtime.jsx('input', { type: 'checkbox', checked: item.enabled, onChange: function (event) { configureModule(item.id, event.target.checked ? 'enable' : 'disable', sessionId); } }, 'toggle'),
+                  item.label + (item.available ? '' : '（宿主未提供）')
+                ] }, 'label'),
+                react_jsx_runtime.jsx('button', { type: 'button', disabled: index === 0, 'aria-label': '上移' + item.label, onClick: function () { configureModule(item.id, 'up', sessionId); }, children: '↑' }, 'up'),
+                react_jsx_runtime.jsx('button', { type: 'button', disabled: index === state.modules.length - 1, 'aria-label': '下移' + item.label, onClick: function () { configureModule(item.id, 'down', sessionId); }, children: '↓' }, 'down')
+              ] }, item.id);
+            }),
+            react_jsx_runtime.jsx('button', { type: 'button', onClick: function () { resetModules(sessionId); }, children: '恢复默认模块' }, 'reset')
+          ] }, 'custom-panel'),
+          state.mode === 'workbench' && react_jsx_runtime.jsx('button', { type: 'button', disabled: !state.capabilities.split, title: '分栏受宿主栏宽及两格上限约束', onClick: function () { split(sessionId); }, children: '分栏' }, 'split'),
+          react_jsx_runtime.jsx('button', { type: 'button', onClick: function () { setMode('original', sessionId || undefined); }, children: state.mode === 'workbench' ? '返回原版' : '关闭提示' }, 'return'),
+          state.reason && react_jsx_runtime.jsx('span', { className: 'dshome-wb-message', role: 'status', children: state.reason }, 'reason')
+        ] });
+      }
+      function register(name, id, Component) {
+        keep(slots.inject(name, function () {
+          if (disposed) return undefined;
+          var off = slots.register({ name: name, id: id, order: -50 }, Component);
+          keep(off); return off;
+        }));
+      }
+      function dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (frameRequest !== null && typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(frameRequest);
+        if (sourceOff) { release(sourceOff); sourceOff = null; }
+        clearFrame();
+        cleanups.forEach(function (off) { try { release(off); } catch (error) { /* independent registrations */ } });
+        cleanups.clear(); listeners.clear(); modes.clear(); initialized.clear(); expandedBefore.clear();
+        modules.clear(); modulePreferences.clear(); customizing.clear();
+        var sheet = document.querySelector('style[data-plugin="' + WORKBENCH_PLUGIN + '"]');
+        if (sheet && typeof sheet.remove === 'function') sheet.remove();
+        if (window.__dshomePluginWorkbench === api) window.__dshomePluginWorkbench = null;
+      }
+      try {
+        // This pass owns removal. The generic permanent repair guard would
+        // resurrect this tag after feature-off/unload, so it must not be used.
+        installStyle(WORKBENCH_PLUGIN, WORKBENCH_CSS, { guard: false });
+        register('conversation.session.header.utilities', 'dshome-workbench-mode', WorkbenchSwitch);
+        register('shell.overlay', 'dshome-workbench-tools', WorkbenchTools);
+        attachSource();
+        if (ctx && typeof ctx.inject === 'function') keep(ctx.inject(['sidebarRight'], function () {
+          if (disposed) return undefined;
+          attachSource();
+          return function () {
+            if (sourceOff) { release(sourceOff); sourceOff = null; }
+            source = null; clearFrame(); modes.clear(); expandedBefore.clear();
+            if (!disposed) { reason = '原生工作区服务已离开，已恢复原版。'; publish(); }
+          };
+        }));
+        window.__dshomePluginWorkbench = api;
+        if (ctx && typeof ctx.effect === 'function') keep(ctx.effect(function () { return dispose; }));
+        return dispose;
+      } catch (error) { dispose(); throw error; }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════    // plugin
+    // ═══════════════════════════════════════════════════════════════════════
+    /** `slots` is required for brand registration; the other two do not need it. */
+    var inject = ['slots'];
+
+    /**
+     * Options are read off a single global so behaviour can be adjusted at
+     * runtime without a rebuild. `notify` accepts `true`/`false` as well as an
+     * object (`{notifyOnApproval:false, …}`); see `notifyOptions`.
+     */
+    function options() {
+      var o = {
+        theme: true, conversation: true, minimap: true, sidebar: true,
+        hideOfficialRail: true, notify: true, glow: true, workbench: true,
+      };
+      var override = window.__dshomePlugin;
+      if (override && typeof override === 'object') {
+        for (var k in override) {
+          if (Object.prototype.hasOwnProperty.call(override, k)) o[k] = override[k];
+        }
+      }
+      return o;
+    }
+
+    // Wraps applyConversation so a re-entrant apply() tears the previous pass
+    // down first (same re-entrancy contract as minimap/notify, on its own
+    // global): without this, dev-mode HMR stacks observers and capture
+    // listeners on every save (G1).
+    function applyConversationPass() {
+      if (typeof window.__dshomePluginConversationTeardown === 'function') {
+        window.__dshomePluginConversationTeardown();
+      }
+      window.__dshomePluginConversationTeardown = applyConversation() || null;
+    }
+
+    /**
+     * Re-entrant wrapper for a feature pass whose teardown used to be dropped
+     * (2026-10-14 review P2-25): HMR runs apply() again, and a discarded
+     * slots.register handle stacked a duplicate registration on every reload
+     * (e.g. a second「提醒」settings section per save). Same contract as the
+     * minimap/notify globals, one global per feature so they cannot tear each
+     * other down.
+     */
+    function reentrantPass(globalKey, fn) {
+      var prev = window[globalKey];
+      if (typeof prev === 'function') {
+        try { prev(); } catch (error) { /* already gone */ }
+      } else if (prev && typeof prev.dispose === 'function') {
+        try { prev.dispose(); } catch (error) { /* already gone */ }
+      }
+      window[globalKey] = fn() || null;
+    }
+
+    function apply(ctx) {
+      var o = options();
+      if (o.theme) {
+        safe(function () { reentrantPass('__dshomePluginThemeTeardown', function () { return applyTheme(ctx); }); }, 'dshome-plugin: theme failed');
+      }
+      if (o.conversation) {
+        safe(applyConversationPass, 'dshome-plugin: conversation failed');
+      }
+      if (o.sidebar) {
+        safe(applySidebar, 'dshome-plugin: sidebar failed');
+      }
+      if (o.minimap) {
+        safe(function () {
+          // Held on the global so a re-entrant apply() can tear the previous pass
+          // down first; the loader hands us no other lifecycle handle.
+          window.__dshomePluginTeardown =
+            applyMinimap({ hideOfficialRail: o.hideOfficialRail }) || null;
+        }, 'dshome-plugin: minimap failed');
+      }
+      if (o.notify) {
+        safe(function () {
+          // Same re-entrancy contract as the minimap, on its own global so the
+          // two features cannot tear each other down.
+          window.__dshomePluginNotifyTeardown = applyNotify(ctx, o.notify) || null;
+          // 设置卡片只在提醒功能真的装上了才注册（`notify: false` 是"彻底不装"）。
+          if (window.__dshomePluginNotify) {
+            reentrantPass('__dshomePluginNotifySettingsTeardown', function () { return applyNotifySettings(ctx); });
+          }
+        }, 'dshome-plugin: notify failed');
+      }
+      if (o.glow) {
+        safe(applyGlow, 'dshome-plugin: glow failed');
+      } else {
+        window.__dshomePluginGlow = null;
+      }
+      if (o.workbench) {
+        safe(function () { reentrantPass('__dshomePluginWorkbenchTeardown', function () { return applyWorkbench(ctx); }); }, 'dshome-plugin: workbench failed');
+      } else {
+        safe(function () { reentrantPass('__dshomePluginWorkbenchTeardown', function () { return null; }); }, 'dshome-plugin: workbench teardown failed');
+      }
+    }
+
+    module.exports = { name: 'dshome-plugin', inject: inject, apply: apply };
+    // The loader materialises the factory's *return value* as the plugin body,
+    // so it must be returned explicitly.
+    return module.exports;
+  },
+});

@@ -17,6 +17,7 @@
 // Run with `node test/selftest.mjs`.
 
 import assert from 'node:assert/strict';
+import { bareHashedSelectorLiterals } from './fixtures/selector-contract.mjs';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -74,7 +75,7 @@ check('bundle is a single self-contained file', () => {
   // No relative import can exist if there is only one file; assert that too, so
   // a future split is caught here rather than at boot.
   const libFiles = readdirSync(join(root, 'lib'));
-  // Exactly one classic client bundle, plus the empty host entry and its
+  // Exactly one classic client bundle, plus the registered host entry and its
   // declared content-keyed re-export. No untracked runtime files are admitted.
   assert.deepEqual(libFiles.sort(), ['client.js', 'index.js', manifest.exports['./workbench-entry'].split('/').at(-1)].sort());
 });
@@ -238,7 +239,7 @@ check('never relies on hashed CSS-module class names', () => {
   // A hashed class looks like lcKema_frame. `[class*="_scrollBody"]` and
   // `[class*="_frame"]` are suffix matches on stable upstream names and are
   // allowed; a bare `.foo_bar` selector is not.
-  const bare = code.match(/\.[a-zA-Z]{5,}_[a-zA-Z]+/g) || [];
+  const bare = bareHashedSelectorLiterals(clientSource);
   assert.deepEqual(bare, [], 'hashed class selector found');
 });
 
@@ -368,12 +369,11 @@ check('the reference copy and both throttles are carried over', () => {
 });
 
 check('delivery degrades instead of failing', () => {
-  // 2026-10-06 实测教训：**构造成功 ≠ 已经弹给用户看**。Windows 上的 Electron
-  // 渲染进程可以在没有应用标识的情况下构造出 Notification，却被系统静默丢弃
-  // ——主人当时拿到的正是"只有声音、没有弹窗"。现在页内卡片**无条件**投递
-  // （它不会被系统丢掉），系统通知只做加法：页面不在前台时才补一发。
-  assert.match(code, /toast\(title, body\);\s*\n\s*var mode = opts\.systemNotification;/,
-    '页内卡片不再是无条件投递');
+  // Default cards remain a backup even when constructor success is opaque.
+  // toast:false may suppress a redundant backup, not the sole visible delivery;
+  // the runtime matrix separately verifies refusal, constructor throw and errors.
+  assert.match(code, /toast\(title, body, \{ sessionId: sessionId \}, !systemSent\);/,
+    'missing guaranteed fallback when system construction did not succeed');
   assert.match(code, /mode === 'always' \|\| \(mode === 'auto' && !inFront\)/,
     '系统通知不再按前后台决定');
   assert.match(code, /if \(!inFront\) flashTitle\(title\);/, '标题闪烁忽略了前后台');
@@ -393,7 +393,7 @@ check('a feature that cannot fire says so in-page, not only in the console', () 
   // an owner who never opens a console can see.
   assert.match(code, /function notifyWiringGap\(wired\)/, 'the gap check is gone');
   assert.match(code, /var NOTIFY_WIRING_GRACE_MS = 5000/, 'the grace window is gone');
-  assert.match(code, /var gap = notifyWiringGap\(wired\);\s*\n\s*if \(gap\) toast\(gap\.title, gap\.body\);/,
+  assert.match(code, /var gap = notifyWiringGap\(wired\);\s*\n\s*if \(gap\) toast\(gap\.title, gap\.body, null, true\);/,
     'the gap is computed but never shown');
 });
 
@@ -844,7 +844,11 @@ check('host half names the plugin', () => {
 
 check('host half exports apply', () => {
   assert.equal(typeof host.apply, 'function');
-  assert.equal(host.apply(), undefined, 'must do nothing');
+  // V2 is no longer an empty host. It requires a real injected SDK Context;
+  // never turn missing context into a fake successfully registered service.
+  assert.throws(() => host.apply(), TypeError);
+  assert.deepEqual(host.inject, ['fs', 'sessions', 'sandboxPolicy', 'typert']);
+  for (const method of ['project', 'list', 'read', 'save', 'createTerminal']) assert.equal(typeof host.WorkbenchFilesService.prototype[method], 'function');
 });
 
 check('default export carries name and apply', () => {

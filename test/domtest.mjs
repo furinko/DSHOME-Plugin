@@ -2103,12 +2103,15 @@ function notifyWorld(config = {}) {
   const notifications = [];
   class FakeNotification {
     constructor(title, init) {
+      if (config.constructorThrows) throw Error('fixture: system construction refused');
+      this.listeners = new Map(); this.closeCount = 0;
       this.title = title;
       Object.assign(this, init);
       notifications.push(this);
     }
-    close() { this.closed = true; }
-    addEventListener() {}
+    close() { this.closed = true; this.closeCount++; }
+    addEventListener(type, fn) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(fn); }
+    dispatch(type) { for (const fn of this.listeners.get(type) ?? []) fn(); }
   }
   FakeNotification.permission = config.permission || 'granted';
   FakeNotification.requestPermission = () => Promise.resolve('granted');
@@ -2409,6 +2412,18 @@ check('teardown cancels the wiring notice', () => {
   w.fireTimers(5000);
   assert.equal(w.toastCount(), 0, 'a torn-down feature must not speak');
 });
+
+
+// Construction/error outcomes are fixture events, not an OS delivery receipt.
+const completeReminder = w => { w.catalogSet({ s1: catalogRow({ id: 's1' }) }); w.catalogSet({ s1: catalogRow({ id: 's1', running: false }) }); };
+check('toast:false cannot hide the sole visible foreground reminder', () => { const w = notifyWorld({ visibility: 'visible', options: { notify: { toast: false } } }); completeReminder(w); assert.equal(w.notifications.length, 0); assert.equal(w.toastCount(), 1); });
+check('toast:false still falls back when notification permission is refused', () => { const w = notifyWorld({ permission: 'denied', options: { notify: { toast: false } } }); completeReminder(w); assert.equal(w.notifications.length, 0); assert.equal(w.toastCount(), 1); });
+check('toast:false still falls back when the system constructor throws', () => { const w = notifyWorld({ constructorThrows: true, options: { notify: { toast: false } } }); completeReminder(w); assert.equal(w.notifications.length, 0); assert.equal(w.toastCount(), 1); });
+check('a delayed system error creates exactly one essential fallback even if repeated', () => { const w = notifyWorld({ options: { notify: { toast: false } } }); completeReminder(w); assert.equal(w.notifications.length, 1); assert.equal(w.toastCount(), 0); const note = w.notifications[0]; note.dispatch('error'); note.dispatch('error'); assert.equal(w.toastCount(), 1); assert.equal(note.closeCount, 1); });
+check('default backup is retained when successful construction is followed by error', () => { const w = notifyWorld(); completeReminder(w); assert.equal(w.toastCount(), 1); w.notifications[0].dispatch('error'); assert.equal(w.toastCount(), 1); });
+check('late notification error after teardown cannot resurrect a card', () => { const w = notifyWorld({ options: { notify: { toast: false } } }); completeReminder(w); const note = w.notifications[0]; w.teardown(); note.dispatch('error'); assert.equal(w.toastCount(), 0); });
+check('toast:false cannot suppress the essential missing-wiring warning', () => { const w = notifyWorld({ bare: true, options: { notify: { toast: false } } }); w.fireTimers(5000); w.fireTimers(5000); assert.equal(w.toastCount(), 1); });
+check('healthy wiring with toast:false does not create an artificial warning', () => { const w = notifyWorld({ options: { notify: { toast: false } } }); w.fireTimers(5000); assert.equal(w.toastCount(), 0); });
 
 // ── 设置页卡片 ──────────────────────────────────────────────────────────────
 //

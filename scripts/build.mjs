@@ -1,0 +1,32 @@
+import { build } from 'esbuild';
+import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { resolve, dirname, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const legacy = await readFile(resolve(root, 'src/legacy-client.js'), 'utf8');
+const client = await build({ absWorkingDir: root, entryPoints: ['src/workbench/client.mjs'], bundle: true, write: false, format: 'iife', globalName: 'DSHOMEWorkbenchV2', platform: 'browser', target: 'es2022', external: ['react', 'react/jsx-runtime'], loader: { '.css': 'text' }, legalComments: 'inline' });
+const begin = legacy.indexOf('    function applyWorkbench(ctx) {');
+const end = legacy.indexOf('\n    // ═', begin);
+if (begin < 0 || end < begin || legacy.indexOf('    function applyWorkbench(ctx) {', begin + 1) !== -1) throw Error('Legacy insertion boundary changed; manual review required');
+const merged = (legacy.slice(0, begin) + client.outputFiles[0].text + '\n    function applyWorkbench(ctx) { return DSHOMEWorkbenchV2.applyWorkbench(ctx, require); }\n' + legacy.slice(end)).replace(/^[ \t]+$/gm, '');
+new Function(merged); // shipped client must remain a classic script, never ESM.
+await mkdir(resolve(root, 'lib'), { recursive: true });
+await writeFile(resolve(root, 'lib/client.js'), merged);
+await build({ absWorkingDir: root, entryPoints: ['src/host.mjs'], bundle: true, outfile: 'lib/index.js', format: 'esm', platform: 'node', target: 'node22', packages: 'external', legalComments: 'inline' });
+const hash = createHash('sha256').update(merged).update(await readFile(resolve(root, 'lib/index.js'))).digest('hex').slice(0, 12);
+const entry = './lib/entry-workbench-' + hash + '.js';
+const pkgPath = resolve(root, 'package.json'), pkg = JSON.parse(await readFile(pkgPath, 'utf8')), oldEntry = pkg.exports['./workbench-entry'];
+await writeFile(resolve(root, entry), "// Generated package-relative Loader identity; host + client content digest.\nexport { name, inject, apply, default } from './index.js';\n");
+pkg.exports['./workbench-entry'] = entry;
+await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+const patchPath = resolve(root, 'cordis.patch.yml'), patch = await readFile(patchPath, 'utf8');
+if (!patch.includes(oldEntry)) throw Error('Patch does not reference expected generated entry');
+await writeFile(patchPath, patch.replace(oldEntry, entry));
+if (oldEntry !== entry) {
+  const obsolete = resolve(root, oldEntry);
+  if (dirname(obsolete) !== resolve(root, 'lib') || !/^entry-workbench-[a-f0-9]{12}\.js$/.test(basename(obsolete))) throw Error('Refusing unexpected generated-entry removal: ' + obsolete);
+  console.log('Verified obsolete generated entry:', obsolete);
+  await unlink(obsolete);
+}
+console.log('Built', entry, 'without loading a profile or changing the running host.');

@@ -1,0 +1,12 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs'; import { bareHashedSelectorLiterals as scan } from './fixtures/selector-contract.mjs';
+test('actual bundled JavaScript has no literal hashed-selector dependency', () => assert.deepEqual(scan(readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')), []));
+test('JavaScript enum/property references are not CSS selectors', () => assert.deepEqual(scan('const n = Number.POSITIVE_INFINITY; env.BUILD_ARTIFACTSTAGINGDIRECTORY; const a = module.schemas_exports;'), []));
+test('comments and regular expressions are not executable selector literals', () => assert.deepEqual(scan('// .foobar_HASH\n/* .foobar_HASH */ const expression = /\\.foobar_HASH/;'), []));
+test('direct selector literal reintroduction fails the same invariant', () => assert.deepEqual(scan("document.querySelector('.foobar_HASH')"), ['.foobar_HASH']));
+test('CSS/style literal reintroduction is also caught', () => assert.deepEqual(scan("style.textContent = '.foobar_HASH { color: red }'"), ['.foobar_HASH']));
+test('JavaScript escapes cannot hide a literal hashed selector', () => assert.deepEqual(scan("document.querySelector('\\x2efoobar\\u005fHASH')"), ['.foobar_HASH']));
+test('constant string concatenation is inspected after folding', () => assert.deepEqual(scan("document.querySelector('.foo' + 'bar_HASH')"), ['.foobar_HASH']));
+test('constant template interpolation is inspected after folding', () => assert.deepEqual(scan("document.querySelector(`.foo${'bar_HASH'}`)"), ['.foobar_HASH']));
+test('the two audited suffix anchors remain legal, not arbitrary bare hash classes', () => assert.deepEqual(scan("const a = '[class*=\"_scrollBody\"]'; const b = '[data-conversation-scroll] nav[class*=\"_frame\"]'"), []));
+test('malformed or module-only JavaScript fails parsing instead of passing an empty scan', () => { assert.throws(() => scan('const = ;'), SyntaxError); assert.throws(() => scan("import x from 'x'"), SyntaxError); });

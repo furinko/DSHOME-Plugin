@@ -8,12 +8,12 @@
 
 - insert:
     # DSHOME-Plugin：客户端三项合一（主题 / 会话区 / 缩略导航）。
-    # 全部行为在浏览器侧（./client，由 dsh.client 声明的模块加载器注入），
-    # 宿主半区是空插件——本行只为让 roster 能发现包里的 dsh.client 段。
+    # 客户端由 dsh.client 加载；宿主只提供严格 Gateway 文件编辑能力，
+    # 保存遵循真实会话文件策略、工作区边界和后端版本检查。
     - id: dshome-plugin
       # Relative path is anchored by dsh-app-boot beside this patch.
       # The content-keyed host identity invalidates stale same-name client metadata.
-      name: ./lib/entry-workbench-f10a1138d50b.js
+      name: ./lib/entry-workbench-a50fb321b249.js
 
 # 官方品牌（ui-brand-official）与我们的品牌槽争同一组槽位
 # （sidebar.brand.mark / sidebar.brand.name）。

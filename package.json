@@ -1,7 +1,7 @@
 {
   "name": "dshome-plugin",
-  "version": "0.2.0-workbench.3",
-  "description": "DSHOME Plugin — brand theme, conversation card layout, a VSCode-style turn minimap, and turn/member/approval reminders for DeepSeek Harness. Pure client plugin, no build step.",
+  "version": "0.3.0-workspace.0-dev",
+  "description": "DSHOME Plugin — brand theme, conversation layout, minimap and reminders, with an in-development modular workspace and policy/version-guarded document editing.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -17,7 +17,7 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./workbench-entry": "./lib/entry-workbench-f10a1138d50b.js"
+    "./workbench-entry": "./lib/entry-workbench-a50fb321b249.js"
   },
   "dsh": {
     "bundle": {
@@ -25,7 +25,12 @@
     },
     "client": {
       "platform": "web",
-      "inject": [],
+      "inject": [
+        "@deepseek-ai/dsh-api-terminal-controller",
+        "@deepseek-ai/dsh-api-workspace-files",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
       "immediately": true
     }
   },
@@ -36,7 +41,30 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node test/selftest.mjs && node test/domtest.mjs",
+    "build": "node scripts/build.mjs",
+    "test:foundations": "node --test test/workspace-model.mjs test/project-shelf.mjs test/layout-recovery.mjs test/document.mjs test/document-recovery.mjs test/reference.mjs test/textarea.mjs test/workspace-files.mjs test/terminal-binding.mjs test/workspace-gateway.mjs test/workspace-controller.mjs test/terminal-cleanup.mjs test/terminal-state.mjs test/service-epoch.mjs test/reload-state.mjs test/selector-contract.mjs",
+    "test:workspace-terminal": "node --test test/workspace-terminal.mjs",
+    "test:workspace-ui": "node --test test/workspace-ui-browser.mjs",
+    "test:workspace-client": "node --test test/workspace-client-assembly.mjs",
+    "test:workspace-native": "node --test test/workspace-native-sidebar.mjs",
+    "test:workspace-native-browser": "node --test test/workspace-native-browser.mjs",
+    "test:workspace-reference-native": "node --test test/workspace-reference-native.mjs",
+    "test:workspace-composer-native": "node --test test/workspace-composer-native.mjs",
+    "test:workspace-session-native": "node --test test/workspace-session-native.mjs",
+    "test:workspace-layout-recovery-native": "node --test test/workspace-layout-recovery-native.mjs",
+    "test:workspace-project-binding-native": "node --test test/workspace-project-binding-native.mjs",
+    "test:workspace-project-shelf-native": "node --test test/workspace-project-shelf-native.mjs",
+    "test:workspace-scope-races-native": "node --test test/workspace-scope-races-native.mjs",
+    "test:workspace-scope-terminal-native": "node --test test/workspace-scope-terminal-native.mjs",
+    "test:workspace-scope-ensure-native": "node --test test/workspace-scope-ensure-native.mjs",
+    "test:workspace-terminal-cleanup-native": "node --test test/workspace-terminal-cleanup-native.mjs",
+    "test:workspace-terminal-reconnect-native": "node --test test/workspace-terminal-reconnect-native.mjs",
+    "test:workspace-service-rebind-native": "node --test test/workspace-service-rebind-native.mjs",
+    "test:workspace-update-guard-native": "node --test test/workspace-update-guard-native.mjs",
+    "test:workspace-shell-native": "node --test test/workspace-shell-native.mjs",
+    "test:workspace-chrome-native": "node --test test/workspace-chrome-native.mjs",
+    "test:workspace-hmr-native": "node --test test/workspace-hmr-native.mjs",
+    "test": "node --test test/selector-contract.mjs && node test/selftest.mjs && node test/domtest.mjs",
     "test:workbench": "node test/workbench.mjs",
     "test:workbench-browser": "node test/workbench-browser.mjs",
     "test:client-registry": "node test/client-registry.mjs",
@@ -47,11 +75,22 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.1.5-rc.2"
+    "@deepseek-ai/dsh": ">=0.2.1-rc.2"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "acorn": "8.15.0",
+    "esbuild": "0.25.12",
+    "playwright": "1.56.1"
   }
 }

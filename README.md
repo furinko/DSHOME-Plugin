@@ -1,6 +1,16 @@
 # DSHOME-Plugin
 
-## Modular workbench foundation: 0.2.0-workbench.3 (candidate)
+## V2 development preview: 0.3.0-workspace.0-dev
+
+This branch contains the **in-development V2 workspace**, not a completed A1–A8 release. It composes a plugin-owned native Sidebar panel with files, an editable document, a real SDK terminal and a sandboxed webpage. Project/content state is separated from editable layouts; document writes use Host identity, workspace and version checks. The native conversation/composer is not moved into a second React root.
+
+V2 now has a Host half and a build step. Use `npm ci` and `npm run build`; generated `lib` artifacts and the lockfile are committed. `npm test` runs the legacy/selector suite. Layered SDK tests additionally require a compatible installed SDK (`DSH_SDK_ROOT`) and the separately prepared `.dev-sdk` browser fixture dependencies; a fresh-checkout bootstrap for that fixture is **not yet complete**. See [development evidence and limitations](docs/WORKBENCH-V2-DEVELOPMENT.md).
+
+**Lifecycle limit:** the configuration-update preflight is not a code-HMR veto. Code replacement, plugin removal and refresh can release workspace content. Save/export documents, reconcile unknown save results, and close project/terminal work before upgrading. Layout recovery does not restore webpage form memory or terminal processes. HMR tests deliberately measure this destructive boundary; they do not certify lossless recovery.
+
+The current preview has isolated real-SDK/Chromium/FS/PTY evidence, but approved-design visual completion, some integration/lifecycle cases and independent whole-product review remain open. A commit/push does not install or redeploy this branch. Do not treat historical V1 APIs below as V2 extension contracts.
+
+## Historical V1 module-launcher foundation: 0.2.0-workbench.3
 
 This is a **module-launcher and native-panel composition foundation**, not a finished arbitrary docking editor. In Workbench, **自定义** selects visible module entries and moves them up/down; **恢复默认模块** resets that session. Hiding an entry never closes its open tabs, terminates a process, or discards a draft. Configuration is session-local memory only, lost on reload; no user/profile settings are written. The toolbar order does not reorder existing native tabs.
 
@@ -26,7 +36,7 @@ The package uses a declared, package-relative, content-keyed empty host re-expor
 
 A consolidated web client kit for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): brand theme, conversation card layout, a VSCode-style turn minimap, and reminder notifications, in one plugin.
 
-Pure client plugin — no host behaviour, no build step, no runtime dependencies.
+The original V1 was a pure client plugin. The current V2 preview adds Host services, runtime dependencies and a build step as described above.
 
 ## Workbench preview (0.2.0-workbench.1)
 

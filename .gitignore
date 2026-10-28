@@ -7,3 +7,5 @@ Thumbs.db
 .idea/
 /browser-report.json
 /test-output/
+/.dev-sdk/
+/docs/WORKBENCH-V2-ROUND19-PAUSE.md

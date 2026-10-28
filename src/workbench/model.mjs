@@ -253,6 +253,21 @@ export function createWorkspaceModel({ projectId, initial, onListenerError = () 
       const layout = clone(committed.presets[name]); reconcile(layout, committed.panels); layout.maximized = null; validateLayout(layout, committed.panels);
       committed = { ...committed, layout, selectedPreset: name, revision: nextRevision() }; publish();
     },
+    adoptLayout(project, expectedRevision) {
+      if (edit) refuse('EDIT_ACTIVE', 'Apply or cancel the layout draft first');
+      if (committed.revision !== expectedRevision) refuse('LAYOUT_STALE', 'Current layout changed during comparison');
+      validateProject(project, projectId);
+      const incoming = clone(project), all = { ...incoming.panels };
+      for (const [id, panel] of Object.entries(committed.panels)) {
+        if (all[id] && all[id].kind !== panel.kind) refuse('PANEL_KIND_CONFLICT', 'A stored panel id has a different live module kind');
+        if (!all[id]) all[id] = clone(panel);
+      }
+      // Missing live instances remain explicitly collapsed, never destroyed.
+      incoming.panels = all; reconcile(incoming.layout, all);
+      for (const saved of Object.values(incoming.presets)) reconcile(saved, all);
+      incoming.revision = nextRevision(); validateProject(incoming, projectId);
+      committed = incoming; history = []; redo = []; publish();
+    },
     serialize() {
       // An un-applied editor draft and temporary fullscreen state are not a
       // saved layout, and content state can never leak through this envelope.
@@ -314,39 +329,4 @@ export function computeGeometry(layout, panels, registry, width, height, gap = 1
   return freeze({ fits: width >= required.width && height >= required.height, required: { width: required.width, height: required.height }, canvas, rectangles, paneRects, handles });
 }
 
-export function createLayoutPersistence({ storage, locks, projectId, prefix = 'dshome.workspace.v1:' } = {}) {
-  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') refuse('STORAGE_UNAVAILABLE', 'Layout storage is not available');
-  if (typeof projectId !== 'string' || !projectId || projectId.length > 4096) refuse('INVALID_PROJECT', 'Explicit project identity required');
-  const storageKey = prefix + encodeURIComponent(projectId), MAX_TEXT = 256 * 1024;
-  function read() {
-    let raw; try { raw = storage.getItem(storageKey); } catch { return { kind: 'unavailable', error: 'STORAGE_UNAVAILABLE' }; }
-    if (raw === null) return { kind: 'empty', revision: null };
-    if (typeof raw !== 'string' || raw.length > MAX_TEXT) return { kind: 'corrupt', error: 'INVALID_STORAGE', preserved: true };
-    try { const envelope = JSON.parse(raw.replace(/^\uFEFF/, '')); if (!record(envelope) || !Number.isSafeInteger(envelope.storageRevision) || envelope.storageRevision < 1) refuse('INVALID_STORAGE', 'Invalid storage envelope'); validateProject(envelope.project, projectId); return { kind: 'ready', revision: envelope.storageRevision, project: freeze(envelope.project) }; }
-    catch (error) { return { kind: 'corrupt', error: error.code ?? 'INVALID_JSON', preserved: true }; }
-  }
-  return Object.freeze({
-    key: storageKey, read,
-    async save(project, expectedRevision) {
-      validateProject(project, projectId);
-      const captured = clone(project);
-      validateProject(captured, projectId);
-      // Web Locks supplies cross-window exclusion. A read/check/set localStorage
-      // sequence on its own is NOT an atomic compare-and-swap across windows.
-      if (!locks || typeof locks.request !== 'function') return { ok: false, error: 'STORAGE_LOCK_UNAVAILABLE' };
-      if (expectedRevision !== null && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) return { ok: false, error: 'INVALID_REVISION' };
-      try {
-        return await locks.request(storageKey, { mode: 'exclusive' }, () => {
-          const before = read();
-          if (!['empty', 'ready'].includes(before.kind)) return { ok: false, error: before.error, preserved: true };
-          if (before.revision !== expectedRevision) return { ok: false, error: 'LAYOUT_CONFLICT', actualRevision: before.revision };
-          if (before.revision === Number.MAX_SAFE_INTEGER) return { ok: false, error: 'REVISION_EXHAUSTED' };
-          const revision = (before.revision ?? 0) + 1;
-          const serialized = JSON.stringify({ storageRevision: revision, project: captured });
-          if (serialized.length > MAX_TEXT) return { ok: false, error: 'STORAGE_LIMIT' };
-          storage.setItem(storageKey, serialized); return { ok: true, revision };
-        });
-      } catch { return { ok: false, error: 'STORAGE_WRITE_FAILED' }; }
-    },
-  });
-}
+export { createLayoutPersistence } from './layout-storage.mjs';
