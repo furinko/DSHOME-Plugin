@@ -61,7 +61,9 @@ function Scene({ scene, store, active }) {
 export const css = `
 .p0-shell{height:100%;display:grid;grid-template-rows:44px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:14px Arial,"Microsoft YaHei",sans-serif}
 /* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
-html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}
+html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}
+/* Moving the native titlebar reservation must also move its Electron drag surface. */
+html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell:before{content:"";position:absolute;inset:0 0 auto;height:var(--dsh-windows-titlebar-height,32px);background:var(--dsw-specific-sidebar-fill);-webkit-app-region:drag}
 html[data-windows-titlebar][data-fullscreen] .p0-toolbar{padding-left:104px}
 html[data-windows-titlebar] .p0-native{padding-top:0}
 html[data-windows-titlebar] .p0-native:before{display:none}

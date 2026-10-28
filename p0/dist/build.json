@@ -1,7 +1,7 @@
 {
   "upstreamSha256": "eb011a7b5699fac7f3ad0aa15408f46a6cf47f79b8cc15db1f81739e81e70587",
-  "outputSha256": "1782e9477d3f44914eb7bb4ea144a6eb0023033631d13dbd43f8496edd5374ed",
-  "extensionSha256": "fbef615b18bb1b06b9e5a288e9441a7d65747f0b6b7cccb40d1618a74b9ffcb7",
+  "outputSha256": "eedaa234fd220e03f927e512429d75ade150027f1cdafc72b094af7b8d194eba",
+  "extensionSha256": "ab8c7cbb031fc04dda8b096a8c8c8894e86464cdc49f240df2637fd4263e0e8e",
   "patches": [
     {
       "id": "private-extension-module",
