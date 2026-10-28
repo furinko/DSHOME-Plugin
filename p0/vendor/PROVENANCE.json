@@ -1,0 +1,19 @@
+{
+  "archive": "E:\\DeepSeek_Harness_Desktop\\resources\\app.asar",
+  "packageVersion": "0.2.1-rc.3",
+  "source": "Installed public client export; never executed by extraction",
+  "files": [
+    {
+      "archiveEntry": "dsh/node_modules/@deepseek-ai/dsh-client-ui-layout/lib/client.js",
+      "local": "ui-layout.rc3.js",
+      "bytes": 32834,
+      "sha256": "eb011a7b5699fac7f3ad0aa15408f46a6cf47f79b8cc15db1f81739e81e70587"
+    },
+    {
+      "archiveEntry": "dsh/node_modules/@deepseek-ai/dsh-client-ui-layout/package.json",
+      "local": "ui-layout.package.json",
+      "bytes": 1835,
+      "sha256": "169dab1a14b43af12b3b82c83c0d9fff944bf6c58146585256ef9ec85b1f15ea"
+    }
+  ]
+}

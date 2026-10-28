@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+await import('./build-dual-layout.mjs');
 const legacy = await readFile(resolve(root, 'src/legacy-client.js'), 'utf8');
 const client = await build({ absWorkingDir: root, entryPoints: ['src/workbench/client.mjs'], bundle: true, write: false, format: 'iife', globalName: 'DSHOMEWorkbenchV2', platform: 'browser', target: 'es2022', external: ['react', 'react/jsx-runtime'], loader: { '.css': 'text' }, legalComments: 'inline' });
 const begin = legacy.indexOf('    function applyWorkbench(ctx) {');
@@ -14,7 +15,7 @@ new Function(merged); // shipped client must remain a classic script, never ESM.
 await mkdir(resolve(root, 'lib'), { recursive: true });
 await writeFile(resolve(root, 'lib/client.js'), merged);
 await build({ absWorkingDir: root, entryPoints: ['src/host.mjs'], bundle: true, outfile: 'lib/index.js', format: 'esm', platform: 'node', target: 'node22', packages: 'external', legalComments: 'inline' });
-const hash = createHash('sha256').update(merged).update(await readFile(resolve(root, 'lib/index.js'))).digest('hex').slice(0, 12);
+const hash = createHash('sha256').update(merged).update(await readFile(resolve(root, 'lib/index.js'))).update(await readFile(resolve(root, 'layout/lib/client.js'))).digest('hex').slice(0, 12);
 const entry = './lib/entry-workbench-' + hash + '.js';
 const pkgPath = resolve(root, 'package.json'), pkg = JSON.parse(await readFile(pkgPath, 'utf8')), oldEntry = pkg.exports['./workbench-entry'];
 await writeFile(resolve(root, entry), "// Generated package-relative Loader identity; host + client content digest.\nexport { name, inject, apply, default } from './index.js';\n");

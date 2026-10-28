@@ -118,9 +118,9 @@ export function applyWorkbench(ctx, hostRequire) {
   }
   function Switch({ sessionId }) {
     React.useSyncExternalStore(source.subscribe, source.getSnapshot);
-    return h('div', { className: 'dshome-wb-switch', role: 'group', 'aria-label': '界面模式' },
-      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) !== 'workbench', onClick: () => original(sessionId) }, '原版'),
-      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) === 'workbench', onClick: () => enter(sessionId), disabled: !!reason, title: reason }, '工作台'));
+    return h('div', { className: 'dshome-wb-switch', role: 'group', 'aria-label': '侧栏工具' },
+      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) !== 'workbench', onClick: () => original(sessionId) }, '收起工具'),
+      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) === 'workbench', onClick: () => enter(sessionId), disabled: !!reason, title: reason }, '侧栏工具'));
   }
   const beforeUnload = e => { if ([...shelves.values()].some(s => s.hasUnsaved())) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload); keep(() => window.removeEventListener('beforeunload', beforeUnload));

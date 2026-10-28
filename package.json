@@ -1,7 +1,7 @@
 {
   "name": "dshome-plugin",
-  "version": "0.3.0-workspace.0-dev",
-  "description": "DSHOME Plugin — brand theme, conversation layout, minimap and reminders, with an in-development modular workspace and policy/version-guarded document editing.",
+  "version": "0.3.0-dual.0-dev",
+  "description": "DSHOME original UI plus opt-in whole-window dual-layout P0; workspace memory notes and sandboxed web carrier. Existing tools preserved.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -17,7 +17,7 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./workbench-entry": "./lib/entry-workbench-a50fb321b249.js"
+    "./workbench-entry": "./lib/entry-workbench-b9f0cf0bb39a.js"
   },
   "dsh": {
     "bundle": {
@@ -38,7 +38,9 @@
     "lib",
     "locale",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "layout",
+    "docs/DUAL-SHELL-P0-LOAD.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -68,14 +70,16 @@
     "test:workbench": "node test/workbench.mjs",
     "test:workbench-browser": "node test/workbench-browser.mjs",
     "test:client-registry": "node test/client-registry.mjs",
-    "test:workspace-model": "node --test test/workspace-model.mjs"
+    "test:workspace-model": "node --test test/workspace-model.mjs",
+    "test:dual": "node --test p0/scene.test.mjs p0/abort.test.mjs",
+    "test:dual-browser": "node --test p0/browser.mjs"
   },
   "license": "MIT",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.1-rc.2"
+    "@deepseek-ai/dsh": "0.2.1-rc.3"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {

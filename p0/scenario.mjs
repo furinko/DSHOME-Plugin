@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+export async function runScenario({ page, context, url, childURL, metrics, errors, iframeLoads }) {
+  const checks = [];
+  const ok = (id, condition, detail) => { assert.ok(condition, id + ': ' + (detail ?? '')); checks.push({ id, passed: true, detail }); };
+  const input = () => page.locator('[contenteditable=true][data-lexical-editor=true]:visible');
+  const visibleScene = () => page.locator('.p0-scene:not([hidden])');
+  const geometry = target => target.evaluate(() => {
+    const box = selector => { const b = document.querySelector(selector).getBoundingClientRect(); return { x:b.x, y:b.y, width:b.width, height:b.height }; };
+    return { sidebar: box('.mP3x-q_sidebarCol'), center: box('.mP3x-q_centerCol'), rightbar: box('.mP3x-q_rightbarCol'), frame: box('.mP3x-q_frame'), documentWidth: document.documentElement.scrollWidth };
+  });
+  await page.locator('[data-p0-shell]').waitFor(); await input().waitFor();
+  // A second isolated page runs the exact unmodified installed layout export.
+  const baseline = await context.newPage();
+  try {
+    await baseline.goto(url + '/baseline'); await baseline.waitForFunction(() => window.testP0 || window.fixtureBootError);
+    assert.equal(await baseline.evaluate(() => window.fixtureBootError), undefined);
+    await baseline.locator('[data-lexical-editor=true]').waitFor();
+    const baseGeometry = await geometry(baseline), originalGeometry = await geometry(page);
+    assert.deepEqual(originalGeometry, baseGeometry); checks.push({id:'unmodified-original-geometry', passed:true, baseGeometry, originalGeometry});
+    const counts = target => target.evaluate(() => Object.fromEntries(['sidebar','main','rightbar','shell.overlay','shell.bottom'].map(name => [name, document.querySelectorAll(`[data-slot="${name}"]`).length])));
+    const candidateCounts = await counts(page), baselineCounts = await counts(baseline);
+    assert.deepEqual(candidateCounts, baselineCounts);
+    const structure = target => target.evaluate(() => { const clone = document.querySelector('.mP3x-q_frame').cloneNode(true); clone.querySelector('.p0-desktop')?.remove(); return [...clone.querySelectorAll('*')].map(node => [node.tagName, node.getAttribute('class'), node.getAttribute('role'), node.getAttribute('data-slot')]); });
+    const nativeStructure = await structure(baseline);
+    assert.ok(nativeStructure.length > 50); assert.deepEqual(await structure(page),nativeStructure);
+    ok('original-native-tree-match', true, JSON.stringify({candidateCounts,baselineCounts,nativeElements:nativeStructure.length}));
+    await baseline.screenshot({path:'test-output/p0-upstream-original.png'});
+    await page.screenshot({path:'test-output/p0-original.png'});
+    await baseline.evaluate(() => window.testP0.dispose());
+  } finally { await baseline.close(); }
+  await input().press('Control+End'); await page.keyboard.insertText(' · P0 原生输入');
+  const draftA = await input().textContent();
+  await page.evaluate(() => { window.probeP0 = { input: document.querySelector('[data-lexical-editor=true]'), root: document.querySelector('.mP3x-q_frame'), shortcuts: window.testP0.shortcuts.size }; });
+  await page.getByRole('button',{name:'工作台', exact:true}).click(); await visibleScene().waitFor();
+  ok('workbench-scene-is-not-sidebar', !await visibleScene().evaluate(node => !!node.closest('[data-slot=rightbar]')));
+  await page.getByRole('textbox',{name:'工作区便笺'}).fill('这个工作区共用便笺：切会话、布局和模式都不丢。');
+  await page.getByRole('textbox',{name:'网页地址'}).fill(childURL); await visibleScene().getByRole('button',{name:'打开',exact:true}).click();
+  const form = () => page.frameLocator('.p0-scene:not([hidden]) iframe').getByRole('textbox',{name:'未提交表单'});
+  await form().fill('未提交网页表单：A与B共用，不应刷新');
+  await page.evaluate(() => { window.probeP0.frame = document.querySelector('.p0-scene:not([hidden]) iframe'); window.probeP0.note = document.querySelector('.p0-scene:not([hidden]) textarea'); window.probeP0.scene = window.testP0.ctx.dualShellP0.getSnapshot().selected; });
+  const initialLoads = iframeLoads();
+  const dimensions = [];
+  for (const width of [1920,1366,1040]) {
+    await page.setViewportSize({width,height:1080});
+    await page.waitForFunction(w => document.querySelector('.p0-native').getAttribute('data-dual-viewport') === String(w), width);
+    const g = await page.evaluate(() => { const b = q => { const r = document.querySelector(q).getBoundingClientRect(); return {x:r.x,right:r.right,y:r.y,width:r.width,height:r.height}; }; return {work:b('.p0-desktop'), chat:b('.mP3x-q_centerCol'), viewport:innerWidth, documentWidth:document.documentElement.scrollWidth}; });
+    ok('chat-right-' + width, g.work.width > 350 && g.chat.x >= g.work.right - 1 && g.chat.right <= width + 1 && g.documentWidth <= width + 1, JSON.stringify(g)); dimensions.push(g);
+    assert.equal(await form().inputValue(),'未提交网页表单：A与B共用，不应刷新','form after width '+width);
+  }
+  await page.setViewportSize({width:1920,height:1080});
+  await page.waitForFunction(() => document.querySelector('.p0-native').getAttribute('data-dual-viewport') === '1920');
+  const separator = page.getByRole('separator',{name:'调整右侧聊天宽度'}); await separator.focus(); await separator.press('ArrowLeft');
+  assert.equal(await separator.getAttribute('aria-valuenow'),'440');
+  await page.getByRole('combobox',{name:'操作区布局'}).selectOption('stack');
+  await page.getByRole('combobox',{name:'操作区布局'}).selectOption('split');
+  for (let i=0;i<3;i++) { await page.getByRole('button',{name:'原版',exact:true}).click(); ok('real-original-round-'+i, !await page.getByRole('region',{name:'主操作区'}).isVisible()); assert.equal(await input().textContent(),draftA); await page.getByRole('button',{name:'工作台',exact:true}).click(); }
+  ok('same-native-root-and-input', await page.evaluate(() => window.probeP0.root === document.querySelector('.mP3x-q_frame') && window.probeP0.input === document.querySelector('[data-lexical-editor=true]')));
+  await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B');
+  await input().pressSequentially('B 独立草稿'); const draftB = await input().textContent();
+  ok('same-workspace-same-scene', await page.evaluate(() => window.probeP0.scene === window.testP0.ctx.dualShellP0.getSnapshot().selected && window.probeP0.frame === document.querySelector('.p0-scene:not([hidden]) iframe')));
+  assert.equal(await form().inputValue(),'未提交网页表单：A与B共用，不应刷新');
+  await page.getByRole('button',{name:'会话 C',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'C');
+  ok('same-path-different-workspace-isolated', await page.getByRole('textbox',{name:'工作区便笺'}).inputValue() === '' && await visibleScene().getAttribute('data-workspace') === 'W2');
+  await page.getByRole('textbox',{name:'工作区便笺'}).fill('W2自己的便笺');
+  await page.getByRole('button',{name:'会话 A',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
+  assert.equal(await input().textContent(),draftA);
+  ok('A-note-preserved', (await page.getByRole('textbox',{name:'工作区便笺'}).inputValue()).startsWith('这个工作区'));
+  await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B'); assert.equal(await input().textContent(), draftB);
+  await page.getByRole('button',{name:'会话 A',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
+  await page.getByRole('button',{name:'其他主面板',exact:true}).click(); await page.getByRole('region',{name:'隔离全局页面'}).waitFor();
+  assert.equal(await page.getByRole('region',{name:'主操作区'}).isVisible(),false);
+  await page.getByRole('button',{name:'回到当前会话',exact:true}).click(); await visibleScene().waitFor();
+  ok('global-main-round-trip', await form().inputValue() === '未提交网页表单：A与B共用，不应刷新');
+  await page.screenshot({path:'test-output/p0-workbench.png'});
+  await page.setViewportSize({width:760,height:900});
+  await page.getByRole('button',{name:'聊天',exact:true}).click(); await input().waitFor();
+  await page.getByRole('button',{name:'操作区',exact:true}).click(); await visibleScene().waitFor();
+  ok('narrow-focus-boundary', await page.locator('.mP3x-q_centerCol').getAttribute('inert') !== null);
+  await page.screenshot({path:'test-output/p0-narrow.png'});
+  await page.setViewportSize({width:1920,height:1080});
+  await page.waitForFunction(() => document.querySelector('.p0-native').getAttribute('data-dual-viewport') === '1920');
+  ok('content-dom-and-form-kept', await page.evaluate(() => window.probeP0.frame === document.querySelector('.p0-scene:not([hidden]) iframe') && window.probeP0.note === document.querySelector('.p0-scene:not([hidden]) textarea')) && await form().inputValue() === '未提交网页表单：A与B共用，不应刷新');
+  assert.equal(iframeLoads(),initialLoads); ok('no-frame-reloads',true,'HTTP request count unchanged after initial explicit navigation.');
+  ok('no-shortcut-duplication', await page.evaluate(() => window.testP0.shortcuts.size === window.probeP0.shortcuts));
+  await page.evaluate(() => window.testP0.ctx.theme.setTheme('dark'));
+  await page.waitForFunction(() => document.body.hasAttribute('data-ds-dark-theme'));
+  const dark = await page.evaluate(() => ({ scheme:window.testP0.ctx.theme.getTheme().active.colorScheme, attr:document.body.hasAttribute('data-ds-dark-theme') }));
+  // Theme fixture API shape is checked by the caller; failure is not silently ignored.
+  ok('theme-runtime-dark', dark.scheme === 'dark' && dark.attr, JSON.stringify(dark));
+  await page.screenshot({path:'test-output/p0-workbench-dark.png'});
+  ok('zero-tool-authority', metrics.spawn === 0, 'P0 supplies no file-save, terminal-input or AI-operation capability.');
+  await page.getByRole('group',{name:'侧栏工具',exact:true}).getByRole('button',{name:'侧栏工具',exact:true}).click();
+  await page.locator('.dshome-v2:visible').waitFor();
+  const legacyTools = await page.evaluate(() => { const b=q=>{const r=document.querySelector(q).getBoundingClientRect();return{x:r.x,right:r.right,width:r.width};};return{tools:b('.dshome-v2'),chat:b('.mP3x-q_centerCol'),mode:window.testP0.ctx.dualShellP0.getSnapshot().mode};});
+  ok('existing-sidebar-tools-compatible',legacyTools.mode==='workbench' && legacyTools.tools.right<=legacyTools.chat.x+1 && legacyTools.tools.width>=300,JSON.stringify(legacyTools));
+  await page.getByRole('group',{name:'侧栏工具',exact:true}).getByRole('button',{name:'收起工具',exact:true}).click();
+  assert.equal(await form().inputValue(),'未提交网页表单：A与B共用，不应刷新');
+  const windowChrome = await (await import('./window-scenario.mjs')).runWindowScenario(page);
+  assert.deepEqual(errors,[]);
+  return { checks, dimensions, windowChrome, initialLoads, finalLoads:iframeLoads(), fixtures:['workspace records','navigation','access answers','shortcuts','settings transport','Host journal'], real:['installed AppFrame','UI renderer','ClientSessions','UiSession','native Conversation/InputHub/composer/chat','WorkspaceController/ClientWorkspaceModel','ThemeRuntime','Gateway WebSocket'], notVerified:['live GUI','OS IME','full Settings/approval interaction','Electron guest','file/terminal tools','persistence','independent review'] };
+}

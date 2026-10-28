@@ -1,0 +1,68 @@
+{
+  "upstreamSha256": "eb011a7b5699fac7f3ad0aa15408f46a6cf47f79b8cc15db1f81739e81e70587",
+  "outputSha256": "1782e9477d3f44914eb7bb4ea144a6eb0023033631d13dbd43f8496edd5374ed",
+  "extensionSha256": "fbef615b18bb1b06b9e5a288e9441a7d65747f0b6b7cccb40d1618a74b9ffcb7",
+  "patches": [
+    {
+      "id": "private-extension-module",
+      "before": "\t\t//#region lib/types/client/index.js",
+      "after": "[bundled extension: see extension.mjs and scene-store.mjs]"
+    },
+    {
+      "id": "explicit-services",
+      "before": "\"shortcuts\"\n\t\t];",
+      "after": "\"shortcuts\", \"uiSession\", \"workspaces\", \"connection\"\n\t\t];"
+    },
+    {
+      "id": "single-runtime-owner",
+      "before": "function apply(ctx) {",
+      "after": "function apply(ctx) {\n\t\t\tconst dualShell = __p0.install(ctx);"
+    },
+    {
+      "id": "root-injection",
+      "before": "\t\t\t\t\tstore\n\t\t\t\t}, AppFrame);",
+      "after": "\t\t\t\t\tstore,\n\t\t\t\t\tinject: () => ({dualShell})\n\t\t\t\t}, DualFrame);"
+    },
+    {
+      "id": "stable-frame-inputs",
+      "before": "function AppFrame({ useStore, useSessions, usePanelInfo, actions, renderSlot, t }) {",
+      "after": "function AppFrame({ useStore, useSessions, usePanelInfo, actions, renderSlot, t, dualShell, dualView }) {\n\t\t\tconst dualGlobal = usePanelInfo(info => info.activePanelId !== null);\n\t\t\tconst dualActive = dualView.mode === \"workbench\" && !dualGlobal;"
+    },
+    {
+      "id": "responsive-chat-width",
+      "before": "const viewport = layoutInfo.viewportWidth;",
+      "after": "const viewport = layoutInfo.viewportWidth;\n\t\t\tconst dualChatMax = Math.max(320, Math.min(560, Math.floor(viewport * .32)));\n\t\t\tconst dualChatWidth = Math.min(dualView.chatWidth, dualChatMax);"
+    },
+    {
+      "id": "frame-semantic-mode",
+      "before": "className: AppFrame_module_css_default.frame,",
+      "after": "className: AppFrame_module_css_default.frame + \" p0-native\",\n\t\t\t\t\"data-dual-viewport\": viewport, \"data-dual-mode\": dualView.mode,\n\t\t\t\t\"data-dual-global\": String(dualGlobal),\n\t\t\t\t\"data-dual-narrow\": dualView.narrowPane,"
+    },
+    {
+      "id": "native-original-geometry-kept",
+      "before": "gridTemplateColumns: `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`",
+      "after": "gridTemplateColumns: dualActive ? `${cols.sidebar}px minmax(0px, 1fr) ${dualChatWidth}px` : `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`"
+    },
+    {
+      "id": "hidden-chat-accessibility",
+      "before": "className: AppFrame_module_css_default.centerCol,\n\t\t\t\tchildren: props.children",
+      "after": "className: AppFrame_module_css_default.centerCol,\n\t\t\t\t\"aria-hidden\": props.hiddenByP0 || undefined, inert: props.hiddenByP0 ? \"\" : undefined,\n\t\t\t\tchildren: props.children"
+    },
+    {
+      "id": "stable-conversation-parent",
+      "before": "(CenterColumn, { children: main })",
+      "after": "(CenterColumn, { children: main, hiddenByP0: dualActive && viewport <= 900 && dualView.narrowPane === \"workspace\" })"
+    },
+    {
+      "id": "native-tools-drawer-width",
+      "before": "width: normal.rightbar,\n\t\t\t\t\t\tviewportWidth: viewport,\n\t\t\t\t\t\tcanShow: normal.rightbar > 0",
+      "after": "width: dualActive ? Math.max(0, Math.min(normal.rightbar, viewport - cols.sidebar - dualChatWidth)) : normal.rightbar,\n\t\t\t\t\t\tviewportWidth: viewport,\n\t\t\t\t\t\tcanShow: normal.rightbar > 0"
+    },
+    {
+      "id": "append-stable-desktop",
+      "before": "\t\t\t\t\t\tonDrag: onRightbarDrag,\n\t\t\t\t\t\tonEnd: onDragEnd\n\t\t\t\t\t})",
+      "after": "\t\t\t\t\t\tonDrag: onRightbarDrag,\n\t\t\t\t\t\tonEnd: onDragEnd\n\t\t\t\t\t}),\n\t\t\t\t\t(0, react_jsx_runtime.jsx)(__p0.Desktop, {store: dualShell, chatWidth: dualChatWidth, chatMax: dualChatMax, active: dualActive && (viewport > 900 || dualView.narrowPane === \"workspace\")}, \"p0-desktop\")"
+    }
+  ],
+  "rootRegistrations": 1
+}

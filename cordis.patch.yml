@@ -13,7 +13,7 @@
     - id: dshome-plugin
       # Relative path is anchored by dsh-app-boot beside this patch.
       # The content-keyed host identity invalidates stale same-name client metadata.
-      name: ./lib/entry-workbench-a50fb321b249.js
+      name: ./lib/entry-workbench-b9f0cf0bb39a.js
 
 # 官方品牌（ui-brand-official）与我们的品牌槽争同一组槽位
 # （sidebar.brand.mark / sidebar.brand.name）。
@@ -25,3 +25,10 @@
 # 只压视觉与槽位，不动 React 树：删掉本行，官方品牌立刻回来。
 - id: ui-brand-official
   disabled: true
+
+# Pinned official AppFrame, preserving its original branch. One root owner only.
+- id: ui-layout
+  disabled: true
+- insert:
+    - id: dshome-dual-layout
+      name: ./layout/lib/entry-1782e9477d3f.js

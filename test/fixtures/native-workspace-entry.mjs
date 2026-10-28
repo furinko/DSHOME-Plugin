@@ -18,13 +18,14 @@ import filesRemote from '@deepseek-ai/dsh-api-workspace-files/remote';
 import terminalRemote from '@deepseek-ai/dsh-api-terminal-controller/remote';
 import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote';
 import { nativeShellEntry } from './native-shell-entry.mjs';
+import { dualShellFixture } from '../../p0/fixture.mjs';
 import { nativeReferenceSession } from './native-reference-session.mjs';
 const modules = new Map([['@deepseek-ai/cordis', cordis], ['react', React], ['react-dom', ReactDOM], ['react-dom/client', ReactDOMClient], ['react/jsx-runtime', ReactJSX],
   ['@deepseek-ai/dsh-client-ui-slots', slots], ['@deepseek-ai/dsh-client-store', store], ['@deepseek-ai/dsh-client-ui-primitives', atoms], ['@deepseek-ai/dsh-client-ui-dockkit', dockkit], ['zod', zod], ['@tanstack/react-virtual', reactVirtual]]), factories = new Map();
 const consume = id => { if (!modules.has(id)) { const factory = factories.get(id); if (!factory) throw Error('Missing published factory ' + id); modules.set(id, factory(consume)); } return modules.get(id); };
 window.__ModuleLoader__ = { load: ({ id, factory }) => factories.set(id, factory) };
 const constant = value => ({ subscribe: () => () => {}, getSnapshot: () => value });
-window.startNativeFixture = async ({ references = false, composer = false, history = false, nativeShell = false, nativeChrome = false, nativeHmr = false } = {}) => {
+window.startNativeFixture = async ({ references = false, composer = false, history = false, nativeShell = false, nativeChrome = false, nativeHmr = false, dualP0 = false } = {}) => {
   const ctx = new cordis.Context(), errors = [];
   new TypertRegistry(ctx);
   if (nativeHmr) new (consume('@deepseek-ai/cordis-plugin-loader').Loader)(ctx); else ctx.reflect.provide('loader', { await: () => Promise.resolve() });
@@ -60,6 +61,7 @@ window.startNativeFixture = async ({ references = false, composer = false, histo
     nativeOwner = ctx.get('sessions').binding('A');
     if (nativeOwner.session.getSnapshot().openState !== 'open') throw Error('Native Session failed to open: ' + JSON.stringify(nativeOwner.session.getSnapshot().openError));
   }
+  if (dualP0) return dualShellFixture({ ctx, consume, store, React, errors, transport });
   if (nativeShell) return nativeShellEntry({ ctx, consume, store, React, errors, transport, chrome: nativeChrome, hmr: nativeHmr ? { factories, modules } : undefined });
   const referenceSession = references ? nativeReferenceSession(ctx, store, retain, nativeOwner) : null;
   const binding = referenceSession?.binding ?? { key: 'A', ctx, hooks: {}, keyedHooks: {}, props: { sessionId: 'A' } }, source = referenceSession?.source ?? constant(binding);

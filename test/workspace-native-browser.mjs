@@ -19,8 +19,10 @@ const projectBinding = process.env.WORKBENCH_NATIVE_PROJECT_BINDING === '1';
 const projectShelf = process.env.WORKBENCH_NATIVE_PROJECT_SHELF === '1';
 const scopeRaces = process.env.WORKBENCH_NATIVE_SCOPE_RACES === '1';
 const nativeHmrMode = process.env.WORKBENCH_NATIVE_HMR === '1';
+const dualP0 = process.env.WORKBENCH_DUAL_P0 === '1';
+const applicationShellMode = process.env.WORKBENCH_APPLICATION_SHELL === '1';
 const nativeChromeMode = process.env.WORKBENCH_NATIVE_CHROME === '1', chromeBaseline = process.env.WORKBENCH_NATIVE_CHROME_BASELINE === '1';
-const nativeShellMode = nativeHmrMode || nativeChromeMode || process.env.WORKBENCH_NATIVE_SHELL === '1';
+const nativeShellMode = dualP0 || applicationShellMode || nativeHmrMode || nativeChromeMode || process.env.WORKBENCH_NATIVE_SHELL === '1';
 const updateGuardMode = process.env.WORKBENCH_NATIVE_UPDATE_GUARD === '1';
 const serviceRebindMode = updateGuardMode || process.env.WORKBENCH_NATIVE_SERVICE_REBIND === '1';
 const reconnectMode = process.env.WORKBENCH_NATIVE_RECONNECT === '1';
@@ -37,7 +39,7 @@ const [{ Context }, { TypertRegistry }, { TypertGatewayService }, { SandboxedFil
 ]);
 const listen = server => new Promise((yes, no) => { server.once('error', no); server.listen(0, '127.0.0.1', () => yes('http://127.0.0.1:' + server.address().port)); });
 const close = server => new Promise(resolve => server.close(resolve));
-test(nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product content; manual export and native input boundaries are measured' : 'Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches', { timeout: 90000 }, async t => {
+test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene preservation' : applicationShellMode ? 'Application root shell preserves native chat, retained workspaces and actual PTY across layout, global-page and Session switches' : nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product content; manual export and native input boundaries are measured' : 'Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches', { timeout: 120000 }, async t => {
   const parent = resolve('test-output/native-browser'); await mkdir(parent, { recursive: true }); const root = await mkdtemp(join(parent, 'case-'));
   const original = '\ufefffirst\r\nsecond 😀\r\n' + Array.from({ length: 180 }, (_, index) => '原生组件长文档 ' + index + '\r\n').join(''); await writeFile(join(root, 'a.md'), original); await writeFile(join(root, '.bashrc'), 'PS1="BROWSER_PTY> "; HISTFILE=/dev/null\n');
   const host = new Context(), metrics = { spawn: 0, terminate: 0, close: 0, closed: 0, activeRetains: 0, upgrades: 0 }, handles = [], upgradeRoutes = new Map(), admissions = new WeakMap(), wsEvents = [], browserConsole = [];
@@ -105,14 +107,16 @@ test(nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product conte
   new ObservedRuntime(host);
   const journal = history ? await (await import('./fixtures/session-journal-host.mjs')).sessionJournalHost(root) : null;
   const journalB = nativeShellMode ? await (await import('./fixtures/session-journal-host.mjs')).sessionJournalHost(root, 'B') : null;
+  const journalC = dualP0 ? await (await import('./fixtures/session-journal-host.mjs')).sessionJournalHost(root, 'C') : null;
+  if (journalC) host.sessions.set('C', { id: 'C', header: { cwd: root } });
   if (journalB) { host.sessions.set('B', { id: 'B', header: { cwd: root } }); if (!nativeChromeMode) await journalB.appendUser('B 会话独立的已有记录'); }
   if (journal) {
     const { TypertRemoteService } = await load('@deepseek-ai/dsh-typert-protocol');
     class JournalRemote extends TypertRemoteService {
       constructor(ctx) { super(ctx, 'sessionController', { namespace: 'session' }); }
-      async list(_request, signal) { const a = await journal.service.list(_request, signal); return journalB ? { items: [...a.items, ...(await journalB.service.list(_request, signal)).items.map(item => nativeChromeMode ? { ...item, blank: true } : item)] } : a; }
+      async list(_request, signal) { const a = await journal.service.list(_request, signal); return journalB ? { items: [...a.items, ...(journalC ? (await journalC.service.list()).items : []), ...(await journalB.service.list(_request, signal)).items.map(item => nativeChromeMode ? { ...item, blank: true } : item)] } : a; }
       control(signal) { return journal.service.control(signal); }
-      follow(request, signal) { return (request.address.sessionId === 'B' && journalB ? journalB : journal).service.follow(request, signal); }
+      follow(request, signal) { return (request.address.sessionId === 'C' && journalC ? journalC : request.address.sessionId === 'B' && journalB ? journalB : journal).service.follow(request, signal); }
       page(request, signal) { return journal.service.page(request, signal); }
       projections(request, signal) { return journal.service.projections(request, signal); }
       prompt(request, signal) { return journal.service.prompt(request, signal); }
@@ -125,7 +129,8 @@ test(nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product conte
     async *retain(sessionId, id, signal) { metrics.activeRetains++; try { yield* super.retain(sessionId, id, signal); } finally { metrics.activeRetains--; } }
     async close(agent, id) { metrics.close++; if (terminateFault.terminalId === id && ++terminateFault.closeRequests >= 2) terminateFault.enabled = false; await super.close(agent, id); metrics.closed++; }
   }
-  const hostTerminals = new ObservedController(host, { shell: { path: '/bin/bash', name: 'Fixture bash', args: ['-i'] }, shellCandidates: ['/bin/bash'], maxTerminals: 8, maxCols: 200, maxRows: 80, scrollback: 1000, maxBufferedBytes: 2097152, maxInputBytes: 65536, disposeGraceMs: 100, unattendedTimeoutMs: 0, activityPollIntervalMs: 100, cleanupRetryMs: 100 });
+  const fixtureShell = process.platform === 'win32' ? { path: process.env.ComSpec || 'C:/Windows/System32/cmd.exe', name: 'Fixture CMD', args: ['/Q'] } : { path: '/bin/bash', name: 'Fixture bash', args: ['-i'] };
+  const hostTerminals = new ObservedController(host, { shell: fixtureShell, shellCandidates: [fixtureShell.path], maxTerminals: 8, maxCols: 200, maxRows: 80, scrollback: 1000, maxBufferedBytes: 2097152, maxInputBytes: 65536, disposeGraceMs: 100, unattendedTimeoutMs: 0, activityPollIntervalMs: 100, cleanupRetryMs: 100 });
   host.typert.register((await load('@deepseek-ai/dsh-api-terminal-controller/typert')).TYPERT);
   const aliases = {};
   for (const id of ['@deepseek-ai/cordis', '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-store', '@deepseek-ai/dsh-client-ui-primitives', '@deepseek-ai/dsh-client-ui-dockkit', '@deepseek-ai/dsh-typert-registry']) aliases[id] = dev.resolve(id);
@@ -139,6 +144,8 @@ test(nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product conte
     assets.set('/loader.js', { type: 'text/javascript', body: loader });
   }
   if (nativeShellMode) sdkAssets.push(['ui-session', '@deepseek-ai/dsh-client-ui-session'], ['ui-layout', '@deepseek-ai/dsh-client-ui-layout']);
+  if (dualP0) sdkAssets.push(['workspace-controller', '@deepseek-ai/dsh-api-workspace-controller']);
+  if (applicationShellMode || dualP0) sdkAssets.push(['ui-navigation', '@deepseek-ai/dsh-client-ui-sidebar']);
   if (nativeChromeMode) sdkAssets.push(['ui-theme', '@deepseek-ai/dsh-client-ui-theme']);
   if (layoutRecovery) {
     const peer = await build({ entryPoints: ['test/fixtures/layout-storage-peer.mjs'], bundle: true, write: false, format: 'iife', platform: 'browser', target: 'es2022' });
@@ -146,12 +153,17 @@ test(nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product conte
     assets.set('/layout-storage-peer', { type: 'text/html', body: '<!doctype html><title>Isolated layout storage peer</title><script src="/layout-storage-peer.js"></script>' });
   }
   const { sdkClientSource } = await import('./fixtures/sdk-client-source.mjs');
-  for (const [name, id] of sdkAssets) assets.set('/' + name + '.js', { type: 'text/javascript', body: await sdkClientSource(id, sdk) });
+  for (const [name, id] of sdkAssets) assets.set('/' + name + '.js', { type: 'text/javascript', body: name === 'ui-layout' ? await readFile(dualP0 ? 'p0/dist/layout-client.js' : 'layout/lib/client.js', 'utf8') : await sdkClientSource(id, sdk) });
   assets.set('/product.js', { type: 'text/javascript', body: await readFile(resolve(chromeBaseline ? 'test-output/round18-old-client.js' : 'lib/client.js')) });
-  assets.set('/', { type: 'text/html', body: '<!doctype html><meta charset="utf-8"><title>实际原生侧栏/PTY隔离验证 · 非运行GUI</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/runtime.css"><style>html,body,#app{height:100%;margin:0}#app>[data-slot=root]{height:100%}.fixture-frame{height:100%;display:grid;grid-template-columns:464px minmax(0,1fr);gap:12px;padding:12px;box-sizing:border-box;background:#edf2f8;font:14px Arial}#fixture-chat{display:flex;flex-direction:column;background:white;padding:16px;border-radius:10px}#fixture-chat>p{flex:1}#fixture-composer{height:130px}#native-region,#native-region>[data-slot=rightbar]{height:100%;min-height:0;min-width:0}#native-region{position:relative}' + (nativeShellMode ? '' : '.dshome-v2{min-height:400px}') + '</style><div id="app"></div><script src="/runtime.js"></script>' + sdkAssets.map(([name]) => '<script src="/' + name + '.js"></script>').join('') + (nativeHmrMode ? '<script src="/loader.js"></script>' : '') + '<script src="/product.js"></script><script>startNativeFixture(' + JSON.stringify({ references, composer, history, nativeShell: nativeShellMode, nativeChrome: nativeChromeMode, nativeHmr: nativeHmrMode }) + ').catch(e=>{window.fixtureBootError=e.message;console.error(e)})</script>' });
+  assets.set('/', { type: 'text/html', body: '<!doctype html><meta charset="utf-8"><title>实际原生侧栏/PTY隔离验证 · 非运行GUI</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/runtime.css"><style>html,body,#app{height:100%;margin:0}#app>[data-slot=root]{height:100%}.fixture-frame{height:100%;display:grid;grid-template-columns:464px minmax(0,1fr);gap:12px;padding:12px;box-sizing:border-box;background:#edf2f8;font:14px Arial}#fixture-chat{display:flex;flex-direction:column;background:white;padding:16px;border-radius:10px}#fixture-chat>p{flex:1}#fixture-composer{height:130px}#native-region,#native-region>[data-slot=rightbar]{height:100%;min-height:0;min-width:0}#native-region{position:relative}' + (nativeShellMode ? '' : '.dshome-v2{min-height:400px}') + '</style><div id="app"></div><script src="/runtime.js"></script>' + sdkAssets.map(([name]) => '<script src="/' + name + '.js"></script>').join('') + (nativeHmrMode ? '<script src="/loader.js"></script>' : '') + '<script src="/product.js"></script><script>startNativeFixture(' + JSON.stringify({ references, composer, history, nativeShell: nativeShellMode, nativeChrome: nativeChromeMode, nativeHmr: nativeHmrMode, dualP0 }) + ').catch(e=>{window.fixtureBootError=e.message;console.error(e)})</script>' });
+  if (dualP0) {
+    assets.set('/ui-layout-base.js', {type:'text/javascript', body: await readFile('p0/vendor/ui-layout.rc3.js','utf8')});
+    const baselineHtml = assets.get('/').body.replace('/ui-layout.js', '/ui-layout-base.js').replace('<div id="app"></div>', '<header style="height:44px;box-sizing:border-box;padding:12px;background:#edf2f8">未改动的安装版原版布局对照 · 隔离数据</header><div id="app" style="height:calc(100% - 44px)"></div>');
+    assets.set('/baseline', {type:'text/html',body:baselineHtml});
+  }
   const childURL = await listen(child), url = await listen(server);
   assert.equal(upgradeRoutes.size, 1, 'actual Gateway must register its own WebSocket route');
-  browser = await chromium.launch({ headless: true, channel: 'chromium', args: ['--no-sandbox'] });
+  browser = await chromium.launch({ headless: true, ...(process.env.WORKBENCH_BROWSER ? { executablePath: process.env.WORKBENCH_BROWSER } : { channel: 'chromium' }), args: dualP0 ? [] : ['--no-sandbox'] });
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const externalRequests = [];
   if (nativeChromeMode) await context.route('**/*', route => { const u = new URL(route.request().url()); if (['http:', 'https:'].includes(u.protocol) && !['127.0.0.1', 'localhost'].includes(u.hostname)) { externalRequests.push(u.href); return route.abort('blockedbyclient'); } return route.continue(); });
@@ -166,9 +178,20 @@ test(nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product conte
   const recoveryProjectId = layoutRecovery ? host.fs.fileUrl(await host.fs.resolve(root)) : null;
   const recoveryOriginal = '\ufeff{broken-layout' + String.fromCharCode(0xd800);
   if (layoutRecovery) await page.addInitScript(({ origin, projectId, raw }) => { if (location.origin === origin && location.pathname === '/') localStorage.setItem('dshome.workspace.v1:' + encodeURIComponent(projectId), raw); }, { origin: new URL(url).origin, projectId: recoveryProjectId, raw: recoveryOriginal });
-  await page.goto(url); await page.waitForFunction(() => window.testNative || window.fixtureBootError);
+  await page.goto(url); await page.waitForFunction(() => window.testP0 || window.testNative || window.fixtureBootError);
   assert.equal(await page.evaluate(() => window.fixtureBootError), undefined);
+  if (dualP0) {
+    const evidence = await (await import('../p0/scenario.mjs')).runScenario({page, context, url, childURL, metrics, errors, browserConsole, iframeLoads:()=>iframeLoads});
+    await page.evaluate(() => window.testP0.dispose());
+    assert.deepEqual(errors, []); assert.deepEqual(browserConsole, []); assert.equal(metrics.spawn,0);
+    await writeFile('test-output/p0-result.json', JSON.stringify({evidence, metrics, errors, browserConsole, journals: [journal.metrics,journalB.metrics,journalC.metrics]}, null, 2)); complete = true; return;
+  }
   if (nativeShellMode) {
+    if (applicationShellMode) {
+      const evidence = await (await import('./fixtures/application-shell-scenario.mjs')).runApplicationShellScenario({ page, metrics, childURL, windows: process.platform === 'win32', readHostSource: () => readFile(join(root, 'a.md'), 'utf8') });
+      await page.evaluate(() => window.testNative.dispose()); assert.deepEqual(errors, []); assert.equal(metrics.activeRetains, 0);
+      await writeFile('test-output/application-shell-result.json', JSON.stringify({ evidence, metrics, errors, browserConsole }, null, 2)); complete = true; return;
+    }
     const evidence = nativeHmrMode ? await (await import('./fixtures/native-hmr-scenario.mjs')).runNativeHmrScenario({ page, metrics, sendHmr, childURL, closeOwnedTerminal: id => hostTerminals.close(agent, id), original, readHostSource: () => readFile(join(root, 'a.md'), 'utf8') }) : nativeChromeMode ? await (await import('./fixtures/native-chrome-scenario.mjs')).runNativeChromeScenario({ page, baseline: chromeBaseline, metrics }) : await (await import('./fixtures/native-shell-scenario.mjs')).runNativeShellScenario({ page, root, metrics, handles, childURL, journal });
     await page.evaluate(() => window.testNative.dispose()); assert.deepEqual(errors, []); assert.equal(metrics.activeRetains, 0); assert.equal(journal.metrics.activeFollowers, 0); assert.equal(journalB.metrics.activeFollowers, 0); assert.equal(journalB.metrics.prompts, 0);
     await writeFile(nativeHmrMode ? 'test-output/workspace-native-hmr-result.json' : nativeChromeMode ? 'test-output/workspace-native-chrome-result.json' : 'test-output/workspace-native-shell-result.json', JSON.stringify({ layer: 'actual public AppFrame/Main/Header/Session adapter + Sidebar/Chat/composer and SDK Gateway', evidence, metrics, journal: journal?.metrics, journalB: journalB?.metrics, errors, browserConsole, externalRequests, hmrFrames, hmrRequests }, null, 2)); complete = true; return;

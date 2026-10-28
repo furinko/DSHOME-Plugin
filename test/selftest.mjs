@@ -825,12 +825,15 @@ check('cordis rows resolve to this package', () => {
   // otherwise the host fails to load it at startup.
   const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8');
   const names = [...patch.matchAll(/name:\s*(\S+)/g)].map((m) => m[1]);
-  assert.ok(names.length > 0, 'no rows declared');
-  for (const name of names) {
-    assert.equal(name, manifest.exports['./workbench-entry'], 'row must name the declared package-owned host entry');
-    assert.match(name, /^\.\/lib\/entry-workbench-[a-f0-9]{12}\.js$/, 'entry must remain bounded, content-keyed and package-relative');
-    assert.ok(existsSync(join(root, name)), 'anchored host entry missing');
-  }
+  const layout = JSON.parse(readFileSync(join(root,'layout/package.json'),'utf8'));
+  const layoutEntry = './layout/' + layout.exports['./shell-entry'].slice(2);
+  assert.equal(layout.name,'@deepseek-ai/dsh-client-ui-layout');
+  assert.deepEqual([...names].sort(),[manifest.exports['./workbench-entry'],layoutEntry].sort(),'exactly the two declared package-owned entries');
+  assert.match(manifest.exports['./workbench-entry'],/^\.\/lib\/entry-workbench-[a-f0-9]{12}\.js$/);
+  assert.match(layoutEntry,/^\.\/layout\/lib\/entry-[a-f0-9]{12}\.js$/);
+  for (const name of names) assert.ok(existsSync(join(root,name)),'anchored host entry missing');
+  assert.ok(layout.dsh.client.inject.includes('@deepseek-ai/dsh-api-workspace-controller'));
+  assert.ok(layout.dsh.client.inject.includes('@deepseek-ai/dsh-client-locale'));
 });
 
 // ── host half ───────────────────────────────────────────────────────────────

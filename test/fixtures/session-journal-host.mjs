@@ -4,8 +4,8 @@
 import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 export async function sessionJournalHost(root, sessionId = 'A') {
-  if (!['A', 'B'].includes(sessionId)) throw Error('Unknown isolated journal identity');
-  const path = join(root, sessionId === 'A' ? 'fixture-session-history.jsonl' : 'fixture-session-B-history.jsonl'); await writeFile(path, '');
+  if (!['A', 'B', 'C'].includes(sessionId)) throw Error('Unknown isolated journal identity');
+  const path = join(root, sessionId === 'A' ? 'fixture-session-history.jsonl' : `fixture-session-${sessionId}-history.jsonl`); await writeFile(path, '');
   const followers = new Set(); let nextSeq = 0, appendTail = Promise.resolve();
   const metrics = { follows: 0, activeFollowers: 0, prompts: 0, appended: 0 };
   const records = async () => (await readFile(path, 'utf8')).split('\n').filter(Boolean).map(JSON.parse);

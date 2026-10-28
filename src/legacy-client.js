@@ -313,7 +313,6 @@ window.__ModuleLoader__.load({
       function Name() {
         var kids = [
           jsx('span', {
-            key: 'n',
             // The sweep target. The inline `color` stays as the no-glow fallback;
             // the glow sheet overrides the *fill* (via -webkit-text-fill-color)
             // rather than the colour, so it wins without needing !important.
@@ -323,11 +322,10 @@ window.__ModuleLoader__.load({
               fontWeight: 600,
             },
             children: BRAND_NAME,
-          }),
+          }, 'n'),
         ];
         if (VERSION) {
           kids.push(jsx('span', {
-            key: 'v',
             style: {
               height: 16,
               lineHeight: '16px',
@@ -343,7 +341,7 @@ window.__ModuleLoader__.load({
               alignSelf: 'center',
             },
             children: VERSION,
-          }));
+          }, 'v'));
         }
         return jsx('span', {
           style: { display: 'inline-flex', alignItems: 'center', gap: 6, height: 24 },

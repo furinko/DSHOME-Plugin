@@ -21,16 +21,22 @@ const {ClientModuleRegistry,bootInjections}=registryModule;
 const {loadOverlayPatches,composeEntries}=bootModule;
 const id='dshome-plugin',manifest=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
 const client=fs.readFileSync(path.join(root,'lib/client.js'));
-const clientSha=crypto.createHash('sha256').update(client).digest('hex');
+const clientSha=crypto.createHash('sha256').update(client).update(fs.readFileSync(path.join(root,'lib/index.js'))).update(fs.readFileSync(path.join(root,'layout/lib/client.js'))).digest('hex');
 assert.equal(manifest.exports['./workbench-entry'],'./lib/entry-workbench-'+clientSha.slice(0,12)+'.js');
 const warnings=[];
 const patches=loadOverlayPatches('dsh',path.join(root,'cordis.patch.yml'));
-const rows=composeEntries([[{insert:[{id:'ui-brand-official',name:'@deepseek-ai/dsh-client-ui-brand-official'}]}],patches],message=>warnings.push(String(message)));
+const rows=composeEntries([[{insert:[{id:'ui-brand-official',name:'@deepseek-ai/dsh-client-ui-brand-official'},{id:'ui-layout',name:'@deepseek-ai/dsh-client-ui-layout'}]}],patches],message=>warnings.push(String(message)));
 const row=rows.find(entry=>entry.id===id);
 assert(row);assert.equal(row.name,pathToFileURL(path.join(root,manifest.exports['./workbench-entry'])).href);
-assert.equal(rows.find(entry=>entry.id==='ui-brand-official').disabled,true);assert.equal(warnings.length,0);
+assert.equal(rows.find(entry=>entry.id==='ui-brand-official').disabled,true);assert.deepEqual(warnings,[]);
+assert.equal(rows.find(entry=>entry.id==='ui-layout').disabled,true);
+const layoutRow=rows.find(entry=>entry.id==='dshome-dual-layout');
+const layoutManifest=JSON.parse(fs.readFileSync(path.join(root,'layout/package.json'),'utf8'));
+assert.equal(layoutManifest.name,'@deepseek-ai/dsh-client-ui-layout');
+assert.equal(layoutRow.name,pathToFileURL(path.join(root,'layout',layoutManifest.exports['./shell-entry'])).href);
+assert.notEqual(layoutRow.disabled,true);
 const host=await import(row.name);
-assert.equal(host.name,id);assert.equal(host.apply(),undefined);assert.equal(host.default.apply,host.apply);assert.equal(host.default.name,id);
+assert.equal(host.name,id);assert.throws(()=>host.apply(),TypeError);assert.equal(host.default.apply,host.apply);assert.equal(host.default.name,id);
 const tempParent=fs.realpathSync(os.tmpdir());
 const temp=fs.realpathSync(fs.mkdtempSync(path.join(tempParent,'dshome-registry-')));
 try {
@@ -65,6 +71,16 @@ try {
   const response=await registry.fetchBundle(new Request('http://isolated.test/'+afterRow.url));assert.equal(response.status,200);
   const afterCode=await response.text();assert(/var WORKBENCH_PLUGIN\s*=/.test(afterCode));assert(afterCode.includes(client.toString('utf8')));
   const boot=bootInjections(after).find(entry=>entry.kind==='global'&&entry.name==='__DSH_BOOT__');assert.equal(boot.value.entries[0].url,afterRow.url);new Function(afterCode);
+  mountedName=layoutRow.name;
+  assert.equal(registry.processOne(layoutRow.name,fail),true);
+  assert.equal(registry.clientPath('@deepseek-ai/dsh-client-ui-layout'),path.join(root,'layout/lib/client.js'));
+  const combined=registry.compose();
+  const layoutClient=combined.entries.find(entry=>entry.id==='@deepseek-ai/dsh-client-ui-layout');assert(layoutClient);
+  const layoutCode=await(await registry.fetchBundle(new Request('http://isolated.test/'+layoutClient.url))).text();
+  // Actual SDK prepareSource strips bundle-local debug trailers before serving.
+  const sourceLayout=fs.readFileSync(path.join(root,'layout/lib/client.js'),'utf8');
+  const executableLayout=sourceLayout.replace(/^\/\/# source(?:Mapping)?URL=.*(?:\r?\n|$)/gm,'').trimEnd();
+  assert(executableLayout.length>30000);assert(layoutCode.includes(executableLayout));new Function(layoutCode);
   console.log(JSON.stringify({kind:'real-host-sdk-with-isolated-loader-and-temporary-old-fixture',pass:true,sameNameUpgradeReproducesStalePath:true,packageRelativeEntryOwnedAndImported:true,clientModuleIdUnchanged:true,responseStatus:response.status,responseContainsCompleteWorkbench:true,clientSha256:clientSha,liveServiceModified:false,authenticatedGuiVerified:false},null,2));
 } finally {
   // Verify the owned absolute temporary root before removing only that root.
