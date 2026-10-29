@@ -1,5 +1,6 @@
 import React from 'react';
 import { createWorkspaceController } from './controller.mjs';
+import { createDesktopRuntime } from './desktop-runtime.mjs';
 import { css, unwrap } from './ui.mjs';
 import { createProjectShelf } from './project-shelf.mjs';
 import { workspaceReloadState, reloadBlockedMessage, fiberUpdateTarget, workspaceLifecycle } from './reload-state.mjs';
@@ -21,9 +22,10 @@ export function applyWorkbench(ctx, hostRequire) {
   const publish = () => { snapshot = Object.freeze({ revision: snapshot.revision + 1 }); for (const fn of [...listeners]) { try { fn(); } catch (error) { console.error('DSHOME subscriber', error); } } };
   const source = { subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn); }, getSnapshot: () => snapshot };
   const shelfOwners = new WeakMap();
-  function availability() { reason = !uiReady ? '原生工作台面板暂不可用' : !activeScope ? '工作区接口暂不可用；已有草稿和内容仍保留' : ''; if (!reason) ready.resolve({ ok: true }); publish(); }
+  function availability() { reason = !uiReady ? '原生工作台面板暂不可用' : !activeScope ? '工作区接口暂不可用；已有草稿和内容仍保留' : ''; if (!reason) ready.resolve({ ok: true }); publish(); desktop?.refresh(); }
   const services = createServiceEpoch();
-  const checkReload = () => workspaceReloadState({ shelves: shelves.values(), retiring: retiring.size });
+  let desktop;
+  const checkReload = () => workspaceReloadState({ shelves: [...shelves.values(), ...(desktop ? [desktop.shelf] : [])], retiring: retiring.size });
   keep(ctx.on('internal/update', function (_config, _noSave, next) {
     const { affectsOwner, chain } = fiberUpdateTarget(ctx.fiber, this);
     lastUpdate = Object.freeze({ target: this?.uid, targetName: this?.name, chain, affectsOwner });
@@ -89,6 +91,7 @@ export function applyWorkbench(ctx, hostRequire) {
   let referenceReady = false, referenceGeneration = 0;
 
   async function returnReference(uri, { sessionId = current(), signal } = {}) {
+    if (desktop && await desktop.returnReference(uri, { sessionId, signal, enter: () => ctx.get('dualShellP0')?.setMode('workbench') })) return;
     const value = decodeReference(uri), scope = activeScope, generation = referenceGeneration;
     const isCurrent = () => !disposed && !!scope && referenceReady && activeScope === scope && referenceGeneration === generation && current() === sessionId;
     if (!isCurrent() || value.sessionId !== sessionId) throw Error('请回到引用所属的真实会话后再打开。');
@@ -125,7 +128,13 @@ export function applyWorkbench(ctx, hostRequire) {
   const beforeUnload = e => { if ([...shelves.values()].some(s => s.hasUnsaved())) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload); keep(() => window.removeEventListener('beforeunload', beforeUnload));
   function startBindings() {
-  keep(installReferenceBridge(ctx, { returnReference, onAvailability(value) { referenceReady = value; referenceGeneration++; publish(); } }));
+  desktop = createDesktopRuntime({ ctx, services, getOwner: () => activeOwner, hostRequire, referenceReady: () => referenceReady, referenceRevision: () => referenceGeneration });
+  keep(ctx.reflect.provide('dshomeDesktop', desktop));
+  keep(() => desktop.dispose());
+  for (const seat of ['conversation.session.header.utilities', 'conversation.hero.options']) {
+    keep(slots.inject(seat, () => slots.register({ name: seat, id: ID + '.desktop-input', order: -51 }, desktop.InputSeat)));
+  }
+  keep(installReferenceBridge(ctx, { returnReference, onAvailability(value) { referenceReady = value; referenceGeneration++; publish(); desktop?.refresh(); } }));
   // Native seats live independently of a file namespace. Its withdrawal must
   // not unregister the tab kind, unmount React content, or dispose terminal holds.
   keep(ctx.inject(['sidebarRight', 'sidebarRightTabs'], seats => {

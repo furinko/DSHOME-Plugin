@@ -2,11 +2,11 @@
 export function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
   if (![workspaces, session, connection].every(s => s?.getSnapshot && s?.subscribe)) throw Error('Authoritative workspace/session/connection sources required');
   let revision = 0, mode = 'original', chatWidth = 420, narrowPane = 'workspace', disposed = false;
-  let snapshot, selected = null, reason = '', nextId = 0, epochNumber = 0, watchedSignal;
+  let snapshot, selected = null, reason = '', nextId = 0, epochNumber = 0, watchedSignal, desktop = null;
   const watchAbort = signal => { if (watchedSignal === signal) return; watchedSignal?.removeEventListener('abort', sync); watchedSignal = signal; watchedSignal?.addEventListener('abort', sync, { once: true }); };
   const epochs = new WeakMap(), scenes = new Map(), listeners = new Set();
   const publish = () => {
-    snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, selected, reason, scenes: Object.freeze([...scenes.values()]) });
+    snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
     for (const listener of [...listeners]) listener();
   };
   function sync() {
@@ -40,6 +40,7 @@ export function createSceneStore({ workspaces, session, connection, maxScenes = 
   const api = {
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    setDesktop(value) { if (!disposed && value && desktop !== value) { desktop = value; publish(); } },
     setMode(next) { if (!['original', 'workbench'].includes(next)) throw Error('Unknown shell mode'); if (disposed || next === mode) return; mode = next; publish(); },
     resizeChat(value) { if (!Number.isFinite(value)) throw Error('Invalid width'); if (disposed) return; chatWidth = Math.max(320, Math.min(560, Math.round(value))); publish(); },
     setNarrowPane(next) { if (!['workspace', 'chat'].includes(next)) throw Error('Unknown pane'); if (disposed) return; narrowPane = next; publish(); },

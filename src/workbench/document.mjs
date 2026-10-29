@@ -2,7 +2,7 @@
 export class DocumentError extends Error {
   constructor(code, message) { super(message); this.name = 'DocumentError'; this.code = code; }
 }
-const definitive = error => /^(FS_|workbench\/|remote-access\/|gateway\/bad-request)/.test(error?.code ?? '');
+const definitive = error => /^(FS_|workbench\/|remote-access\/|gateway\/bad-request|WORKBENCH_PROJECT_CHANGED$)/.test(error?.code ?? '');
 export function createDocument({ path, transport, onListenerError = () => {} }) {
   if (typeof path !== 'string' || !path || !transport?.read || !transport?.save) throw new TypeError('Document needs a path and bounded versioned transport');
   const listeners = new Set();

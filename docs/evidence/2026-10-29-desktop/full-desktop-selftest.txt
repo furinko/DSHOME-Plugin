@@ -1,0 +1,87 @@
+
+== classic-script contract ==
+  ✓ bundle has no top-level import statement
+  ✓ bundle has no top-level export statement
+  ✓ bundle is a single self-contained file
+  ✓ registers through the module loader factory protocol
+  ✓ factory returns its exports
+  ✓ host modules come from require(), not import
+  ✓ declares name, inject and apply
+  ✓ each feature is isolated behind safe()
+
+== selectors ==
+  ✓ reasoning window keeps its verified anchors and stays masking
+  ✓ the sticky disclosure header masks without showing
+  ✓ canvas backing store is rounded before comparing (P2-26)
+  ✓ canvas length is capped below Chrome’s 32767px limit (P2-27)
+  ✓ a missing scrollBody anchor says so once (P1-12)
+  ✓ synthetic-click expansion backs off and gives up loudly (P2-30)
+  ✓ theme and notify-settings passes hold their teardowns (P2-25)
+  ✓ the selector header documents exactly two hash-fragment exceptions (P1-12)
+  ✓ never relies on hashed CSS-module class names
+  ✓ card selector excludes empty hidden blocks
+  ✓ locale descriptions track package.json (2026-10-14 review, locale drift)
+  ✓ card selector covers tool calls and system injections
+
+== sidebar foot ==
+  ✓ the foot layout is addressed by the slot anchor, not a hashed class
+  ✓ the foot stacks its rows instead of squeezing them into one line
+  ✓ the collapsed rail keeps the centred row
+  ✓ the header comment counts exactly what apply() installs
+  ✓ the sidebar feature is switchable and wired
+
+== notify ==
+  ✓ the notify feature is switchable and wired
+  ✓ every upstream read is optional
+  ✓ the reference copy and both throttles are carried over
+  ✓ delivery degrades instead of failing
+  ✓ the README documents the notify option
+  ✓ a feature that cannot fire says so in-page, not only in the console
+  ✓ 设置卡片：六个开关都挂在官方设置分区上
+
+== minimap geometry ==
+  ✓ band is driven by the conversation area, not by the window or the content
+  ✓ the composer height comes from the official measurement
+  ✓ the strip is top-aligned inside the conversation area
+  ✓ the strip narrows with the conversation gutter instead of a fixed width
+  ✓ the gutter is measured off message rows, not parsed from a CSS expression
+  ✓ sidebar navigation uses the conversation box and reserves a text lane
+  ✓ a column resize re-places the strip at once, and the slide is followed per frame
+  ✓ zoom is derived from the thumb ratio, not fixed at 1
+  ✓ thumb height stays a constant fraction of the standard band
+  ✓ the canvas is translated inside a clipping window
+  ✓ the thumb covers exactly the viewport slice of the canvas
+  ✓ at the document bottom the window is exactly filled
+  ✓ content that fits is never translated
+  ✓ clicking centres the clicked content
+  ✓ the old two-ruler mapping is gone
+  ✓ a zero-height block is not admitted to the cache
+  ✓ the minimap reads the assistant kind upstream actually emits
+  ✓ the hover-tip label table covers exactly the official kind domain
+
+== theme ==
+  ✓ token table is present and substantial
+  ✓ every token declares both light and dark
+  ✓ the code plates and inline chips are brand-tinted, not upstream neutral grey
+  ✓ brand accent differs between modes for contrast
+  ✓ sidebar label is exactly DSHOME
+
+== slot registration ==
+  ✓ inject callbacks return a value
+  ✓ all three brand slots are registered
+
+== packaging ==
+  ✓ declares the bundle patch so the loader can find the client
+  ✓ declares dsh.client with a full bundle shape
+  ✓ a client with no inject must set immediately
+  ✓ every exports target exists on disk
+  ✓ main entry exists
+  ✓ the patch disables the official brand row
+  ✓ cordis rows resolve to this package
+
+== host half ==
+  ✓ host half names the plugin
+  ✓ host half exports apply
+  ✓ default export carries name and apply
+
+PASS  67/67

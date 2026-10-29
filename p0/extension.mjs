@@ -10,6 +10,7 @@ export function install(ctx) {
   const style = document.createElement('style'); style.dataset.plugin = 'dshome-dual-shell-p0'; style.textContent = css; document.head.append(style);
   ctx.effect(() => () => { store.dispose(); style.remove(); });
   ctx.reflect.provide('dualShellP0', store);
+  ctx.inject(['dshomeDesktop'], scope => { store.setDesktop(scope.get('dshomeDesktop')); });
   return store;
 }
 
@@ -20,7 +21,7 @@ export function Frame({ NativeFrame, ...props }) {
       h('strong', null, 'DSHOME'),
       h('div', { role: 'group', 'aria-label': '整窗模式' },
         ...[['original', '原版'], ['workbench', '工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))),
-      h('span', { className: 'p0-label' }, 'P0 双布局预览 · 便笺未自动保存'),
+      h('span', { className: 'p0-label' }, '模块化工作台 · 文档需单独保存'),
       view.mode === 'workbench' && h('div', { className: 'p0-narrow-switch', role: 'group', 'aria-label': '窄窗区域' },
         h('button', { onClick: () => props.dualShell.setNarrowPane('workspace'), 'aria-pressed': view.narrowPane === 'workspace' }, '操作区'),
         h('button', { onClick: () => props.dualShell.setNarrowPane('chat'), 'aria-pressed': view.narrowPane === 'chat' }, '聊天'))),
@@ -31,7 +32,8 @@ export function Desktop({ store, active, chatWidth, chatMax }) {
   const view = useState(store), drag = React.useRef(null);
   return h('section', { className: 'p0-desktop', 'aria-label': '主操作区', 'aria-hidden': !active, inert: !active ? '' : undefined },
     h('div', { className: 'p0-scene-area' },
-      view.scenes.map(scene => h(Scene, { key: scene.id, scene, store, active: active && view.selected === scene.key })),
+      view.scenes.map(scene => h('div', { key: scene.id, className: 'p0-full-scene', hidden: view.selected !== scene.key, inert: active && view.selected === scene.key ? undefined : '', 'data-scene': scene.id, 'data-workspace': scene.workspaceId },
+        view.desktop ? h(view.desktop.Body, { scene, active: active && view.selected === scene.key, onOriginal: () => store.setMode('original') }) : h('p', {role:'status'}, '真实工作区服务尚未装配；未显示模拟文件或终端。'))),
       !view.selected && h('p', { role: 'status' }, view.reason)),
     h('div', { className: 'p0-chat-separator', role: 'separator', tabIndex: 0, 'aria-label': '调整右侧聊天宽度', 'aria-orientation': 'vertical', 'aria-valuemin': 320, 'aria-valuemax': chatMax, 'aria-valuenow': chatWidth,
       onPointerDown(e) { if (e.button !== 0) return; drag.current = { x: e.clientX, width: chatWidth }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); },
@@ -65,6 +67,8 @@ function Scene({ scene, store, active }) {
 }
 
 export const css = layoutCSS + `
+.p0-full-scene{height:100%;min-height:0}.p0-full-scene[hidden]{display:none}
+
 .p0-shell{height:100%;display:grid;grid-template-rows:44px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:14px Arial,"Microsoft YaHei",sans-serif}
 /* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
 html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}

@@ -7,7 +7,7 @@ export const BUILTINS = Object.freeze([
   { kind: 'terminal', label: '终端', minWidth: 320, minHeight: 140 },
   { kind: 'web', label: '网页', minWidth: 320, minHeight: 160 },
 ]);
-export function createWorkspaceController({ sessionId, projectId, transport, storage, locks, terminals, terminalCleanup, uuid = () => crypto.randomUUID(), confirm = () => false }) {
+export function createWorkspaceController({ sessionId, getSessionId = () => sessionId, projectId, transport, storage, locks, terminals, terminalCleanup, uuid = () => crypto.randomUUID(), confirm = () => false }) {
   const persistence = createLayoutPersistence({ storage, locks, projectId, uuid });
   const stored = persistence.read();
   const model = createWorkspaceModel({ projectId, initial: stored.kind === 'ready' ? stored.project : undefined });
@@ -67,29 +67,34 @@ export function createWorkspaceController({ sessionId, projectId, transport, sto
     const item = content(id); if (item.kind !== 'terminal') throw Error('不是终端模块');
     if (!terminals) throw Error('宿主未提供终端服务');
     if (item.started) return item.view;
+    const ownerSessionId = getSessionId();
+    if (typeof ownerSessionId !== 'string' || !ownerSessionId) throw Error('终端启动需要当前有效会话');
+    item.ownerSessionId = ownerSessionId;
     item.started = true;
     // The manager belongs to an isolated Cordis service scope, not the native
     // sidebar's retainTabs list. Never overwrite the native window's holds.
-    const membership = () => [...contents.values()].filter(i => i.kind === 'terminal' && i.started).map(i => ({ sessionId, tabId: i.id, contentId: i.contentId }));
+    const membership = () => [...contents.values()].filter(i => i.kind === 'terminal' && i.started).map(i => ({ sessionId: i.ownerSessionId, tabId: i.id, contentId: i.contentId }));
     terminals.retainTabs(membership());
-    try { item.view = terminals.view(sessionId, item.id, item.contentId); terminals.retainTabs(membership()); }
+    try { item.view = terminals.view(item.ownerSessionId, item.id, item.contentId); terminals.retainTabs(membership()); }
     catch (error) { item.started = false; terminals.retainTabs(membership()); throw error; }
     publish(); return item.view;
   }
   function queueTerminalClose(item) {
+    terminals.assertCanClose?.(item.ownerSessionId);
     const id = item.view?.id;
-    terminalCleanup?.begin(sessionId, id, model.getSnapshot().panels[item.id]?.title ?? item.id);
-    try { terminals.close(sessionId, item.id, item.contentId, id); }
+    terminalCleanup?.begin(item.ownerSessionId, id, model.getSnapshot().panels[item.id]?.title ?? item.id);
+    try { terminals.close(item.ownerSessionId, item.id, item.contentId, id); }
     catch (error) { terminalCleanup?.fail(id, error); throw error; }
   }
   function removeContent(item) {
     item.offDocument?.(); contents.delete(item.id); model.forgetPanel(item.id);
-    terminals?.retainTabs([...contents.values()].filter(i => i.started).map(i => ({ sessionId, tabId: i.id, contentId: i.contentId })));
+    terminals?.retainTabs([...contents.values()].filter(i => i.started).map(i => ({ sessionId: i.ownerSessionId, tabId: i.id, contentId: i.contentId })));
   }
   async function closePanel(id) {
     const item = content(id);
     if (model.getSnapshot().editing) throw Error('编辑布局时请收起模块；关闭内容请先退出编辑');
     if (item.document && !await item.document.requestClose(s => confirm('关闭文档将丢弃未保存草稿或未知保存结果，确定吗？', s))) return false;
+    if (item.kind === 'web' && item.url && !confirm('关闭网页将丢弃其中未提交的表单和页面状态，确定吗？')) return false;
     if (item.started && !confirm('关闭终端将结束此进程，确定吗？')) return false;
     if (item.started) queueTerminalClose(item);
     removeContent(item);
@@ -107,15 +112,16 @@ export function createWorkspaceController({ sessionId, projectId, transport, sto
     if (terminalCleanup?.hasUnconfirmed()) { publish({ notice: '终端仍有未确认的关闭任务；请等待宿主回执或重试，项目与草稿仍保留。', noticeSource: 'terminal-close' }); return false; }
     const running = [...contents.values()].filter(item => item.started);
     if (terminalCleanup && running.length) {
+      for (const item of running) terminals.assertCanClose?.(item.ownerSessionId);
       if (!confirm('先请求结束此项目的终端；文档草稿仍保留，收到宿主确认后请再关闭项目，确定吗？')) return false;
       for (const item of running) { queueTerminalClose(item); removeContent(item); }
       publish({ notice: '已提交终端关闭请求，尚不代表进程已结束；收到确认后请再关闭项目。', noticeSource: 'terminal-close' }); return false;
     }
-    if ((hasUnsaved() || [...contents.values()].some(item => item.started)) && !confirm('关闭工作台将丢弃未保存草稿并结束其中的终端进程，确定吗？')) return false;
-    for (const item of contents.values()) { if (item.started) terminals.close(sessionId, item.id, item.contentId, item.view?.id); item.offDocument?.(); }
+    if ((hasUnsaved() || [...contents.values()].some(item => item.started || item.kind === 'web' && item.url)) && !confirm('关闭工作台将丢弃未保存草稿、网页表单和页面状态，并结束其中的终端进程，确定吗？')) return false;
+    for (const item of contents.values()) { if (item.started) terminals.close(item.ownerSessionId, item.id, item.contentId, item.view?.id); item.offDocument?.(); }
     releaseResources(); contents.clear(); return true;
   }
-  return Object.freeze({ model, contents, sessionId, projectId, content, openDocument, navigate, startTerminal, closePanel, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
+  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, navigate, startTerminal, closePanel, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
     getSnapshot: () => snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     notify: text => publish({ notice: text }), updateContent(id, change) { Object.assign(content(id), change); publish(); },
     exportLayout: () => JSON.stringify(model.serialize(), null, 2), exportStoredLayout: () => storage.getItem(persistence.key),

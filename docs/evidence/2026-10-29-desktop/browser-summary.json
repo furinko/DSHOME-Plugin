@@ -1,0 +1,451 @@
+{
+  "evidence": {
+    "checks": [
+      {
+        "id": "real-original-native-tree",
+        "passed": true
+      },
+      {
+        "id": "web-close-cancel-keeps-form",
+        "passed": true
+      },
+      {
+        "id": "layout-save-does-not-save-document",
+        "passed": true
+      },
+      {
+        "id": "stable-content-and-chat",
+        "passed": true
+      },
+      {
+        "id": "real-file-save-from-current-session-B",
+        "passed": true
+      },
+      {
+        "id": "different-native-workspace-isolated",
+        "passed": true
+      },
+      {
+        "id": "explicit-reference-in-native-draft",
+        "passed": true
+      },
+      {
+        "id": "reference-return-restores-selection",
+        "passed": true
+      },
+      {
+        "id": "reference-foreign-session-refused",
+        "passed": true
+      },
+      {
+        "id": "real-version-conflict-and-explicit-recovery",
+        "passed": true
+      },
+      {
+        "id": "actual-host-root-change-refuses-old-file-write",
+        "passed": true
+      },
+      {
+        "id": "actual-PTY-start-and-output",
+        "passed": true
+      },
+      {
+        "id": "terminal-owner-not-silently-transferred",
+        "passed": true
+      },
+      {
+        "id": "real-pointer-drag-merges-panel-tabs",
+        "passed": true
+      },
+      {
+        "id": "iframe-not-reloaded",
+        "passed": true
+      },
+      {
+        "id": "layout-restores-without-command-replay",
+        "passed": true
+      },
+      {
+        "id": "desktop-retained-project-blocks-config-update",
+        "passed": true
+      },
+      {
+        "id": "reference-reopens-explicitly-closed-workspace",
+        "passed": true
+      },
+      {
+        "id": "right-chat-no-page-overflow-1920",
+        "passed": true
+      },
+      {
+        "id": "right-chat-no-page-overflow-1366",
+        "passed": true
+      },
+      {
+        "id": "right-chat-no-page-overflow-1040",
+        "passed": true
+      },
+      {
+        "id": "narrow-focus-boundary",
+        "passed": true
+      },
+      {
+        "id": "legacy-sidebar-tools-coexist",
+        "passed": true
+      },
+      {
+        "id": "actual-theme-runtime-dark",
+        "passed": true
+      }
+    ],
+    "windowChrome": {
+      "probes": [
+        {
+          "height": 32,
+          "mode": "原版",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 32,
+              "right": 1366,
+              "bottom": 76,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 76,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 824
+            },
+            "main": {
+              "x": 280,
+              "y": 76,
+              "right": 946,
+              "bottom": 900,
+              "width": 666,
+              "height": 824
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 32,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 32,
+          "mode": "工作台",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 32,
+              "right": 1366,
+              "bottom": 76,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 76,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 824
+            },
+            "main": {
+              "x": 946,
+              "y": 76,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 824
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 32,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 40,
+          "mode": "原版",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 40,
+              "right": 1366,
+              "bottom": 84,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 6,
+              "right": 40,
+              "bottom": 34,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 84,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 816
+            },
+            "main": {
+              "x": 280,
+              "y": 84,
+              "right": 946,
+              "bottom": 900,
+              "width": 666,
+              "height": 816
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 40,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 40,
+          "mode": "工作台",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 40,
+              "right": 1366,
+              "bottom": 84,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 6,
+              "right": 40,
+              "bottom": 34,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 84,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 816
+            },
+            "main": {
+              "x": 946,
+              "y": 84,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 816
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 40,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 48,
+          "mode": "原版",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 48,
+              "right": 1366,
+              "bottom": 92,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 10,
+              "right": 40,
+              "bottom": 38,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 808
+            },
+            "main": {
+              "x": 280,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1086,
+              "height": 808
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 48,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 48,
+          "mode": "工作台",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 48,
+              "right": 1366,
+              "bottom": 92,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 10,
+              "right": 40,
+              "bottom": 38,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 808
+            },
+            "main": {
+              "x": 946,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 808
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 48,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "fullscreen": true,
+          "geometry": {
+            "brand": {
+              "x": 104,
+              "y": 13.5,
+              "right": 165.453125,
+              "bottom": 29.5
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 44
+            }
+          }
+        }
+      ],
+      "boundary": "Actual rc.3 sidebar/frame CSS under explicit Windows attributes; not Electron OS hit-testing or native window-button acceptance."
+    },
+    "notVerified": [
+      "production GUI",
+      "independent review",
+      "full remaining interaction matrix"
+    ],
+    "real": [
+      "public SDK",
+      "guarded filesystem save",
+      "native composer",
+      "actual PTY"
+    ],
+    "fixtures": [
+      "workspace catalog",
+      "navigation",
+      "host journal",
+      "authorization answers"
+    ]
+  },
+  "metrics": {
+    "spawn": 1,
+    "terminate": 1,
+    "close": 1,
+    "closed": 1,
+    "activeRetains": 0,
+    "upgrades": 3
+  },
+  "errors": [],
+  "browserConsole": []
+}

@@ -1,0 +1,14 @@
+{
+  "lib/client.js": "75630f0fdaccae45f6aa095aadf7e55e929d7920c4f912306c3f567a908082d7",
+  "lib/entry-workbench-4a2869646315.js": "bfc40311d7f9af5753b8a0443dcce7cd70f0e11316b576d59115379ed1b18de3",
+  "layout/lib/client.js": "0dad278befb1f0f658cc4cb3e759d679e6f096dd473410f22f44c317f13ac8e4",
+  "layout/lib/entry-0dad278befb1.js": "e8c2d30bba8e6c335081ac528b665ba181388fdfcd092746805af1f34e8efd57",
+  "p0/full-scenario.mjs": "877960f448ca3048cb464349773ba33d0390545f8e0c8e4048c668661e2feeff",
+  "src/workbench/desktop-runtime.mjs": "2485853479be2ea1e09bb6750118461609a3832c04f368b106a731ae48016eb0",
+  "src/workbench/shared-entry.mjs": "77a1a98f69a3d60bc14ef793b6cba28b182164a879ea96c8af9e190872427fa6",
+  "src/workbench/shared-files.mjs": "4f9e6ca37d1f61002f35d7ddcf6d0365fe73468978afa0b5aa703ca1e8d12b89",
+  "src/workbench/workspace-authority.mjs": "b2d4ce69184f80a452bc3984c8f7cf32936e43a8029645077662c59cf3dcda0c",
+  "src/workbench/controller.mjs": "0bfeb1af9f745264e614a7903ff754e09f074d2a2c2e0b417166dd9391297e1e",
+  "src/workbench/document.mjs": "feaebec38f796588addd89eef48bc8c3be366d4f156445bc415f34833406a295",
+  "src/workbench/ui.mjs": "8d34bf7117ae5a0c75d662dd3b053b63673e426e7fc9516fddcf0ead39525ee7"
+}

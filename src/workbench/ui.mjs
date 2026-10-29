@@ -1,5 +1,6 @@
 import React from 'react';
 import { chromeCSS } from './chrome-css.mjs';
+import { createLayoutDrag, dropEdge, LAYOUT_DRAG_TYPE } from './layout-drag.mjs';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import terminalCSS from '@xterm/xterm/css/xterm.css';
@@ -25,14 +26,14 @@ function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true }) {
+export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId }) {
   const state = useSource(c), layout = useSource(c.model), ref = React.useRef(null), room = useRoom(ref);
   const [selection, select] = React.useState(null), [menu, setMenu] = React.useState(false);
   const geometry = c.model.geometry(Math.max(0, room.width - 16), Math.max(0, room.height - 12));
   function action(fn) { try { Promise.resolve(fn()).catch(e => c.notify(errorText(e))); } catch (e) { c.notify(errorText(e)); } }
   const serializedPanels = Object.values(layout.panels).sort((a, b) => a.id.localeCompare(b.id));
   return h('section', { className: 'dshome-v2', 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId },
-    h('header', { className: 'wb-header' }, h('strong', null, layout.editing ? '布局编辑' : '操作区'), h('span', { className: 'wb-project', title: c.projectId }, c.projectId),
+    h('header', { className: 'wb-header' }, h('strong', null, layout.editing ? '布局编辑' : '操作区'), h('span', { className: 'wb-project', title: c.projectId }, projectTitle),
       layout.editing ? h(React.Fragment, null,
         button('取消', () => c.model.cancelEdit()), button('应用布局', () => action(() => c.model.applyEdit()), { className: 'wb-primary' })) : h(React.Fragment, null,
         h('select', { 'aria-label': '布局预设', value: layout.selectedPreset, onChange: e => action(() => c.model.selectPreset(e.target.value)) },
@@ -62,7 +63,7 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
               button(layout.layout.maximized === panel.id ? '还原' : '放大', () => action(() => c.model.maximize(panel.id))),
               button('关闭', () => action(() => c.closePanel(panel.id)), { 'aria-label': '关闭 ' + panel.id })),
             h('nav', { className: 'wb-tabs', 'aria-label': panel.title + ' 标签' }, tabs.map(p => button(p.title, () => c.model.activate(p.id), { key: p.id, role: 'tab', 'aria-selected': p.id === panel.id }))),
-            h('div', { className: 'wb-panel-body' }, h(Content, { item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, showing: showing && !collapsed })));
+            h('div', { className: 'wb-panel-body' }, h(Content, { item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, showing: showing && !collapsed })));
         }),
         geometry.handles.map(handle => h(SplitHandle, { key: handle.nodeId, handle, c }))),
       layout.editing && h(LayoutEditor, { c, room, selected: selection, select }),
@@ -73,10 +74,10 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
       state.storage === 'corrupt' && button('导出损坏记录', () => action(() => download('dshome-layout-original.json', c.exportLayoutOriginal()))),
       state.layoutBackupKey && button('导出最近布局备份', () => action(() => download('dshome-layout-backup.json', c.exportLayoutBackup())))));
 }
-function Content({ item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable }) {
+function Content({ item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable, terminalAvailable }) {
   if (item.kind === 'files') return h(FileTree, { item, c, workspaceFiles });
   if (item.kind === 'document') return item.document ? h(DocumentEditor, { doc: item.document, c, inputActions, referenceReady, referenceCurrent, showing }) : h('div', { className: 'wb-empty' }, '从文件树选择真实文件，或输入工作区内的文件路径。', h(OpenFile, { c }));
-  if (item.kind === 'terminal') return h(TerminalPanel, { item, c, showing, servicesAvailable });
+  if (item.kind === 'terminal') return h(TerminalPanel, { item, c, showing, servicesAvailable: servicesAvailable && terminalAvailable(item) });
   if (item.kind === 'web') return h(WebPanel, { item, c });
   return h('p', { role: 'alert' }, '模块提供者不可用，实例仍保留。');
 }
@@ -168,7 +169,7 @@ function TerminalScreen({ view, showing, onError, servicesAvailable = true }) {
     const terminal = new Terminal({ disableStdin: true, cursorBlink: true, fontSize: 13, scrollback: 3000, allowProposedApi: false });
     const fit = new FitAddon(); terminal.loadAddon(fit); terminal.open(ref.current); termRef.current = terminal; fitRef.current = fit;
     const detach = view.mount();
-    const input = terminal.onData(data => { if (inputAllowed.current) view.write(data); });
+    const input = terminal.onData(data => { if (inputAllowed.current) { try { view.write(data); } catch (error) { onError(error); } } });
     const fitNow = () => { const rect = ref.current?.getBoundingClientRect(); if (rect?.width > 20 && rect?.height > 20) { fit.fit(); view.resize(terminal.cols, terminal.rows); } };
     const observer = new ResizeObserver(fitNow); observer.observe(ref.current); fitNow();
     return () => { observer.disconnect(); input.dispose(); detach(); terminal.dispose(); termRef.current = null; fitRef.current = null; rendered.current = -1; };
@@ -199,6 +200,18 @@ function SplitHandle({ handle, c }) {
 function LayoutEditor({ c, room, selected, select }) {
   const state = useSource(c.model), draft = state.editing;
   const [target, setTarget] = React.useState(''), [edge, setEdge] = React.useState('right');
+  const drag = React.useMemo(() => createLayoutDrag(c.model), [c.model]);
+  const [dropHint, hint] = React.useState('');
+  React.useEffect(() => () => drag.cancel(), [drag]);
+  function dragProps(panelId, paneId) {
+    return { draggable: true,
+      onDragStart(e) { action(() => { e.dataTransfer.setData(LAYOUT_DRAG_TYPE, drag.begin(panelId)); e.dataTransfer.effectAllowed = 'move'; select(panelId); }); },
+      onDragEnd() { drag.cancel(); hint(''); },
+      onDragOver(e) { if (!paneId || !Array.from(e.dataTransfer.types).includes(LAYOUT_DRAG_TYPE)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const r = e.currentTarget.getBoundingClientRect(); hint(paneId + ' · ' + dropEdge(e.clientX-r.left, e.clientY-r.top, r.width, r.height)); },
+      onDragLeave() { hint(''); },
+      onDrop(e) { if (!paneId) return; e.preventDefault(); action(() => { const r = e.currentTarget.getBoundingClientRect(); const id = drag.drop(e.dataTransfer.getData(LAYOUT_DRAG_TYPE), paneId, dropEdge(e.clientX-r.left, e.clientY-r.top, r.width, r.height)); select(id); setTarget(paneId); }); hint(''); },
+    };
+  }
   const g = c.model.geometry(Math.max(900, room.width), Math.max(600, room.height), { draft: true });
   const panels = Object.values(draft.panels), paneIds = Object.keys(g.paneRects);
   const pane = target && paneIds.includes(target) ? target : paneIds[0];
@@ -207,11 +220,11 @@ function LayoutEditor({ c, room, selected, select }) {
   return h('section', { className: 'wb-layout-editor', 'aria-label': '布局编辑器' },
     h('aside', { className: 'wb-module-library' }, h('h3', null, '模块库'), h('p', null, '添加的是内容模块。应用前不启动终端、不读取文件。'),
       c.model.modules().map(def => button('＋ ' + def.label, () => action(() => { const id = c.model.addPanel(def.kind, { targetPaneId: pane, edge }); select(id); }), { key: def.kind })),
-      h('h4', null, '已有实例'), panels.map(panel => button(panel.title + ' · ' + panel.id, () => select(panel.id), { key: panel.id, 'aria-pressed': selected === panel.id }))),
-    h('section', { className: 'wb-layout-draft' }, h('h3', null, '布局草稿'), h('p', null, '蓝色目标是明确分区，不是任意像素摆放。内容仍在原容器中。'),
+      h('h4', null, '已有实例'), panels.map(panel => button(panel.title + ' · ' + panel.id, () => select(panel.id), { key: panel.id, 'aria-pressed': selected === panel.id, ...dragProps(panel.id) }))),
+    h('section', { className: 'wb-layout-draft' }, h('h3', null, '布局草稿'), h('p', null, '拖到分区四边以分割，中央合并标签；也可使用下方控件。内容仍在原容器中。'), h('p', { role: 'status', 'aria-live': 'polite' }, dropHint),
       h('div', { className: 'wb-layout-preview', style: { aspectRatio: g.canvas.width + '/' + g.canvas.height } }, panels.map(panel => {
         const r = g.rectangles[panel.id]; if (!r?.visible) return null;
-        return button(panel.title + ' · ' + panel.id, () => { select(panel.id); setTarget(r.paneId); }, { key: panel.id, 'aria-pressed': selected === panel.id, style: { position: 'absolute', left: (r.x / g.canvas.width * 100) + '%', top: (r.y / g.canvas.height * 100) + '%', width: (r.width / g.canvas.width * 100) + '%', height: (r.height / g.canvas.height * 100) + '%' } });
+        return button(panel.title + ' · ' + panel.id, () => { select(panel.id); setTarget(r.paneId); }, { key: panel.id, 'aria-pressed': selected === panel.id, ...dragProps(panel.id, r.paneId), style: { position: 'absolute', left: (r.x / g.canvas.width * 100) + '%', top: (r.y / g.canvas.height * 100) + '%', width: (r.width / g.canvas.width * 100) + '%', height: (r.height / g.canvas.height * 100) + '%' } });
       })),
       h('label', null, '目标分区', h('select', { value: pane ?? '', onChange: e => setTarget(e.target.value) }, paneIds.map(id => h('option', { key: id }, id)))),
       h('label', null, '放置方式', h('select', { value: edge, onChange: e => setEdge(e.target.value) }, [['left','左侧分割'],['right','右侧分割'],['top','上方分割'],['bottom','下方分割'],['tab','合并为标签组']].map(([value,label]) => h('option', { key: value, value }, label)))),

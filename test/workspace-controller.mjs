@@ -12,6 +12,17 @@ function setup(options = {}) {
     terminals, uuid: () => 'uuid-' + (++sequence), confirm: () => true, ...options });
   return { c, calls };
 }
+test('foreign terminal close refusal does not create a false cleanup intent', async () => {
+  let intents=0, closes=0;
+  const cleanup={getSnapshot:()=>({requests:[],overflow:0}),subscribe:()=>()=>{},hasUnconfirmed:()=>false,begin(){intents++;},fail(){},dispose(){}};
+  const terminals={retainTabs(){},view:()=>({id:'owned-terminal'}),assertCanClose(){throw Error('different owner');},close(){closes++;}};
+  const {c}=setup({terminalCleanup:cleanup,terminals}); c.startTerminal('TERM-01');
+  await assert.rejects(c.closePanel('TERM-01'),/different owner/); assert.equal(intents,0); assert.equal(closes,0); assert.equal(c.content('TERM-01').started,true); c.releaseResources();
+});
+test('loaded web close and whole-workspace close require explicit loss confirmation', async () => {
+  const {c}=setup({confirm:()=>false}); c.navigate('WEB-01','https://example.org','https://host.example.org');
+  assert.equal(await c.closePanel('WEB-01'),false); assert.equal(c.content('WEB-01').url,'https://example.org/'); assert.equal(c.closeWorkspace(),false); c.releaseResources();
+});
 test('initial workspace describes four modules but never starts a terminal or loads a file', () => {
   let reads = 0; const { c, calls } = setup({ transport: { read: () => { reads++; }, save() {} } });
   assert.equal(Object.keys(c.model.getSnapshot().panels).length, 4); assert.equal(calls.views.length, 0); assert.equal(reads, 0);
@@ -32,6 +43,17 @@ test('terminal starts only on explicit action, has a stable content identity, an
   const { c, calls } = setup(); const view = c.startTerminal('TERM-01'); assert.equal(c.startTerminal('TERM-01'), view); assert.equal(calls.views.length, 1);
   assert.ok(calls.holds.at(-1).some(t => t.tabId === 'TERM-01' && t.contentId === c.content('TERM-01').contentId));
   c.model.selectPreset('review'); c.model.beginEdit(); c.model.cancelEdit(); assert.equal(calls.close.length, 0); assert.equal(calls.views.length, 1);
+});
+test('shared controller exposes current session while existing terminals retain their exact owner', async () => {
+  let current = 'A'; const { c, calls } = setup({ getSessionId: () => current });
+  c.startTerminal('TERM-01'); const old = c.content('TERM-01'); current = 'B';
+  assert.equal(c.sessionId, 'B'); assert.equal(c.startTerminal('TERM-01'), old.view);
+  const next = c.model.addPanel('terminal'); c.startTerminal(next);
+  assert.deepEqual(calls.views.map(args => args[0]), ['A','B']);
+  assert.deepEqual(calls.holds.at(-1).map(item => item.sessionId), ['A','B']);
+  await c.closePanel('TERM-01'); assert.equal(calls.close.at(-1)[0], 'A');
+  assert.deepEqual(calls.holds.at(-1).map(item => item.sessionId), ['B']);
+  c.releaseResources();
 });
 test('panel close rejects dirty draft dismissal and does not remove metadata or content', async () => {
   const { c } = setup({ confirm: () => false }); const doc = await c.openDocument('a.md'); await doc.load(); doc.edit('keep me');

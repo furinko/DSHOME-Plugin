@@ -1,0 +1,36 @@
+✔ aborted connection signal revokes active scene even without a source replacement (2.5014ms)
+✔ draft is independent until apply; cancel restores committed layout (2.8832ms)
+✔ invalid updates cannot mutate a draft or smuggle content into layout (0.7862ms)
+✔ different scene models never share draft or commit (0.2366ms)
+✔ tree edits commit atomically and cancellation retains the original geometry (9.3134ms)
+✔ invalid axis and stale split are atomic; undo redo retains the tree (1.1955ms)
+✔ tab merge split maximize collapse retains panel identities and excludes contents (4.3092ms)
+✔ native workspace identity shares A/B but not equal paths (5.3649ms)
+✔ mode and geometry updates do not replace scene identity (0.5587ms)
+✔ unconfirmed or ambiguous membership fails closed without erasing content (0.4773ms)
+✔ connection generation identity is not origin/path or reused text id (0.386ms)
+✔ scene limits refuse instead of silently evicting dirty state (0.3341ms)
+✔ no-session and withdrawn membership do not invent a workspace (0.2411ms)
+✔ P0 scene commands expose no file/terminal/AI authority and reject extra fields (1.3587ms)
+✔ dispose releases subscriptions and refuses later edits (0.3741ms)
+✔ URL gate rejects application, credentials and non-web protocols (0.4388ms)
+✔ full packaged client materializes Remote namespace, renders an owned Session body and tears down its registrations (484.8174ms)
+ℹ initial feature setup
+ℹ reentrant replacement 0
+ℹ waiting for replacement ready 0
+ℹ reentrant replacement 1
+ℹ waiting for replacement ready 1
+ℹ reentrant replacement 2
+ℹ waiting for replacement ready 2
+ℹ reentrant replacement 3
+ℹ waiting for replacement ready 3
+ℹ reentrant replacement 4
+ℹ waiting for replacement ready 4
+ℹ tests 17
+ℹ suites 0
+ℹ pass 17
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1437.8891

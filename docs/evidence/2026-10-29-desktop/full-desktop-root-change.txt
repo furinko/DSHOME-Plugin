@@ -1,0 +1,23 @@
+✔ P0 single-root original/workbench and native-workspace scene preservation (9626.1943ms)
+✔ read preserves BOM, CRLF, trailing newline and immutable snapshots (4.7353ms)
+✔ reloading never discards an edited draft or changes the content instance (0.34ms)
+✔ save captures submitted text while subsequent edits and selection remain dirty (0.4465ms)
+✔ unchanged documents never write and returning to exact saved bytes clears dirty (0.2176ms)
+✔ stale and sandbox refusals preserve draft and version without declaring unknown outcome (2.3614ms)
+✔ lost successful save reply requires read-back; further edits survive reconciliation (0.7499ms)
+✔ unwritten timeout is retryable only after the original version and bytes are verified (0.5551ms)
+✔ uncertain save plus external edits never rebases or overwrites automatically (0.9573ms)
+✔ missing save version is unknown, not a successful clean draft (0.6339ms)
+✔ selected reference is exact selected text with source location, not whole document (1.9748ms)
+✔ close refuses in-flight saves and requires explicit agreement for dirty documents (2.4407ms)
+✔ shared documents and directory requests use fresh current session not stale UI argument (2.5884ms)
+✔ root mismatch rejects before file operation and foreign reply cannot become baseline (2.7619ms)
+✔ host denials retain their real code and malformed success is not accepted (1.2902ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10497.6501

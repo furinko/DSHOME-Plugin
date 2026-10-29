@@ -181,9 +181,9 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   await page.goto(url); await page.waitForFunction(() => window.testP0 || window.testNative || window.fixtureBootError);
   assert.equal(await page.evaluate(() => window.fixtureBootError), undefined);
   if (dualP0) {
-    const evidence = await (await import('../p0/scenario.mjs')).runScenario({page, context, url, childURL, metrics, errors, browserConsole, iframeLoads:()=>iframeLoads});
+    const evidence = await (await import('../p0/full-scenario.mjs')).runScenario({page, context, url, childURL, metrics, errors, browserConsole, iframeLoads:()=>iframeLoads, readHostSource:()=>readFile(join(root,'a.md'),'utf8'), writeHostSource:text=>writeFile(join(root,'a.md'),text), setHostRoot:changed=>{host.sessions.get('A').header.cwd=changed?join(root,'..'):root;}});
     await page.evaluate(() => window.testP0.dispose());
-    assert.deepEqual(errors, []); assert.deepEqual(browserConsole, []); assert.equal(metrics.spawn,0);
+    assert.deepEqual(errors, []); assert.deepEqual(browserConsole, []); assert.equal(metrics.spawn,1); assert.equal(metrics.activeRetains,0);
     await writeFile('test-output/p0-result.json', JSON.stringify({evidence, metrics, errors, browserConsole, journals: [journal.metrics,journalB.metrics,journalC.metrics]}, null, 2)); complete = true; return;
   }
   if (nativeShellMode) {
