@@ -197,7 +197,11 @@ export function createWorkspaceModel({ projectId, initial, onListenerError = () 
         target.tabs.push(...source.tabs); target.active = source.active ?? target.active; source.tabs = []; source.active = null;
       });
     },
-    activate(panelId) { return update(next => { const p = panelPane(next.layout, panelId); if (!p) refuse('PANEL_NOT_VISIBLE', 'Expand the panel first'); p.active = panelId; }); },
+    activate(panelId) { return update(next => { const p = panelPane(next.layout, panelId); if (!p) refuse('PANEL_NOT_VISIBLE', 'Expand the panel first'); p.active = panelId; if (next.layout.maximized) next.layout.maximized = panelId; }); },
+    setSplitAxis(splitId, axis) {
+      if (!['x', 'y'].includes(axis)) refuse('INVALID_SPLIT', 'Invalid split axis');
+      return update(next => { const split = nodes(next.layout.root).find(n => n.id === splitId && n.type === 'split'); if (!split) refuse('SPLIT_NOT_FOUND', 'Split no longer exists'); split.axis = axis; });
+    },
     resize(splitId, ratio) {
       if (!Number.isFinite(ratio)) refuse('INVALID_SPLIT', 'Split ratio must be finite');
       return update(next => { const split = nodes(next.layout.root).find(n => n.id === splitId && n.type === 'split'); if (!split) refuse('SPLIT_NOT_FOUND', 'Split no longer exists'); split.ratio = Math.max(0.01, Math.min(0.99, ratio)); });

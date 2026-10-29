@@ -1,6 +1,7 @@
 import React from 'react';
 import { createSceneStore, parseWebAddress } from './scene-store.mjs';
-import { createLayoutEdit } from './layout-edit.mjs';
+import { createPanelLayout } from './panels.mjs';
+import { LayoutControls, LayoutCanvas, layoutCSS } from './layout-view.mjs';
 const h = React.createElement;
 const useState = store => React.useSyncExternalStore(store.subscribe, store.getSnapshot);
 
@@ -42,24 +43,18 @@ export function Desktop({ store, active, chatWidth, chatMax }) {
 
 function Scene({ scene, store, active }) {
   const [error, setError] = React.useState(''), [loaded, setLoaded] = React.useState(false);
-  const [layout] = React.useState(() => createLayoutEdit());
-  const layoutState = useState(layout), arrangement = layoutState.committed;
+  const [layout] = React.useState(() => createPanelLayout(scene.key));
+  const layoutState = useState(layout);
   const guarded = fn => { try { if (!active || store.getSnapshot().selected !== scene.key) throw Error('当前工作区不可用'); fn(); setError(''); } catch (e) { setError(e.message); } };
   const update = patch => { try { store.update(scene.key, patch); setError(''); } catch (e) { setError(e.message); } };
   return h('div', { className: 'p0-scene', hidden: !active, inert: !active ? '' : undefined, 'data-scene': scene.id, 'data-workspace': scene.workspaceId, 'data-arrangement': scene.arrangement },
     h('header', { className: 'p0-scene-header' }, h('div', null, h('h1', null, scene.title), h('small', null, '同工作区共享现场 · 会话草稿与权限仍独立')),
-      h('label', null, '布局 ', h('select', { 'aria-label': '操作区布局', value: scene.arrangement, disabled: !!layoutState.draft, onChange: e => update({ arrangement: e.target.value }) }, h('option', { value: 'split' }, '左右分栏'), h('option', { value: 'stack' }, '上下分栏')))),
-    h('div', { className: 'p0-layout-controls', role: 'group', 'aria-label': '操作区布局编辑' },
-      !layoutState.draft ? h('button', { type: 'button', onClick: () => guarded(() => layout.begin()) }, '编辑布局') : h(React.Fragment, null,
-        h('label', null, '分割方向', h('select', { 'aria-label': '分割方向', value: layoutState.draft.axis, onChange: e => guarded(() => layout.update({ axis: e.target.value })) }, h('option', { value: 'x' }, '左右'), h('option', { value: 'y' }, '上下'))),
-        h('label', null, '分割比例', h('input', { type: 'range', 'aria-label': '分割比例', min: 20, max: 80, value: Math.round(layoutState.draft.ratio * 100), onChange: e => guarded(() => layout.update({ ratio: Number(e.target.value) / 100 })) })),
-        h('button', { type: 'button', onClick: () => guarded(() => layout.update({ swapped: !layoutState.draft.swapped })) }, '交换位置'),
-        h('button', { type: 'button', onClick: () => guarded(() => layout.cancel()) }, '取消'),
-        h('button', { type: 'button', onClick: () => guarded(() => { store.update(scene.key, { arrangement: 'split' }); layout.apply(); }) }, '应用布局'))),
-    h('div', { className: 'p0-tools', 'data-layout-axis': arrangement.axis, style: { '--p0-ratio': `${arrangement.ratio * 100}%` } },
-      h('article', { className: 'p0-note', style: { order: arrangement.swapped ? 2 : 1 } }, h('h2', null, '工作便笺'), h('p', null, '真实可编辑内存草稿；未写入文件，重开应用不恢复。'),
+      h('small', null, layoutState.editing ? '正在编辑布局草稿' : '布局仅保存在本次工作区现场')),
+    h(LayoutControls, { model: layout, guarded }),
+    h(LayoutCanvas, { model: layout, guarded },
+      h('article', { key: 'panel-note', 'data-panel-id': 'panel-note', className: 'p0-note' }, h('h2', null, '工作便笺'), h('p', null, '真实可编辑内存草稿；未写入文件，重开应用不恢复。'),
         h('textarea', { 'aria-label': '工作区便笺', value: scene.note, onChange: e => update({ note: e.target.value }), spellCheck: false, placeholder: '这份草稿属于工作区，不随右侧会话切换。' })),
-      h('article', { className: 'p0-web', style: { order: arrangement.swapped ? 1 : 2 } }, h('h2', null, '网页'),
+      h('article', { key: 'panel-web', 'data-panel-id': 'panel-web', className: 'p0-web' }, h('h2', null, '网页'),
         h('form', { onSubmit: e => { e.preventDefault(); try { const url = parseWebAddress(scene.address, location.origin); setLoaded(false); update({ url }); } catch (failure) { setError(failure.message); } } },
           h('input', { type: 'url', 'aria-label': '网页地址', placeholder: 'https://example.com', value: scene.address, onChange: e => update({ address: e.target.value }) }), h('button', { type: 'submit' }, '打开')),
         h('p', { className: 'p0-web-status', role: 'status' }, scene.url ? loaded ? '载体已发出load事件；不证明站点完整可用或内容可读。' : '正在请求页面；站点可能禁止嵌入。' : '按需打开网页；未授予内容提取或AI操作权限。'),
@@ -69,7 +64,7 @@ function Scene({ scene, store, active }) {
     h('footer', null, 'P0验证：原版⇄工作台／同工作区A⇄B／布局切换不重建网页。文件、终端、开放工具接入待后续实现。'));
 }
 
-export const css = `
+export const css = layoutCSS + `
 .p0-shell{height:100%;display:grid;grid-template-rows:44px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:14px Arial,"Microsoft YaHei",sans-serif}
 /* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
 html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}

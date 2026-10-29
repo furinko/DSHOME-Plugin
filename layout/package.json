@@ -10,7 +10,7 @@
     "./client": "./lib/client.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json",
-    "./shell-entry": "./lib/entry-28200c8d6bef.js"
+    "./shell-entry": "./lib/entry-90e20809e5af.js"
   },
   "dsh": {
     "client": {

@@ -606,9 +606,9 @@ var __export = (target, all) => {
 };
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    for (let key2 of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key2) && key2 !== except)
+        __defProp(to, key2, { get: () => from[key2], enumerable: !(desc = __getOwnPropDesc(from, key2)) || desc.enumerable });
   }
   return to;
 };
@@ -631,7 +631,7 @@ __export(extension_exports, {
   install: () => install
 });
 module.exports = __toCommonJS(extension_exports);
-var import_react = __toESM(require("react"), 1);
+var import_react2 = __toESM(require("react"), 1);
 
 // scene-store.mjs
 function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
@@ -708,9 +708,9 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
       narrowPane = next;
       publish();
     },
-    update(key, patch) {
-      if (disposed || key !== selected || !scenes.has(key)) throw Error("Inactive workspace; edit rejected");
-      const scene = scenes.get(key);
+    update(key2, patch) {
+      if (disposed || key2 !== selected || !scenes.has(key2)) throw Error("Inactive workspace; edit rejected");
+      const scene = scenes.get(key2);
       for (const field of Object.keys(patch)) if (!["note", "address", "url", "arrangement"].includes(field)) throw Error("Unexpected scene field");
       if (["note", "address", "url"].some((field) => field in patch && (typeof patch[field] !== "string" || patch[field].length > (field === "note" ? 262144 : 8192)))) throw Error("Scene value exceeds limit");
       if ("arrangement" in patch && !["split", "stack"].includes(patch.arrangement)) throw Error("Unknown arrangement");
@@ -738,56 +738,632 @@ function parseWebAddress(value, applicationOrigin) {
   return url.href;
 }
 
-// layout-edit.mjs
-function createLayoutEdit(initial = { axis: "x", ratio: 0.5, swapped: false }) {
-  const valid = (value) => {
-    if (!value || !["x", "y"].includes(value.axis) || !Number.isFinite(value.ratio) || value.ratio < 0.2 || value.ratio > 0.8 || typeof value.swapped !== "boolean" || Object.keys(value).sort().join(",") !== "axis,ratio,swapped") throw Error("Invalid layout");
-    return Object.freeze({ axis: value.axis, ratio: value.ratio, swapped: value.swapped });
-  };
-  let committed = valid(initial), draft = null, revision = 0, snapshot;
-  const listeners = /* @__PURE__ */ new Set();
+// ../src/workbench/model.mjs
+var FORMAT_VERSION = 1;
+var MAX_PANELS = 64;
+var MAX_NODES = 255;
+var MAX_DEPTH = 16;
+var unsafe = /* @__PURE__ */ new Set(["__proto__", "constructor", "prototype"]);
+var WorkspaceError = class extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "WorkspaceError";
+    this.code = code;
+  }
+};
+var refuse = (code, message) => {
+  throw new WorkspaceError(code, message);
+};
+var own = (object, key2) => Object.hasOwn(object, key2);
+var clone = (value) => JSON.parse(JSON.stringify(value));
+var key = (value) => typeof value === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,95}$/.test(value) && !unsafe.has(value);
+var record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+function fields(value, allowed, code) {
+  if (Object.keys(value).some((name) => !allowed.includes(name))) refuse(code, "Unknown fields in persisted layout schema");
+}
+var assertKey = (value, field) => {
+  if (!key(value)) refuse("INVALID_KEY", "Invalid " + field);
+  return value;
+};
+function freeze(value) {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const item of Object.values(value)) freeze(item);
+    Object.freeze(value);
+  }
+  return value;
+}
+function pane(id, tabs = []) {
+  return { type: "pane", id, tabs: [...tabs], active: tabs[0] ?? null };
+}
+function emptyLayout() {
+  return { root: pane("pane-root"), collapsed: [], maximized: null };
+}
+function nodes(root) {
+  return root.type === "pane" ? [root] : [root, ...nodes(root.first), ...nodes(root.second)];
+}
+function panes(root) {
+  return nodes(root).filter((item) => item.type === "pane");
+}
+function findPane(layout, id) {
+  return panes(layout.root).find((item) => item.id === id);
+}
+function panelPane(layout, id) {
+  return panes(layout.root).find((item) => item.tabs.includes(id));
+}
+function replaceNode(root, id, replacement) {
+  if (root.id === id) return replacement;
+  if (root.type === "split") {
+    root.first = replaceNode(root.first, id, replacement);
+    root.second = replaceNode(root.second, id, replacement);
+  }
+  return root;
+}
+function trim(root) {
+  if (root.type === "pane") return root.tabs.length ? root : null;
+  const first = trim(root.first), second = trim(root.second);
+  if (!first) return second;
+  if (!second) return first;
+  root.first = first;
+  root.second = second;
+  return root;
+}
+function take(layout, id, prune = false) {
+  const from = panelPane(layout, id);
+  if (from) {
+    const index = from.tabs.indexOf(id);
+    from.tabs.splice(index, 1);
+    if (from.active === id) from.active = from.tabs[Math.min(index, from.tabs.length - 1)] ?? null;
+  }
+  layout.collapsed = layout.collapsed.filter((item) => item.panelId !== id);
+  if (layout.maximized === id) layout.maximized = null;
+  if (prune) layout.root = trim(layout.root) ?? pane("pane-root");
+}
+function checkPanelMap(panels) {
+  if (!record(panels) || Object.keys(panels).length > MAX_PANELS) refuse("INVALID_PANELS", "Too many or invalid panel instances");
+  for (const [id, panel] of Object.entries(panels)) {
+    assertKey(id, "panel id");
+    if (!record(panel) || panel.id !== id || !key(panel.kind) || typeof panel.title !== "string" || panel.title.length > 120) refuse("INVALID_PANEL", "Invalid panel instance");
+    if (Object.keys(panel).some((name) => !["id", "kind", "title"].includes(name))) refuse("INVALID_PANEL", "Content state must not be stored inside layout records");
+  }
+}
+function validateLayout(layout, panels) {
+  checkPanelMap(panels);
+  if (!record(layout) || !Array.isArray(layout.collapsed) || layout.collapsed.length > MAX_PANELS) refuse("INVALID_LAYOUT", "Invalid layout");
+  fields(layout, ["root", "collapsed", "maximized"], "INVALID_LAYOUT");
+  const ids = /* @__PURE__ */ new Set(), seenPanels = /* @__PURE__ */ new Set();
+  let count = 0;
+  function use(id) {
+    if (!own(panels, id) || seenPanels.has(id)) refuse("INVALID_REFERENCE", "Missing or duplicate panel reference");
+    seenPanels.add(id);
+  }
+  function walk(node, depth) {
+    if (!record(node) || depth > MAX_DEPTH || ++count > MAX_NODES || !key(node.id) || ids.has(node.id)) refuse("INVALID_TREE", "Invalid, duplicate or excessively deep layout node");
+    ids.add(node.id);
+    fields(node, node.type === "pane" ? ["type", "id", "tabs", "active"] : ["type", "id", "axis", "ratio", "first", "second"], "INVALID_TREE");
+    if (node.type === "pane") {
+      if (!Array.isArray(node.tabs) || node.tabs.length > MAX_PANELS) refuse("INVALID_TABS", "Invalid pane tabs");
+      if (node.tabs.length ? !node.tabs.includes(node.active) : node.active !== null) refuse("INVALID_ACTIVE_TAB", "Active tab does not belong to pane");
+      for (const id of node.tabs) use(id);
+    } else if (node.type === "split") {
+      if (!["x", "y"].includes(node.axis) || !Number.isFinite(node.ratio) || node.ratio < 0.01 || node.ratio > 0.99) refuse("INVALID_SPLIT", "Invalid split axis or ratio");
+      walk(node.first, depth + 1);
+      walk(node.second, depth + 1);
+    } else refuse("INVALID_TREE", "Unknown layout node type");
+  }
+  walk(layout.root, 0);
+  for (const item of layout.collapsed) {
+    if (!record(item) || !["left", "right", "bottom"].includes(item.edge) || !key(item.paneId) || !Number.isSafeInteger(item.index) || item.index < 0 || item.index > MAX_PANELS) refuse("INVALID_COLLAPSED", "Invalid collapsed placement");
+    fields(item, ["panelId", "edge", "paneId", "index"], "INVALID_COLLAPSED");
+    use(item.panelId);
+  }
+  if (seenPanels.size !== Object.keys(panels).length) refuse("ORPHAN_PANEL", "Every instance must be placed or explicitly collapsed");
+  if (layout.maximized !== null && (!seenPanels.has(layout.maximized) || layout.collapsed.some((item) => item.panelId === layout.maximized))) refuse("INVALID_MAXIMIZED", "Maximized panel must be visible");
+  return true;
+}
+function validateProject(project, expectedProjectId) {
+  if (!record(project) || project.version !== FORMAT_VERSION) refuse("UNSUPPORTED_VERSION", "Unsupported workspace format");
+  if (typeof expectedProjectId !== "string" || !expectedProjectId || project.projectId !== expectedProjectId) refuse("WRONG_PROJECT", "Layout belongs to another project");
+  if (!Number.isSafeInteger(project.revision) || project.revision < 0) refuse("INVALID_REVISION", "Invalid project revision");
+  validateLayout(project.layout, project.panels);
+  if (!record(project.presets) || Object.keys(project.presets).length > 20) refuse("INVALID_PRESETS", "Invalid layout presets");
+  for (const [name, saved] of Object.entries(project.presets)) {
+    assertKey(name, "preset id");
+    validateLayout(saved, project.panels);
+  }
+  if (!key(project.selectedPreset) || project.selectedPreset !== "custom" && !own(project.presets, project.selectedPreset)) refuse("INVALID_PRESET", "Invalid selected preset");
+  fields(project, ["version", "projectId", "revision", "panels", "layout", "presets", "selectedPreset"], "INVALID_PROJECT");
+  return true;
+}
+function createWorkspaceModel({ projectId, initial, onListenerError = () => {
+} } = {}) {
+  if (typeof projectId !== "string" || !projectId || projectId.length > 4096) refuse("INVALID_PROJECT", "An explicit host/workspace project identity is required");
+  if (initial) validateProject(initial, projectId);
+  let committed = initial ? clone(initial) : { version: FORMAT_VERSION, projectId, revision: 0, panels: {}, layout: emptyLayout(), presets: {}, selectedPreset: "custom" };
+  validateProject(committed, projectId);
+  let edit = null, history = [], redo = [], sequence = 0, snapshot;
+  const listeners = /* @__PURE__ */ new Set(), registry = /* @__PURE__ */ new Map();
   function publish() {
-    snapshot = Object.freeze({ committed, draft, revision: ++revision });
-    for (const fn of [...listeners]) fn();
-  }
-  function requireEdit() {
-    if (!draft) throw Error("Layout is not being edited");
-  }
-  publish();
-  return Object.freeze({
-    getSnapshot: () => snapshot,
-    subscribe(fn) {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-    begin() {
-      if (draft) throw Error("Layout edit already active");
-      draft = valid(committed);
-      publish();
-    },
-    update(patch) {
-      requireEdit();
-      if (!patch || Object.keys(patch).some((k) => !["axis", "ratio", "swapped"].includes(k))) throw Error("Unknown layout field");
-      draft = valid({ ...draft, ...patch });
-      publish();
-    },
-    cancel() {
-      requireEdit();
-      draft = null;
-      publish();
-    },
-    apply() {
-      requireEdit();
-      committed = valid(draft);
-      draft = null;
-      publish();
+    snapshot = freeze({ ...clone(committed), editing: edit === null ? null : clone(edit), canUndo: history.length > 0, canRedo: redo.length > 0 });
+    for (const callback of [...listeners]) {
+      try {
+        callback();
+      } catch (error) {
+        try {
+          onListenerError(error);
+        } catch {
+        }
+      }
     }
-  });
+  }
+  function uid(prefix, project) {
+    const used = /* @__PURE__ */ new Set([...Object.keys(project.panels), ...nodes(project.layout.root).map((n) => n.id)]);
+    let id;
+    do {
+      id = prefix + "-" + ++sequence;
+    } while (used.has(id));
+    return id;
+  }
+  function nextRevision() {
+    if (committed.revision >= Number.MAX_SAFE_INTEGER) refuse("REVISION_EXHAUSTED", "Project revision cannot advance safely");
+    return committed.revision + 1;
+  }
+  function working() {
+    return edit ? { panels: clone(edit.panels), layout: clone(edit.layout) } : { panels: clone(committed.panels), layout: clone(committed.layout) };
+  }
+  function update(operation) {
+    const next = working(), result = operation(next);
+    validateLayout(next.layout, next.panels);
+    if (edit) {
+      history.push(clone(edit));
+      if (history.length > 50) history.shift();
+      redo = [];
+      edit = next;
+    } else {
+      const presets = clone(committed.presets);
+      for (const saved of Object.values(presets)) reconcile(saved, next.panels);
+      committed = { ...committed, panels: next.panels, layout: next.layout, presets, revision: nextRevision() };
+    }
+    publish();
+    return result;
+  }
+  function reconcile(layout, allPanels) {
+    for (const id of [...panes(layout.root).flatMap((p) => p.tabs), ...layout.collapsed.map((p) => p.panelId)]) if (!own(allPanels, id)) take(layout, id, false);
+    const placed = /* @__PURE__ */ new Set([...panes(layout.root).flatMap((p) => p.tabs), ...layout.collapsed.map((p) => p.panelId)]);
+    for (const id of Object.keys(allPanels)) if (!placed.has(id)) {
+      const first = panes(layout.root)[0];
+      layout.collapsed.push({ panelId: id, edge: "bottom", paneId: first.id, index: first.tabs.length });
+    }
+    if (layout.maximized && !own(allPanels, layout.maximized)) layout.maximized = null;
+  }
+  function requirePanel(project, id) {
+    if (!own(project.panels, id)) refuse("PANEL_NOT_FOUND", "Panel instance does not exist");
+  }
+  function dockInto(project, panelId, targetPaneId, edge = "tab") {
+    requirePanel(project, panelId);
+    if (!["tab", "left", "right", "top", "bottom"].includes(edge)) refuse("INVALID_DROP", "Unknown docking target");
+    let target = findPane(project.layout, targetPaneId);
+    if (!target) refuse("PANE_NOT_FOUND", "Target pane no longer exists");
+    const source = panelPane(project.layout, panelId);
+    if (source === target && target.tabs.length === 1 && edge !== "tab") refuse("SELF_SPLIT", "A sole panel cannot be split against itself");
+    take(project.layout, panelId, false);
+    target = findPane(project.layout, targetPaneId);
+    if (edge === "tab" || !target.tabs.length) {
+      target.tabs.push(panelId);
+      target.active = panelId;
+      return;
+    }
+    const inserted = pane(uid("pane", project), [panelId]);
+    const first = ["left", "top"].includes(edge) ? inserted : target;
+    const second = first === inserted ? target : inserted;
+    project.layout.root = replaceNode(project.layout.root, target.id, { type: "split", id: uid("split", project), axis: ["left", "right"].includes(edge) ? "x" : "y", ratio: 0.5, first, second });
+  }
+  const api = {
+    getSnapshot: () => snapshot,
+    subscribe: (callback) => {
+      listeners.add(callback);
+      return () => listeners.delete(callback);
+    },
+    registerModule(definition) {
+      if (!record(definition) || !key(definition.kind) || typeof definition.label !== "string" || !definition.label.trim() || definition.label.length > 80) refuse("INVALID_MODULE", "A typed module definition is required");
+      if (registry.has(definition.kind)) refuse("DUPLICATE_MODULE", "Module kind is already registered");
+      const copy = freeze({ kind: definition.kind, label: definition.label, minWidth: definition.minWidth ?? 240, minHeight: definition.minHeight ?? 120 });
+      if (!Number.isFinite(copy.minWidth) || copy.minWidth < 80 || copy.minWidth > 2e3 || !Number.isFinite(copy.minHeight) || copy.minHeight < 44 || copy.minHeight > 2e3) refuse("INVALID_MODULE", "Invalid module minimum size");
+      registry.set(copy.kind, copy);
+      publish();
+      let released = false;
+      return () => {
+        if (!released && registry.get(copy.kind) === copy) {
+          released = true;
+          registry.delete(copy.kind);
+          publish();
+        }
+      };
+    },
+    modules: () => [...registry.values()],
+    addPanel(kind, { id, title, targetPaneId, edge = "tab" } = {}) {
+      if (!registry.has(kind)) refuse("MODULE_UNAVAILABLE", "Module kind is not registered");
+      return update((next) => {
+        if (Object.keys(next.panels).length >= MAX_PANELS) refuse("PANEL_LIMIT", "Panel limit reached");
+        const panelId = id ?? uid("panel", next);
+        assertKey(panelId, "panel id");
+        if (own(next.panels, panelId)) refuse("DUPLICATE_PANEL", "Panel instance id already exists");
+        const label = title ?? registry.get(kind).label;
+        if (typeof label !== "string" || !label.trim() || label.length > 120) refuse("INVALID_TITLE", "Invalid panel title");
+        next.panels[panelId] = { id: panelId, kind, title: label };
+        dockInto(next, panelId, targetPaneId ?? panes(next.layout.root)[0].id, edge);
+        return panelId;
+      });
+    },
+    renamePanel(id, title) {
+      if (typeof title !== "string" || !title.trim() || title.length > 120) refuse("INVALID_TITLE", "Invalid panel title");
+      return update((next) => {
+        requirePanel(next, id);
+        next.panels[id].title = title;
+      });
+    },
+    dock(panelId, targetPaneId, edge) {
+      return update((next) => dockInto(next, panelId, targetPaneId, edge));
+    },
+    swap(firstId, secondId) {
+      if (firstId === secondId) return;
+      return update((next) => {
+        const first = panelPane(next.layout, firstId), second = panelPane(next.layout, secondId);
+        if (!first || !second) refuse("PANEL_NOT_VISIBLE", "Only placed panels can exchange positions");
+        const exchange = (value) => value === firstId ? secondId : value === secondId ? firstId : value;
+        for (const p of /* @__PURE__ */ new Set([first, second])) {
+          p.tabs = p.tabs.map(exchange);
+          p.active = exchange(p.active);
+        }
+        if (next.layout.maximized) next.layout.maximized = exchange(next.layout.maximized);
+      });
+    },
+    mergePanes(sourceId, targetId) {
+      if (sourceId === targetId) return;
+      return update((next) => {
+        const source = findPane(next.layout, sourceId), target = findPane(next.layout, targetId);
+        if (!source || !target) refuse("PANE_NOT_FOUND", "Pane does not exist");
+        target.tabs.push(...source.tabs);
+        target.active = source.active ?? target.active;
+        source.tabs = [];
+        source.active = null;
+      });
+    },
+    activate(panelId) {
+      return update((next) => {
+        const p = panelPane(next.layout, panelId);
+        if (!p) refuse("PANEL_NOT_VISIBLE", "Expand the panel first");
+        p.active = panelId;
+        if (next.layout.maximized) next.layout.maximized = panelId;
+      });
+    },
+    setSplitAxis(splitId, axis) {
+      if (!["x", "y"].includes(axis)) refuse("INVALID_SPLIT", "Invalid split axis");
+      return update((next) => {
+        const split = nodes(next.layout.root).find((n) => n.id === splitId && n.type === "split");
+        if (!split) refuse("SPLIT_NOT_FOUND", "Split no longer exists");
+        split.axis = axis;
+      });
+    },
+    resize(splitId, ratio) {
+      if (!Number.isFinite(ratio)) refuse("INVALID_SPLIT", "Split ratio must be finite");
+      return update((next) => {
+        const split = nodes(next.layout.root).find((n) => n.id === splitId && n.type === "split");
+        if (!split) refuse("SPLIT_NOT_FOUND", "Split no longer exists");
+        split.ratio = Math.max(0.01, Math.min(0.99, ratio));
+      });
+    },
+    collapse(panelId, edge = "bottom") {
+      if (!["left", "right", "bottom"].includes(edge)) refuse("INVALID_COLLAPSED", "Invalid collapsed edge");
+      return update((next) => {
+        const p = panelPane(next.layout, panelId);
+        if (!p) refuse("PANEL_NOT_VISIBLE", "Panel is already collapsed or absent");
+        const placement = { panelId, edge, paneId: p.id, index: p.tabs.indexOf(panelId) };
+        take(next.layout, panelId, false);
+        next.layout.collapsed.push(placement);
+      });
+    },
+    expand(panelId) {
+      return update((next) => {
+        const old = next.layout.collapsed.find((item) => item.panelId === panelId);
+        if (!old) refuse("PANEL_NOT_COLLAPSED", "Panel is not collapsed");
+        const target = findPane(next.layout, old.paneId) ?? panes(next.layout.root)[0];
+        target.tabs.splice(Math.min(old.index, target.tabs.length), 0, panelId);
+        target.active = panelId;
+        next.layout.collapsed = next.layout.collapsed.filter((item) => item !== old);
+      });
+    },
+    maximize(panelId) {
+      return update((next) => {
+        if (panelId !== null) {
+          const p = panelPane(next.layout, panelId);
+          if (!p) refuse("PANEL_NOT_VISIBLE", "Expand the panel first");
+          p.active = panelId;
+        }
+        next.layout.maximized = next.layout.maximized === panelId ? null : panelId;
+      });
+    },
+    // This forgets configuration ONLY. The controller must first obtain the
+    // module's close agreement and successfully release its own resource hold.
+    forgetPanel(panelId) {
+      if (edit) refuse("EDIT_ACTIVE", "Close content outside layout editing, or collapse it in the draft");
+      return update((next) => {
+        requirePanel(next, panelId);
+        take(next.layout, panelId, true);
+        delete next.panels[panelId];
+      });
+    },
+    beginEdit() {
+      if (edit) refuse("EDIT_ACTIVE", "Layout is already being edited");
+      edit = working();
+      history = [];
+      redo = [];
+      publish();
+    },
+    cancelEdit() {
+      if (!edit) return;
+      edit = null;
+      history = [];
+      redo = [];
+      publish();
+    },
+    applyEdit() {
+      if (!edit) refuse("NO_EDIT", "No layout draft to apply");
+      validateLayout(edit.layout, edit.panels);
+      const presets = clone(committed.presets);
+      for (const saved of Object.values(presets)) reconcile(saved, edit.panels);
+      committed = { ...committed, layout: edit.layout, panels: edit.panels, selectedPreset: "custom", presets, revision: nextRevision() };
+      edit = null;
+      history = [];
+      redo = [];
+      publish();
+    },
+    undo() {
+      if (!edit || !history.length) return false;
+      redo.push(clone(edit));
+      edit = history.pop();
+      publish();
+      return true;
+    },
+    redo() {
+      if (!edit || !redo.length) return false;
+      history.push(clone(edit));
+      edit = redo.pop();
+      publish();
+      return true;
+    },
+    savePreset(name) {
+      assertKey(name, "preset id");
+      if (edit) refuse("EDIT_ACTIVE", "Apply or cancel the draft before saving a preset");
+      if (!own(committed.presets, name) && Object.keys(committed.presets).length >= 20) refuse("PRESET_LIMIT", "Preset limit reached");
+      const layout = clone(committed.layout);
+      layout.maximized = null;
+      committed = { ...committed, presets: { ...committed.presets, [name]: layout }, selectedPreset: name, revision: nextRevision() };
+      publish();
+    },
+    selectPreset(name) {
+      if (edit) refuse("EDIT_ACTIVE", "Apply or cancel layout editing before switching");
+      if (!own(committed.presets, name)) refuse("PRESET_NOT_FOUND", "Layout preset does not exist");
+      const layout = clone(committed.presets[name]);
+      reconcile(layout, committed.panels);
+      layout.maximized = null;
+      validateLayout(layout, committed.panels);
+      committed = { ...committed, layout, selectedPreset: name, revision: nextRevision() };
+      publish();
+    },
+    adoptLayout(project, expectedRevision) {
+      if (edit) refuse("EDIT_ACTIVE", "Apply or cancel the layout draft first");
+      if (committed.revision !== expectedRevision) refuse("LAYOUT_STALE", "Current layout changed during comparison");
+      validateProject(project, projectId);
+      const incoming = clone(project), all = { ...incoming.panels };
+      for (const [id, panel] of Object.entries(committed.panels)) {
+        if (all[id] && all[id].kind !== panel.kind) refuse("PANEL_KIND_CONFLICT", "A stored panel id has a different live module kind");
+        if (!all[id]) all[id] = clone(panel);
+      }
+      incoming.panels = all;
+      reconcile(incoming.layout, all);
+      for (const saved of Object.values(incoming.presets)) reconcile(saved, all);
+      incoming.revision = nextRevision();
+      validateProject(incoming, projectId);
+      committed = incoming;
+      history = [];
+      redo = [];
+      publish();
+    },
+    serialize() {
+      const saved = clone(committed);
+      saved.layout.maximized = null;
+      validateProject(saved, projectId);
+      return saved;
+    },
+    geometry(width, height, { gap = 10, draft = false } = {}) {
+      const state = draft && edit ? edit : committed;
+      return computeGeometry(state.layout, state.panels, registry, width, height, gap);
+    }
+  };
+  publish();
+  return Object.freeze(api);
+}
+function computeGeometry(layout, panels, registry, width, height, gap = 10) {
+  validateLayout(layout, panels);
+  if (![width, height, gap].every(Number.isFinite) || width < 0 || height < 0 || gap < 0 || gap > 64) refuse("INVALID_ROOM", "Invalid workspace dimensions");
+  const minimums = /* @__PURE__ */ new Map();
+  function minimum(node) {
+    let value;
+    if (node.type === "pane") {
+      const definitions = node.tabs.map((id) => registry.get(panels[id].kind) ?? { minWidth: 240, minHeight: 120 });
+      value = { width: Math.max(0, ...definitions.map((d) => d.minWidth)), height: Math.max(0, ...definitions.map((d) => d.minHeight)), empty: node.tabs.length === 0 };
+    } else {
+      const a = minimum(node.first), b = minimum(node.second);
+      value = a.empty ? b : b.empty ? a : { width: node.axis === "x" ? a.width + gap + b.width : Math.max(a.width, b.width), height: node.axis === "y" ? a.height + gap + b.height : Math.max(a.height, b.height), empty: false };
+    }
+    minimums.set(node.id, value);
+    return value;
+  }
+  let required = minimum(layout.root);
+  if (layout.maximized) {
+    const d = registry.get(panels[layout.maximized].kind) ?? { minWidth: 240, minHeight: 120 };
+    required = { width: d.minWidth, height: d.minHeight, empty: false };
+  }
+  const canvas = { width: Math.max(width, required.width), height: Math.max(height, required.height) };
+  const rectangles = {}, paneRects = {}, handles = [];
+  function place(node, rectangle) {
+    if (node.type === "pane") {
+      if (!node.tabs.length) return;
+      paneRects[node.id] = rectangle;
+      for (const id of node.tabs) rectangles[id] = { ...rectangle, paneId: node.id, visible: id === node.active, available: registry.has(panels[id].kind) };
+      return;
+    }
+    const a = minimums.get(node.first.id), b = minimums.get(node.second.id);
+    if (a.empty) {
+      place(node.second, rectangle);
+      return;
+    }
+    if (b.empty) {
+      place(node.first, rectangle);
+      return;
+    }
+    const horizontal = node.axis === "x", total = (horizontal ? rectangle.width : rectangle.height) - gap;
+    const startMin = horizontal ? a.width : a.height, endMin = horizontal ? b.width : b.height;
+    const firstSize = Math.max(startMin, Math.min(total - endMin, total * node.ratio)), secondSize = total - firstSize;
+    const first = { ...rectangle, [horizontal ? "width" : "height"]: firstSize };
+    const second = { ...rectangle, [horizontal ? "x" : "y"]: (horizontal ? rectangle.x : rectangle.y) + firstSize + gap, [horizontal ? "width" : "height"]: secondSize };
+    handles.push({ nodeId: node.id, axis: node.axis, total, startMin, endMin, ratio: firstSize / total, x: horizontal ? rectangle.x + firstSize : rectangle.x, y: horizontal ? rectangle.y : rectangle.y + firstSize, width: horizontal ? gap : rectangle.width, height: horizontal ? rectangle.height : gap });
+    place(node.first, first);
+    place(node.second, second);
+  }
+  if (layout.maximized) {
+    const p = panelPane(layout, layout.maximized);
+    rectangles[layout.maximized] = { x: 0, y: 0, ...canvas, paneId: p.id, visible: true, available: registry.has(panels[layout.maximized].kind) };
+    paneRects[p.id] = { x: 0, y: 0, ...canvas };
+  } else place(layout.root, { x: 0, y: 0, ...canvas });
+  return freeze({ fits: width >= required.width && height >= required.height, required: { width: required.width, height: required.height }, canvas, rectangles, paneRects, handles });
 }
 
-// extension.mjs
+// panels.mjs
+var layoutNodes = (root) => root.type === "pane" ? [root] : [root, ...layoutNodes(root.first), ...layoutNodes(root.second)];
+function createPanelLayout(projectId) {
+  const model = createWorkspaceModel({ projectId });
+  model.registerModule({ kind: "note", label: "\u5DE5\u4F5C\u4FBF\u7B3A", minWidth: 260, minHeight: 190 });
+  model.registerModule({ kind: "web", label: "\u7F51\u9875", minWidth: 300, minHeight: 240 });
+  model.addPanel("note", { id: "panel-note", title: "\u5DE5\u4F5C\u4FBF\u7B3A" });
+  model.addPanel("web", { id: "panel-web", title: "\u7F51\u9875", targetPaneId: "pane-root", edge: "right" });
+  return model;
+}
+
+// layout-view.mjs
+var import_react = __toESM(require("react"), 1);
 var h = import_react.default.createElement;
-var useState = (store) => import_react.default.useSyncExternalStore(store.subscribe, store.getSnapshot);
+var useStore = (model) => import_react.default.useSyncExternalStore(model.subscribe, model.getSnapshot);
+var rectStyle = (r) => ({ position: "absolute", left: r.x, top: r.y, width: r.width, height: r.height, boxSizing: "border-box" });
+function LayoutControls({ model, guarded }) {
+  const state = useStore(model), draft = state.editing;
+  const nodes2 = layoutNodes((draft ?? state).layout.root), splits = nodes2.filter((n) => n.type === "split");
+  const [selected, select] = import_react.default.useState(""), split = splits.find((n) => n.id === selected) ?? splits[0];
+  const panes2 = nodes2.filter((n) => n.type === "pane" && n.tabs.length);
+  const [panelId, setPanel] = import_react.default.useState("panel-web");
+  const [targetId, setTarget] = import_react.default.useState("pane-root");
+  const [edge, setEdge] = import_react.default.useState("tab");
+  const target = panes2.find((n) => n.id === targetId) ?? panes2[0];
+  const button = (label, fn, disabled = false) => h("button", { type: "button", disabled, onClick: () => guarded(fn) }, label);
+  return h(
+    "div",
+    { className: "p0-layout-controls", role: "group", "aria-label": "\u64CD\u4F5C\u533A\u5E03\u5C40\u7F16\u8F91" },
+    !draft ? button("\u7F16\u8F91\u5E03\u5C40", () => model.beginEdit()) : h(
+      import_react.default.Fragment,
+      null,
+      h("small", null, "\u8349\u7A3F\u4E0D\u6539\u53D8\u73B0\u573A\uFF1B\u5E94\u7528\u540E\u751F\u6548"),
+      splits.length > 0 && h(
+        import_react.default.Fragment,
+        null,
+        h("select", { "aria-label": "\u9009\u62E9\u5206\u5272", value: split.id, onChange: (e) => select(e.target.value) }, splits.map((n) => h("option", { key: n.id, value: n.id }, n.id))),
+        h("label", null, "\u5206\u5272\u65B9\u5411", h("select", { "aria-label": "\u5206\u5272\u65B9\u5411", value: split.axis, onChange: (e) => guarded(() => model.setSplitAxis(split.id, e.target.value)) }, h("option", { value: "x" }, "\u5DE6\u53F3"), h("option", { value: "y" }, "\u4E0A\u4E0B"))),
+        h("label", null, "\u5206\u5272\u6BD4\u4F8B", h("input", { type: "range", "aria-label": "\u5206\u5272\u6BD4\u4F8B", min: 20, max: 80, value: Math.round(split.ratio * 100), onChange: (e) => guarded(() => model.resize(split.id, Number(e.target.value) / 100)) }))
+      ),
+      h("select", { "aria-label": "\u79FB\u52A8\u9762\u677F", value: panelId, onChange: (e) => setPanel(e.target.value) }, Object.values(draft.panels).map((p) => h("option", { key: p.id, value: p.id }, p.title))),
+      h("select", { "aria-label": "\u76EE\u6807\u5206\u533A", value: target?.id ?? "", onChange: (e) => setTarget(e.target.value) }, panes2.map((p) => h("option", { key: p.id, value: p.id }, p.tabs.map((id) => draft.panels[id].title).join(" / ")))),
+      h("select", { "aria-label": "\u505C\u9760\u65B9\u5F0F", value: edge, onChange: (e) => setEdge(e.target.value) }, [["tab", "\u5408\u5E76\u6807\u7B7E"], ["left", "\u5DE6\u4FA7\u5206\u5272"], ["right", "\u53F3\u4FA7\u5206\u5272"], ["top", "\u4E0A\u65B9\u5206\u5272"], ["bottom", "\u4E0B\u65B9\u5206\u5272"]].map(([value, label]) => h("option", { key: value, value }, label))),
+      button("\u79FB\u52A8\u9762\u677F", () => model.dock(panelId, target.id, edge), !target),
+      button("\u4EA4\u6362\u4F4D\u7F6E", () => model.swap("panel-note", "panel-web")),
+      button("\u64A4\u9500\u5E03\u5C40\u4FEE\u6539", () => model.undo(), !state.canUndo),
+      button("\u91CD\u505A\u5E03\u5C40\u4FEE\u6539", () => model.redo(), !state.canRedo),
+      button("\u53D6\u6D88", () => model.cancelEdit()),
+      button("\u5E94\u7528\u5E03\u5C40", () => model.applyEdit())
+    )
+  );
+}
+function LayoutCanvas({ model, guarded, children }) {
+  const state = useStore(model), root = import_react.default.useRef(null), [room, setRoom] = import_react.default.useState({ width: 0, height: 0 });
+  import_react.default.useLayoutEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setRoom((old) => old.width === width && old.height === height ? old : { width, height });
+    });
+    observer.observe(root.current);
+    return () => observer.disconnect();
+  }, []);
+  const geometry = model.geometry(room.width, room.height), nodes2 = layoutNodes(state.layout.root);
+  const panels = import_react.default.Children.toArray(children);
+  return h(
+    import_react.default.Fragment,
+    null,
+    h("div", { className: "p0-panel-shelf" }, state.layout.collapsed.map((p) => h("button", { key: p.panelId, disabled: !!state.editing, onClick: () => guarded(() => model.expand(p.panelId)) }, "\u5C55\u5F00" + state.panels[p.panelId].title))),
+    h(
+      "div",
+      { className: "p0-layout-viewport", ref: root },
+      h(
+        "div",
+        { className: "p0-tools p0-layout-canvas", "data-layout-axis": state.layout.root.axis ?? "tab", style: { position: "relative", width: geometry.canvas.width, height: geometry.canvas.height } },
+        // Content children ALWAYS remain under this same parent in fixed order.
+        // Geometry/visibility only: no portals, DOM reparenting or keyed pane wrappers.
+        panels.map((child) => {
+          const id = child.props["data-panel-id"], r = geometry.rectangles[id];
+          return import_react.default.cloneElement(child, { hidden: !r?.visible, inert: !r?.visible ? "" : void 0, style: { ...rectStyle(r ?? { x: 0, y: 0, width: 0, height: 0 }), top: (r?.y ?? 0) + 38, height: Math.max(0, (r?.height ?? 0) - 38) } });
+        }),
+        nodes2.filter((n) => n.type === "pane" && geometry.paneRects[n.id]).map((pane2) => h(
+          "div",
+          { key: pane2.id, className: "p0-pane-bar", style: { ...rectStyle(geometry.paneRects[pane2.id]), height: 38 } },
+          h("div", { role: "tablist", "aria-label": "\u9762\u677F\u6807\u7B7E" }, pane2.tabs.map((id) => h("button", { key: id, role: "tab", "aria-selected": pane2.active === id, disabled: !!state.editing, onClick: () => guarded(() => model.activate(id)) }, state.panels[id].title))),
+          h("button", { "aria-label": "\u653E\u5927\u6216\u8FD8\u539F" + state.panels[pane2.active].title, disabled: !!state.editing, onClick: () => guarded(() => model.maximize(pane2.active)) }, state.layout.maximized ? "\u8FD8\u539F" : "\u653E\u5927"),
+          h("button", { "aria-label": "\u6536\u8D77" + state.panels[pane2.active].title, disabled: !!state.editing, onClick: () => guarded(() => model.collapse(pane2.active)) }, "\u6536\u8D77")
+        )),
+        geometry.handles.map((handle) => h("div", {
+          key: handle.nodeId,
+          role: "separator",
+          tabIndex: state.editing ? -1 : 0,
+          "aria-disabled": !!state.editing,
+          "aria-label": "\u8C03\u6574\u5206\u5272 " + handle.nodeId,
+          "aria-orientation": handle.axis === "x" ? "vertical" : "horizontal",
+          "aria-valuemin": 1,
+          "aria-valuemax": 99,
+          "aria-valuenow": Math.round(handle.ratio * 100),
+          className: "p0-panel-separator",
+          style: rectStyle(handle),
+          onKeyDown(e) {
+            if (state.editing || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+            e.preventDefault();
+            guarded(() => model.resize(handle.nodeId, handle.ratio + (["ArrowLeft", "ArrowUp"].includes(e.key) ? -0.05 : 0.05)));
+          }
+        }))
+      )
+    )
+  );
+}
+var layoutCSS = `
+.p0-layout-viewport{position:relative;flex:1;min-height:260px;min-width:0;overflow:auto}
+.p0-tools.p0-layout-canvas{display:block;min-height:0}
+.p0-layout-canvas article[hidden]{display:none}
+.p0-pane-bar{display:flex;gap:4px;align-items:center;overflow:auto;background:var(--dsw-alias-bg-base)}
+.p0-pane-bar [role=tablist]{display:flex;flex:1;gap:4px;min-width:0}
+.p0-pane-bar button{white-space:nowrap;padding:3px 8px}
+.p0-pane-bar [aria-selected=true]{border-color:#285ad8;color:#285ad8}
+.p0-panel-separator{background:color-mix(in srgb,var(--dsw-alias-border-l2) 45%,transparent)}
+.p0-panel-separator:focus{outline:2px solid #285ad8}
+.p0-panel-shelf:empty{display:none}
+`;
+
+// extension.mjs
+var h2 = import_react2.default.createElement;
+var useState = (store) => import_react2.default.useSyncExternalStore(store.subscribe, store.getSnapshot);
 function install(ctx) {
   const store = createSceneStore({ workspaces: ctx.workspaces.list, session: ctx.uiSession.current, connection: ctx.connection.generation });
   const style = document.createElement("style");
@@ -803,41 +1379,41 @@ function install(ctx) {
 }
 function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
-  return h(
+  return h2(
     "div",
     { className: "p0-shell", "data-p0-shell": true },
-    h(
+    h2(
       "header",
       { className: "p0-toolbar" },
-      h("strong", null, "DSHOME"),
-      h(
+      h2("strong", null, "DSHOME"),
+      h2(
         "div",
         { role: "group", "aria-label": "\u6574\u7A97\u6A21\u5F0F" },
-        ...[["original", "\u539F\u7248"], ["workbench", "\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))
+        ...[["original", "\u539F\u7248"], ["workbench", "\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))
       ),
-      h("span", { className: "p0-label" }, "P0 \u53CC\u5E03\u5C40\u9884\u89C8 \xB7 \u4FBF\u7B3A\u672A\u81EA\u52A8\u4FDD\u5B58"),
-      view.mode === "workbench" && h(
+      h2("span", { className: "p0-label" }, "P0 \u53CC\u5E03\u5C40\u9884\u89C8 \xB7 \u4FBF\u7B3A\u672A\u81EA\u52A8\u4FDD\u5B58"),
+      view.mode === "workbench" && h2(
         "div",
         { className: "p0-narrow-switch", role: "group", "aria-label": "\u7A84\u7A97\u533A\u57DF" },
-        h("button", { onClick: () => props.dualShell.setNarrowPane("workspace"), "aria-pressed": view.narrowPane === "workspace" }, "\u64CD\u4F5C\u533A"),
-        h("button", { onClick: () => props.dualShell.setNarrowPane("chat"), "aria-pressed": view.narrowPane === "chat" }, "\u804A\u5929")
+        h2("button", { onClick: () => props.dualShell.setNarrowPane("workspace"), "aria-pressed": view.narrowPane === "workspace" }, "\u64CD\u4F5C\u533A"),
+        h2("button", { onClick: () => props.dualShell.setNarrowPane("chat"), "aria-pressed": view.narrowPane === "chat" }, "\u804A\u5929")
       )
     ),
-    h(NativeFrame, { ...props, dualView: view })
+    h2(NativeFrame, { ...props, dualView: view })
   );
 }
 function Desktop({ store, active, chatWidth, chatMax }) {
-  const view = useState(store), drag = import_react.default.useRef(null);
-  return h(
+  const view = useState(store), drag = import_react2.default.useRef(null);
+  return h2(
     "section",
     { className: "p0-desktop", "aria-label": "\u4E3B\u64CD\u4F5C\u533A", "aria-hidden": !active, inert: !active ? "" : void 0 },
-    h(
+    h2(
       "div",
       { className: "p0-scene-area" },
-      view.scenes.map((scene) => h(Scene, { key: scene.id, scene, store, active: active && view.selected === scene.key })),
-      !view.selected && h("p", { role: "status" }, view.reason)
+      view.scenes.map((scene) => h2(Scene, { key: scene.id, scene, store, active: active && view.selected === scene.key })),
+      !view.selected && h2("p", { role: "status" }, view.reason)
     ),
-    h("div", {
+    h2("div", {
       className: "p0-chat-separator",
       role: "separator",
       tabIndex: 0,
@@ -874,9 +1450,9 @@ function Desktop({ store, active, chatWidth, chatMax }) {
   );
 }
 function Scene({ scene, store, active }) {
-  const [error, setError] = import_react.default.useState(""), [loaded, setLoaded] = import_react.default.useState(false);
-  const [layout] = import_react.default.useState(() => createLayoutEdit());
-  const layoutState = useState(layout), arrangement = layoutState.committed;
+  const [error, setError] = import_react2.default.useState(""), [loaded, setLoaded] = import_react2.default.useState(false);
+  const [layout] = import_react2.default.useState(() => createPanelLayout(scene.key));
+  const layoutState = useState(layout);
   const guarded = (fn) => {
     try {
       if (!active || store.getSnapshot().selected !== scene.key) throw Error("\u5F53\u524D\u5DE5\u4F5C\u533A\u4E0D\u53EF\u7528");
@@ -894,46 +1470,31 @@ function Scene({ scene, store, active }) {
       setError(e.message);
     }
   };
-  return h(
+  return h2(
     "div",
     { className: "p0-scene", hidden: !active, inert: !active ? "" : void 0, "data-scene": scene.id, "data-workspace": scene.workspaceId, "data-arrangement": scene.arrangement },
-    h(
+    h2(
       "header",
       { className: "p0-scene-header" },
-      h("div", null, h("h1", null, scene.title), h("small", null, "\u540C\u5DE5\u4F5C\u533A\u5171\u4EAB\u73B0\u573A \xB7 \u4F1A\u8BDD\u8349\u7A3F\u4E0E\u6743\u9650\u4ECD\u72EC\u7ACB")),
-      h("label", null, "\u5E03\u5C40 ", h("select", { "aria-label": "\u64CD\u4F5C\u533A\u5E03\u5C40", value: scene.arrangement, disabled: !!layoutState.draft, onChange: (e) => update({ arrangement: e.target.value }) }, h("option", { value: "split" }, "\u5DE6\u53F3\u5206\u680F"), h("option", { value: "stack" }, "\u4E0A\u4E0B\u5206\u680F")))
+      h2("div", null, h2("h1", null, scene.title), h2("small", null, "\u540C\u5DE5\u4F5C\u533A\u5171\u4EAB\u73B0\u573A \xB7 \u4F1A\u8BDD\u8349\u7A3F\u4E0E\u6743\u9650\u4ECD\u72EC\u7ACB")),
+      h2("small", null, layoutState.editing ? "\u6B63\u5728\u7F16\u8F91\u5E03\u5C40\u8349\u7A3F" : "\u5E03\u5C40\u4EC5\u4FDD\u5B58\u5728\u672C\u6B21\u5DE5\u4F5C\u533A\u73B0\u573A")
     ),
-    h(
-      "div",
-      { className: "p0-layout-controls", role: "group", "aria-label": "\u64CD\u4F5C\u533A\u5E03\u5C40\u7F16\u8F91" },
-      !layoutState.draft ? h("button", { type: "button", onClick: () => guarded(() => layout.begin()) }, "\u7F16\u8F91\u5E03\u5C40") : h(
-        import_react.default.Fragment,
-        null,
-        h("label", null, "\u5206\u5272\u65B9\u5411", h("select", { "aria-label": "\u5206\u5272\u65B9\u5411", value: layoutState.draft.axis, onChange: (e) => guarded(() => layout.update({ axis: e.target.value })) }, h("option", { value: "x" }, "\u5DE6\u53F3"), h("option", { value: "y" }, "\u4E0A\u4E0B"))),
-        h("label", null, "\u5206\u5272\u6BD4\u4F8B", h("input", { type: "range", "aria-label": "\u5206\u5272\u6BD4\u4F8B", min: 20, max: 80, value: Math.round(layoutState.draft.ratio * 100), onChange: (e) => guarded(() => layout.update({ ratio: Number(e.target.value) / 100 })) })),
-        h("button", { type: "button", onClick: () => guarded(() => layout.update({ swapped: !layoutState.draft.swapped })) }, "\u4EA4\u6362\u4F4D\u7F6E"),
-        h("button", { type: "button", onClick: () => guarded(() => layout.cancel()) }, "\u53D6\u6D88"),
-        h("button", { type: "button", onClick: () => guarded(() => {
-          store.update(scene.key, { arrangement: "split" });
-          layout.apply();
-        }) }, "\u5E94\u7528\u5E03\u5C40")
-      )
-    ),
-    h(
-      "div",
-      { className: "p0-tools", "data-layout-axis": arrangement.axis, style: { "--p0-ratio": `${arrangement.ratio * 100}%` } },
-      h(
+    h2(LayoutControls, { model: layout, guarded }),
+    h2(
+      LayoutCanvas,
+      { model: layout, guarded },
+      h2(
         "article",
-        { className: "p0-note", style: { order: arrangement.swapped ? 2 : 1 } },
-        h("h2", null, "\u5DE5\u4F5C\u4FBF\u7B3A"),
-        h("p", null, "\u771F\u5B9E\u53EF\u7F16\u8F91\u5185\u5B58\u8349\u7A3F\uFF1B\u672A\u5199\u5165\u6587\u4EF6\uFF0C\u91CD\u5F00\u5E94\u7528\u4E0D\u6062\u590D\u3002"),
-        h("textarea", { "aria-label": "\u5DE5\u4F5C\u533A\u4FBF\u7B3A", value: scene.note, onChange: (e) => update({ note: e.target.value }), spellCheck: false, placeholder: "\u8FD9\u4EFD\u8349\u7A3F\u5C5E\u4E8E\u5DE5\u4F5C\u533A\uFF0C\u4E0D\u968F\u53F3\u4FA7\u4F1A\u8BDD\u5207\u6362\u3002" })
+        { key: "panel-note", "data-panel-id": "panel-note", className: "p0-note" },
+        h2("h2", null, "\u5DE5\u4F5C\u4FBF\u7B3A"),
+        h2("p", null, "\u771F\u5B9E\u53EF\u7F16\u8F91\u5185\u5B58\u8349\u7A3F\uFF1B\u672A\u5199\u5165\u6587\u4EF6\uFF0C\u91CD\u5F00\u5E94\u7528\u4E0D\u6062\u590D\u3002"),
+        h2("textarea", { "aria-label": "\u5DE5\u4F5C\u533A\u4FBF\u7B3A", value: scene.note, onChange: (e) => update({ note: e.target.value }), spellCheck: false, placeholder: "\u8FD9\u4EFD\u8349\u7A3F\u5C5E\u4E8E\u5DE5\u4F5C\u533A\uFF0C\u4E0D\u968F\u53F3\u4FA7\u4F1A\u8BDD\u5207\u6362\u3002" })
       ),
-      h(
+      h2(
         "article",
-        { className: "p0-web", style: { order: arrangement.swapped ? 1 : 2 } },
-        h("h2", null, "\u7F51\u9875"),
-        h(
+        { key: "panel-web", "data-panel-id": "panel-web", className: "p0-web" },
+        h2("h2", null, "\u7F51\u9875"),
+        h2(
           "form",
           { onSubmit: (e) => {
             e.preventDefault();
@@ -945,19 +1506,19 @@ function Scene({ scene, store, active }) {
               setError(failure.message);
             }
           } },
-          h("input", { type: "url", "aria-label": "\u7F51\u9875\u5730\u5740", placeholder: "https://example.com", value: scene.address, onChange: (e) => update({ address: e.target.value }) }),
-          h("button", { type: "submit" }, "\u6253\u5F00")
+          h2("input", { type: "url", "aria-label": "\u7F51\u9875\u5730\u5740", placeholder: "https://example.com", value: scene.address, onChange: (e) => update({ address: e.target.value }) }),
+          h2("button", { type: "submit" }, "\u6253\u5F00")
         ),
-        h("p", { className: "p0-web-status", role: "status" }, scene.url ? loaded ? "\u8F7D\u4F53\u5DF2\u53D1\u51FAload\u4E8B\u4EF6\uFF1B\u4E0D\u8BC1\u660E\u7AD9\u70B9\u5B8C\u6574\u53EF\u7528\u6216\u5185\u5BB9\u53EF\u8BFB\u3002" : "\u6B63\u5728\u8BF7\u6C42\u9875\u9762\uFF1B\u7AD9\u70B9\u53EF\u80FD\u7981\u6B62\u5D4C\u5165\u3002" : "\u6309\u9700\u6253\u5F00\u7F51\u9875\uFF1B\u672A\u6388\u4E88\u5185\u5BB9\u63D0\u53D6\u6216AI\u64CD\u4F5C\u6743\u9650\u3002"),
+        h2("p", { className: "p0-web-status", role: "status" }, scene.url ? loaded ? "\u8F7D\u4F53\u5DF2\u53D1\u51FAload\u4E8B\u4EF6\uFF1B\u4E0D\u8BC1\u660E\u7AD9\u70B9\u5B8C\u6574\u53EF\u7528\u6216\u5185\u5BB9\u53EF\u8BFB\u3002" : "\u6B63\u5728\u8BF7\u6C42\u9875\u9762\uFF1B\u7AD9\u70B9\u53EF\u80FD\u7981\u6B62\u5D4C\u5165\u3002" : "\u6309\u9700\u6253\u5F00\u7F51\u9875\uFF1B\u672A\u6388\u4E88\u5185\u5BB9\u63D0\u53D6\u6216AI\u64CD\u4F5C\u6743\u9650\u3002"),
         // One iframe per scene, with one stable parent. No portal/DOM adoption.
-        h("iframe", { "data-p0-web": scene.id, title: `${scene.title}\u7F51\u9875`, src: scene.url || void 0, sandbox: "allow-scripts allow-forms", referrerPolicy: "no-referrer", onLoad: () => setLoaded(true) })
+        h2("iframe", { "data-p0-web": scene.id, title: `${scene.title}\u7F51\u9875`, src: scene.url || void 0, sandbox: "allow-scripts allow-forms", referrerPolicy: "no-referrer", onLoad: () => setLoaded(true) })
       )
     ),
-    error && h("p", { role: "alert" }, error),
-    h("footer", null, "P0\u9A8C\u8BC1\uFF1A\u539F\u7248\u21C4\u5DE5\u4F5C\u53F0\uFF0F\u540C\u5DE5\u4F5C\u533AA\u21C4B\uFF0F\u5E03\u5C40\u5207\u6362\u4E0D\u91CD\u5EFA\u7F51\u9875\u3002\u6587\u4EF6\u3001\u7EC8\u7AEF\u3001\u5F00\u653E\u5DE5\u5177\u63A5\u5165\u5F85\u540E\u7EED\u5B9E\u73B0\u3002")
+    error && h2("p", { role: "alert" }, error),
+    h2("footer", null, "P0\u9A8C\u8BC1\uFF1A\u539F\u7248\u21C4\u5DE5\u4F5C\u53F0\uFF0F\u540C\u5DE5\u4F5C\u533AA\u21C4B\uFF0F\u5E03\u5C40\u5207\u6362\u4E0D\u91CD\u5EFA\u7F51\u9875\u3002\u6587\u4EF6\u3001\u7EC8\u7AEF\u3001\u5F00\u653E\u5DE5\u5177\u63A5\u5165\u5F85\u540E\u7EED\u5B9E\u73B0\u3002")
   );
 }
-var css = `
+var css = layoutCSS + `
 .p0-shell{height:100%;display:grid;grid-template-rows:44px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:14px Arial,"Microsoft YaHei",sans-serif}
 /* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
 html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}

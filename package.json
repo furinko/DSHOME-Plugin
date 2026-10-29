@@ -17,7 +17,7 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./workbench-entry": "./lib/entry-workbench-03a1dd2d51f2.js"
+    "./workbench-entry": "./lib/entry-workbench-5241af15cd13.js"
   },
   "dsh": {
     "bundle": {
@@ -71,7 +71,7 @@
     "test:workbench-browser": "node test/workbench-browser.mjs",
     "test:client-registry": "node test/client-registry.mjs",
     "test:workspace-model": "node --test test/workspace-model.mjs",
-    "test:dual": "node --test p0/scene.test.mjs p0/abort.test.mjs",
+    "test:dual": "node --test p0/scene.test.mjs p0/abort.test.mjs p0/layout-edit.test.mjs p0/panels.test.mjs",
     "test:dual-browser": "node --test p0/browser.mjs"
   },
   "license": "MIT",
