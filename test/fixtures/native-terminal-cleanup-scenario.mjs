@@ -5,7 +5,8 @@ export async function runNativeTerminalCleanup({ page, handles, metrics, fault, 
     await page.evaluate(id => window.testNative.controller().model.addPanel('terminal', { id }), id);
     const pane = page.locator('[data-wb-content="' + id + '"]'); await pane.getByRole('button', { name: '启动终端', exact: true }).click();
     await page.waitForFunction(id => window.testNative.controller().content(id).view?.state.getSnapshot().phase === 'connected', id);
-    await page.evaluate(id => window.testNative.controller().content(id).view.write("printf 'CLEANUP_PID:%s\\n' \"$$\"\r"), id);
+    const command=process.platform==='win32'?'"'+process.execPath+'" -e "console.log(\'CLEANUP_PID:\'+process.ppid)"\r':"printf 'CLEANUP_PID:%s\\n' \"$$\"\r";
+    await page.evaluate(({id,command}) => window.testNative.controller().content(id).view.write(command), {id,command});
     await page.waitForFunction(id => /CLEANUP_PID:\d+/.test(document.querySelector('[data-wb-content="' + id + '"] .xterm-screen')?.textContent ?? ''), id);
     const pid = Number((await pane.locator('.xterm-screen').textContent()).match(/CLEANUP_PID:(\d+)/)[1]);
     const terminalId = await page.evaluate(id => window.testNative.controller().content(id).view.id, id); return { pane, pid, terminalId, handle: handles.at(-1) };

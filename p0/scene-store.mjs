@@ -40,6 +40,12 @@ export function createSceneStore({ workspaces, session, connection, maxScenes = 
   const api = {
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    forgetScene(key) {
+      if(disposed || key===selected) throw Error('当前现场不能作为旧现场释放');
+      if(!scenes.has(key))return false;
+      if(!desktop?.entries || desktop.entries.has(key) || scenes.get(key).note || scenes.get(key).url)throw Error('现场内容尚未安全关闭');
+      scenes.delete(key); sync(); publish(); return true;
+    },
     setDesktop(value) { if (!disposed && value && desktop !== value) { desktop = value; publish(); } },
     setMode(next) { if (!['original', 'workbench'].includes(next)) throw Error('Unknown shell mode'); if (disposed || next === mode) return; mode = next; publish(); },
     resizeChat(value) { if (!Number.isFinite(value)) throw Error('Invalid width'); if (disposed) return; chatWidth = Math.max(320, Math.min(560, Math.round(value))); publish(); },

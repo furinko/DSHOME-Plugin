@@ -321,7 +321,7 @@ window.__ModuleLoader__.load({
 			return (0, react_jsx_runtime.jsxs)("div", {
 				ref: frameRef,
 				className: AppFrame_module_css_default.frame + " p0-native",
-				"data-dual-viewport": viewport, "data-dual-mode": dualView.mode,
+				"data-dual-tools-visible": String(layoutInfo.rightbarShown), "data-dual-viewport": viewport, "data-dual-mode": dualView.mode,
 				"data-dual-global": String(dualGlobal),
 				"data-dual-narrow": dualView.narrowPane,
 				style: {
@@ -690,6 +690,15 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    forgetScene(key) {
+      if (disposed || key === selected) throw Error("\u5F53\u524D\u73B0\u573A\u4E0D\u80FD\u4F5C\u4E3A\u65E7\u73B0\u573A\u91CA\u653E");
+      if (!scenes.has(key)) return false;
+      if (!desktop?.entries || desktop.entries.has(key) || scenes.get(key).note || scenes.get(key).url) throw Error("\u73B0\u573A\u5185\u5BB9\u5C1A\u672A\u5B89\u5168\u5173\u95ED");
+      scenes.delete(key);
+      sync();
+      publish();
+      return true;
+    },
     setDesktop(value) {
       if (!disposed && value && desktop !== value) {
         desktop = value;
@@ -782,6 +791,7 @@ function Frame({ NativeFrame, ...props }) {
         { role: "group", "aria-label": "\u6574\u7A97\u6A21\u5F0F" },
         ...[["original", "\u539F\u7248"], ["workbench", "\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))
       ),
+      view.mode === "workbench" && view.desktop?.RecoveryShelf && h2(view.desktop.RecoveryShelf, { selectedKey: view.selected }),
       h2("span", { className: "p0-label" }, "\u6A21\u5757\u5316\u5DE5\u4F5C\u53F0 \xB7 \u6587\u6863\u9700\u5355\u72EC\u4FDD\u5B58"),
       view.mode === "workbench" && h2(
         "div",
@@ -862,6 +872,7 @@ html[data-windows-titlebar] .p0-native:before{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{grid-column:1;grid-row:1}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:3;grid-row:1;border-left:1px solid var(--dsw-alias-border-l2)}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_rightbarCol{grid-column:2;grid-row:1;width:0;justify-self:end;z-index:5}
+.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-tools-visible=false]>.mP3x-q_rightbarCol{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_handle{display:none}
 .p0-desktop{grid-column:2;grid-row:1;min-width:0;min-height:0;position:relative;background:color-mix(in srgb,var(--dsw-alias-bg-base) 95%,#3277ff)}
 .p0-scene-area{height:100%;overflow:auto}.p0-scene{height:100%;box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:360px}.p0-scene[hidden]{display:none}.p0-scene-header{display:flex;align-items:center;justify-content:space-between;gap:8px}.p0-scene h1{font-size:21px;margin:0 0 5px}.p0-scene small,.p0-scene footer{opacity:.65;font-size:12px}.p0-scene h2{font-size:14px;margin:0}.p0-tools{display:grid;grid-template-columns:minmax(180px,.85fr) minmax(220px,1.15fr);gap:12px;flex:1;min-height:200px}.p0-scene[data-arrangement=stack] .p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.p0-tools article{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;padding:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base)}

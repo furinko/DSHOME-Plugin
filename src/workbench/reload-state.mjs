@@ -10,6 +10,7 @@ export function workspaceReloadState({ shelves = [], retiring = 0 } = {}) {
         const snapshot = c.getSnapshot(); s.layoutDrafts += Number(!!c.model.getSnapshot().editing); s.layoutSaves += Number(!!snapshot.savingLayout);
         s.unconfirmedCloses += (snapshot.terminalCleanup?.requests.length ?? 0) + (snapshot.terminalCleanup?.overflow ?? 0);
         for (const item of c.contents.values()) {
+          s.dirty += Number(!!item.moduleDirty || item.kind === 'note' && !!item.noteText);
           const d = item.document?.getSnapshot(); if (d) { for (const key of ['dirty', 'uncertain', 'comparing']) s[key] += Number(!!d[key]); s.saving += Number(d.phase === 'saving'); s.loading += Number(d.phase === 'loading'); }
           s.terminals += Number(item.kind === 'terminal' && !!item.started); s.webPages += Number(item.kind === 'web' && !!item.url);
         }

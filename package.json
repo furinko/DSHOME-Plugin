@@ -1,7 +1,7 @@
 {
   "name": "dshome-plugin",
   "version": "0.3.0-dual.0-dev",
-  "description": "DSHOME original UI plus opt-in whole-window dual-layout P0; workspace memory notes and sandboxed web carrier. Existing tools preserved.",
+  "description": "DSHOME original UI plus opt-in whole-window modular workbench: guarded documents, terminals, webpages, notes, layout recovery and trusted display extensions. Development candidate.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -17,7 +17,7 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./workbench-entry": "./lib/entry-workbench-4a2869646315.js"
+    "./workbench-entry": "./lib/entry-workbench-8db75dba41c5.js"
   },
   "dsh": {
     "bundle": {
@@ -44,7 +44,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test:foundations": "node --test test/workspace-model.mjs test/project-shelf.mjs test/layout-recovery.mjs test/document.mjs test/document-recovery.mjs test/reference.mjs test/textarea.mjs test/workspace-files.mjs test/terminal-binding.mjs test/workspace-gateway.mjs test/workspace-controller.mjs test/terminal-cleanup.mjs test/terminal-state.mjs test/service-epoch.mjs test/reload-state.mjs test/selector-contract.mjs",
+    "test:foundations": "node --test test/workspace-model.mjs test/project-shelf.mjs test/layout-recovery.mjs test/document.mjs test/document-recovery.mjs test/reference.mjs test/textarea.mjs test/workspace-files.mjs test/terminal-binding.mjs test/workspace-gateway.mjs test/workspace-controller.mjs test/terminal-cleanup.mjs test/terminal-state.mjs test/service-epoch.mjs test/reload-state.mjs test/selector-contract.mjs test/workspace-authority.mjs test/shared-files.mjs test/layout-drag.mjs test/workspace-notes.mjs test/module-registry.mjs test/module-content.mjs test/retained-drafts.mjs test/retained-terminal-close.mjs",
     "test:workspace-terminal": "node --test test/workspace-terminal.mjs",
     "test:workspace-ui": "node --test test/workspace-ui-browser.mjs",
     "test:workspace-client": "node --test test/workspace-client-assembly.mjs",

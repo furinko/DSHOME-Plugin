@@ -1,0 +1,29 @@
+✖ Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches (8682.1378ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10502.4901
+
+✖ failing tests:
+
+test at test\workspace-native-browser.mjs:42:1
+✖ Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches (8682.1378ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at Module.runNativeTerminalReconnect (file:///C:/Users/kuro/.dsh/repos/DSHOME-workbench-next/test/fixtures/native-terminal-reconnect-scenario.mjs:17:315)
+      at async TestContext.<anonymous> (file:///C:/Users/kuro/.dsh/repos/DSHOME-workbench-next/test/workspace-native-browser.mjs:307:53)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

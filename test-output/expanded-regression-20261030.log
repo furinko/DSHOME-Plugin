@@ -1,0 +1,52 @@
+✔ aborted connection signal revokes active scene even without a source replacement (1.998ms)
+✔ draft is independent until apply; cancel restores committed layout (1.6029ms)
+✔ invalid updates cannot mutate a draft or smuggle content into layout (0.7223ms)
+✔ different scene models never share draft or commit (0.2673ms)
+✔ tree edits commit atomically and cancellation retains the original geometry (6.1243ms)
+✔ invalid axis and stale split are atomic; undo redo retains the tree (2.1538ms)
+✔ tab merge split maximize collapse retains panel identities and excludes contents (4.1051ms)
+✔ native workspace identity shares A/B but not equal paths (2.5741ms)
+✔ mode and geometry updates do not replace scene identity (0.3756ms)
+✔ unconfirmed or ambiguous membership fails closed without erasing content (0.3557ms)
+✔ connection generation identity is not origin/path or reused text id (0.3877ms)
+✔ scene limits refuse instead of silently evicting dirty state (0.2414ms)
+✔ no-session and withdrawn membership do not invent a workspace (0.1638ms)
+✔ P0 scene commands expose no file/terminal/AI authority and reject extra fields (0.7768ms)
+✔ dispose releases subscriptions and refuses later edits (0.1742ms)
+✔ only explicitly closed inactive scenes can free capacity (0.4078ms)
+✔ URL gate rejects application, credentials and non-web protocols (0.3513ms)
+✔ full packaged client materializes Remote namespace, renders an owned Session body and tears down its registrations (479.4785ms)
+ℹ initial feature setup
+ℹ reentrant replacement 0
+ℹ waiting for replacement ready 0
+ℹ reentrant replacement 1
+ℹ waiting for replacement ready 1
+ℹ reentrant replacement 2
+ℹ waiting for replacement ready 2
+ℹ reentrant replacement 3
+ℹ waiting for replacement ready 3
+ℹ reentrant replacement 4
+ℹ waiting for replacement ready 4
+✔ packaged workbench integrates with actual native Sidebar type/store/body and close guard without occupying another owner seat (2610.8679ms)
+✖ real PTY keeps identity/output and native holds over layout switches; detach retains, explicit close terminates once (109.7732ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 19
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6283.2553
+
+✖ failing tests:
+
+test at test\workspace-terminal.mjs:29:1
+✖ real PTY keeps identity/output and native holds over layout switches; detach retains, explicit close terminates once (109.7732ms)
+  Error: native terminal allocation: subprocess-local: command "/bin/bash" is not an executable file
+      at inspect (file:///C:/Users/kuro/.dsh/repos/DSHOME-workbench-next/test/workspace-terminal.mjs:24:132)
+      at file:///C:/Users/kuro/.dsh/repos/DSHOME-workbench-next/test/workspace-terminal.mjs:26:38
+      at new Promise (<anonymous>)
+      at until (file:///C:/Users/kuro/.dsh/repos/DSHOME-workbench-next/test/workspace-terminal.mjs:22:10)
+      at TestContext.<anonymous> (file:///C:/Users/kuro/.dsh/repos/DSHOME-workbench-next/test/workspace-terminal.mjs:95:37)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

@@ -1,0 +1,242 @@
+✔ actual bundled JavaScript has no literal hashed-selector dependency (294.6253ms)
+✔ JavaScript enum/property references are not CSS selectors (0.6255ms)
+✔ comments and regular expressions are not executable selector literals (0.3575ms)
+✔ direct selector literal reintroduction fails the same invariant (0.2805ms)
+✔ CSS/style literal reintroduction is also caught (0.1827ms)
+✔ JavaScript escapes cannot hide a literal hashed selector (0.2136ms)
+✔ constant string concatenation is inspected after folding (0.162ms)
+✔ constant template interpolation is inspected after folding (0.21ms)
+✔ the two audited suffix anchors remain legal, not arbitrary bare hash classes (0.2063ms)
+✔ malformed or module-only JavaScript fails parsing instead of passing an empty scan (0.7582ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 843.1237
+
+== classic-script contract ==
+  ✓ bundle has no top-level import statement
+  ✓ bundle has no top-level export statement
+  ✓ bundle is a single self-contained file
+  ✓ registers through the module loader factory protocol
+  ✓ factory returns its exports
+  ✓ host modules come from require(), not import
+  ✓ declares name, inject and apply
+  ✓ each feature is isolated behind safe()
+
+== selectors ==
+  ✓ reasoning window keeps its verified anchors and stays masking
+  ✓ the sticky disclosure header masks without showing
+  ✓ canvas backing store is rounded before comparing (P2-26)
+  ✓ canvas length is capped below Chrome’s 32767px limit (P2-27)
+  ✓ a missing scrollBody anchor says so once (P1-12)
+  ✓ synthetic-click expansion backs off and gives up loudly (P2-30)
+  ✓ theme and notify-settings passes hold their teardowns (P2-25)
+  ✓ the selector header documents exactly two hash-fragment exceptions (P1-12)
+  ✓ never relies on hashed CSS-module class names
+  ✓ card selector excludes empty hidden blocks
+  ✓ locale descriptions track package.json (2026-10-14 review, locale drift)
+  ✓ card selector covers tool calls and system injections
+
+== sidebar foot ==
+  ✓ the foot layout is addressed by the slot anchor, not a hashed class
+  ✓ the foot stacks its rows instead of squeezing them into one line
+  ✓ the collapsed rail keeps the centred row
+  ✓ the header comment counts exactly what apply() installs
+  ✓ the sidebar feature is switchable and wired
+
+== notify ==
+  ✓ the notify feature is switchable and wired
+  ✓ every upstream read is optional
+  ✓ the reference copy and both throttles are carried over
+  ✓ delivery degrades instead of failing
+  ✓ the README documents the notify option
+  ✓ a feature that cannot fire says so in-page, not only in the console
+  ✓ 设置卡片：六个开关都挂在官方设置分区上
+
+== minimap geometry ==
+  ✓ band is driven by the conversation area, not by the window or the content
+  ✓ the composer height comes from the official measurement
+  ✓ the strip is top-aligned inside the conversation area
+  ✓ the strip narrows with the conversation gutter instead of a fixed width
+  ✓ the gutter is measured off message rows, not parsed from a CSS expression
+  ✓ sidebar navigation uses the conversation box and reserves a text lane
+  ✓ a column resize re-places the strip at once, and the slide is followed per frame
+  ✓ zoom is derived from the thumb ratio, not fixed at 1
+  ✓ thumb height stays a constant fraction of the standard band
+  ✓ the canvas is translated inside a clipping window
+  ✓ the thumb covers exactly the viewport slice of the canvas
+  ✓ at the document bottom the window is exactly filled
+  ✓ content that fits is never translated
+  ✓ clicking centres the clicked content
+  ✓ the old two-ruler mapping is gone
+  ✓ a zero-height block is not admitted to the cache
+  ✓ the minimap reads the assistant kind upstream actually emits
+  ✓ the hover-tip label table covers exactly the official kind domain
+
+== theme ==
+  ✓ token table is present and substantial
+  ✓ every token declares both light and dark
+  ✓ the code plates and inline chips are brand-tinted, not upstream neutral grey
+  ✓ brand accent differs between modes for contrast
+  ✓ sidebar label is exactly DSHOME
+
+== slot registration ==
+  ✓ inject callbacks return a value
+  ✓ all three brand slots are registered
+
+== packaging ==
+  ✓ declares the bundle patch so the loader can find the client
+  ✓ declares dsh.client with a full bundle shape
+  ✓ a client with no inject must set immediately
+  ✓ every exports target exists on disk
+  ✓ main entry exists
+  ✓ the patch disables the official brand row
+  ✓ cordis rows resolve to this package
+
+== host half ==
+  ✓ host half names the plugin
+  ✓ host half exports apply
+  ✓ default export carries name and apply
+
+PASS  67/67
+
+== classic-script load ==
+  ✓ evaluates without throwing (no ESM syntax)
+  ✓ registers with the module loader
+
+== plugin shape ==
+  ✓ factory returns a plugin with name, inject and apply
+
+== attach ==
+  ✓ apply() installs conversation, sidebar and minimap stylesheets
+  ✓ repeated apply() does not stack conversation observers
+  ✓ sidebar stylesheet stacks the foot rows and keeps the collapsed rail
+  ✓ apply() attaches the minimap strip to the body
+  ✓ strip starts hidden when there is no conversation
+  ✓ conversation stylesheet clamps the think body to 12 lines
+  ✓ conversation stylesheet raises specificity for the collapsed state
+  ✓ conversation stylesheet keeps the sticky header masking its body
+  ✓ a collapsed reasoning block is force-expanded on the next frame
+  ✓ conversation stylesheet styles the card kinds
+  ✓ the glow layer lights the thumb from the inside, on hover only, and leaves the logo alone
+  ✓ glow:false installs no glow sheet at all
+  ✓ the brand slot still renders a real component, with no glow wrapper
+  ✓ the wordmark actually carries the sweep class
+  ✓ the rail-hiding stylesheet is SCOPED, never the global P2-29 rule
+  ✓ applying twice does not duplicate stylesheets
+
+== theme ==
+  ✓ registers all three brand slots
+  ✓ slot inject callbacks return a value (inject keeps it)
+  ✓ apply() tolerates a theme service that throws
+  ✓ apply() tolerates a missing slots service
+
+== minimap geometry (runtime) ==
+  ✓ the strip mounts and shows for a session taller than the viewport
+  ✓ re-applying tears the previous pass down instead of stacking shells
+  ✓ the canvas is actually painted
+  ✓ painted rects land inside the visible window at the top of the document
+  ✓ a session that fits on one screen hides the whole strip
+  ✓ a long session zooms the canvas past the window
+  ✓ the thumb covers exactly the viewport slice of the canvas
+  ✓ at the document bottom the canvas bottom meets the window bottom
+  ✓ clicking centres the clicked content instead of top-aligning it
+
+== minimap behaviour (runtime) ==
+  ✓ the tip is invisible until it has something to say
+  ✓ findScroller skips a column parked outside the window
+  ✓ findScroller still returns a column when nothing intersects the viewport yet
+  ✓ the hover tip names the block whose painted rectangle is under the pointer
+  ✓ the tip labels the block kind read off the block
+  ✓ the tip hides when the pointer leaves the strip
+  ✓ the tip is throttled, so a fast sweep does not re-read the DOM per pixel
+  ✓ the wheel converts deltaMode before it scrolls: lines by line height, pages by viewport
+  ✓ a NaN deltaY is a harmless no-op, not a scroll to nowhere
+  ✓ a zero-height scroller in PAGE mode scrolls nothing, silently
+  ✓ a throwing getComputedStyle falls back to the 16px line estimate
+  ✓ a sidebar that owns a track beside the column never hides the strip
+  ✓ an overlapping sidebar leaves a visible lane and reserves room beside the text
+  ✓ sidebar navigation stays visible and stable across repeated syncs and reopening
+  ✓ the strip anchors inside the conversation column, not the window edge
+  ✓ the constant rule hides the rail; JS only rescues provable mis-catches
+  ✓ a rail that mounts after the strip needs no JS pass at all
+  ✓ the rail-anchor probe waits out the mount race before speaking
+  ✓ the probe also speaks when the scoped rule stops biting
+  ✓ the strip aligns to the official rail when the rail is there
+  ✓ a floating sidebar pane gets a navigation lane even with no open attribute
+  ✓ a stale fullscreen owner in an inactive session does not hide the strip
+  ✓ a fullscreen right sidebar hides the strip entirely
+  ✓ the sidebar is watched by attribute, and closing brings the strip back
+  ✓ the strip follows the sidebar slide frame by frame
+  ✓ a narrow overlay leaves a compact lane and teardown restores the conversation
+  ✓ a sidebar surface below the conversation does not take its navigation space
+  ✓ the layout gate is a ratio: 23/40 paints nothing, 24/40 paints
+  ✓ the queued retry paints once layout has finished
+  ✓ painted bars are as long as the message really is
+  ✓ a block whose layout has not settled is estimated from its text, not drawn as a sliver
+
+== message rows ==
+  ✓ a group wrapper is not drawn as a message on top of its own rows
+  ✓ rows inside a hidden subtree never reach the canvas
+  ✓ a collapsed group is represented by its wrapper alone
+  ✓ an idle sync tick does not repaint
+  ✓ a content mutation drives a redraw
+  ✓ a scrollHeight change alone still triggers a redraw (the fallback path)
+
+== conversation anchoring ==
+  ✓ the strip starts inside the conversation area, not above it
+  ✓ the composer height is read from the official measurement
+  ✓ the strip narrows with the conversation gutter instead of vanishing
+  ✓ the text column is measured, not parsed out of a CSS expression
+  ✓ a px width preference is honoured when there are no rows to measure
+  ✓ a conversation-column resize moves the strip in the same callback
+  ✓ a taller conversation re-scales the picture
+  ✓ the window height alone no longer decides the strip
+  ✓ the tip stays quiet while the layout gate is withholding the picture
+
+== notify (runtime) ==
+  ✓ a finished turn raises one reminder naming the session
+  ✓ a member session finishing is announced with its label
+  ✓ the first ready catalog is a baseline, and later turns still fire
+  ✓ a pending approval is announced, and repeats inside 5s do not stack
+  ✓ a model question carries its first question text
+  ✓ a plan review waits like a question
+  ✓ a category switch silences only its own scene
+  ✓ notify:false leaves no subscription and no handle
+  ✓ options accept true, false and an object
+  ✓ without notification rights the reminder still lands as an in-page toast
+  ✓ member reminders share one 5s sound window
+  ✓ sound is a switch, not an obligation
+  ✓ a session error is reported as a failed turn
+  ✓ teardown drops every subscription
+  ✓ re-applying tears the previous pass down instead of stacking
+  ✓ the live handle can fire a scene by hand
+  ✓ repeated toasts share one container and are removed on teardown
+  ✓ a localized approval reason never reads as [object Object]
+  ✓ 页面在前台时只弹页内卡片，不重复构造系统通知
+  ✓ 页面不在前台时，卡片与系统通知一起给
+  ✓ systemNotification 可强制 always / never
+  ✓ a page with no reminder source says so once instead of failing silently
+  ✓ a wired page stays silent through the grace window
+  ✓ teardown cancels the wiring notice
+  ✓ toast:false cannot hide the sole visible foreground reminder
+  ✓ toast:false still falls back when notification permission is refused
+  ✓ toast:false still falls back when the system constructor throws
+  ✓ a delayed system error creates exactly one essential fallback even if repeated
+  ✓ default backup is retained when successful construction is followed by error
+  ✓ late notification error after teardown cannot resurrect a card
+  ✓ toast:false cannot suppress the essential missing-wiring warning
+  ✓ healthy wiring with toast:false does not create an artificial warning
+
+== 设置卡片（运行） ==
+  ✓ 设置页注册了「提醒」分区，六行开关都在
+  ✓ 卡片上点一下：立刻生效并落本地存储
+  ✓ 卡片上关掉的总开关，重载插件后仍然生效
+  ✓ 卡片改的回值不会被 notify:false 覆盖
+
+PASS  114/114
+  (captured 132 expected degradation warning(s))

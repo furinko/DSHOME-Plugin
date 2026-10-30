@@ -1,7 +1,7 @@
 {
   "upstreamSha256": "eb011a7b5699fac7f3ad0aa15408f46a6cf47f79b8cc15db1f81739e81e70587",
-  "outputSha256": "0dad278befb1f0f658cc4cb3e759d679e6f096dd473410f22f44c317f13ac8e4",
-  "extensionSha256": "4352b49dba6886698976d3f90e6a6a2578b1bba8fe4b45fad625ec662658cd12",
+  "outputSha256": "6f051069be061e1e64d473849af2a4fe08a146a6f2e3280442ccc39bfb3e94aa",
+  "extensionSha256": "2a6287f16fe4c80f75d4d462515bd8a80448952cb86b489dafa3c0ada8d72628",
   "patches": [
     {
       "id": "private-extension-module",
@@ -36,7 +36,7 @@
     {
       "id": "frame-semantic-mode",
       "before": "className: AppFrame_module_css_default.frame,",
-      "after": "className: AppFrame_module_css_default.frame + \" p0-native\",\n\t\t\t\t\"data-dual-viewport\": viewport, \"data-dual-mode\": dualView.mode,\n\t\t\t\t\"data-dual-global\": String(dualGlobal),\n\t\t\t\t\"data-dual-narrow\": dualView.narrowPane,"
+      "after": "className: AppFrame_module_css_default.frame + \" p0-native\",\n\t\t\t\t\"data-dual-tools-visible\": String(layoutInfo.rightbarShown), \"data-dual-viewport\": viewport, \"data-dual-mode\": dualView.mode,\n\t\t\t\t\"data-dual-global\": String(dualGlobal),\n\t\t\t\t\"data-dual-narrow\": dualView.narrowPane,"
     },
     {
       "id": "native-original-geometry-kept",

@@ -2,6 +2,7 @@ import { createWorkspaceController } from './controller.mjs';
 import { createSharedFiles } from './shared-files.mjs';
 import { createBrowserLayoutStorage } from './browser-layout-storage.mjs';
 import { createTerminalCleanup } from './terminal-cleanup.mjs';
+import { createRetainedTerminalCloser } from './retained-terminal-close.mjs';
 const unwrap = result => { if (result?.ok === true) return result.value; throw Object.assign(Error(result?.error?.message ?? 'Invalid host receipt'), { code: result?.error?.code }); };
 
 // One content controller per confirmed native workspace/project pair. The owner
@@ -17,6 +18,7 @@ export async function createSharedEntry({ owner, services, authority, workspaceI
   const cleanup = createTerminalCleanup({ retry: id => terminals.retryClose(id) });
   const current = expected => {
     const now = authority.capture(workspaceId);
+    if (now.generation !== lease.generation) throw Error('连接代次已变化；旧终端不能自动改绑');
     if (!services.available(owner)) throw Error('原远端服务暂不可用，现场仍保留');
     if (expected && now.sessionId !== expected) throw Error('此终端属于会话 ' + expected + '；请返回该会话操作，或在当前会话新建终端');
     return now;
@@ -56,13 +58,14 @@ export async function createSharedEntry({ owner, services, authority, workspaceI
         return views.get(view);
       },
     };
-    const files = createSharedFiles({ authority, workspaceId, projectId: project.projectId,
+    const files = createSharedFiles({ authority, workspaceId, projectId: project.projectId, generation:lease.generation,
       invoke: (method, args, signal) => services.call(owner, (ns, life) => ns[method](...args, life), signal) });
     controller = createWorkspaceController({ sessionId: lease.sessionId,
       getSessionId: () => { const state = authority.getSnapshot(); return state.workspaceId === workspaceId ? state.sessionId : null; },
       projectId: projectKey, transport: files.transport, ...layoutStore, terminals: guardedTerminals, terminalCleanup: cleanup, confirm: message => window.confirm(message) });
     return { controller, workspaceFiles: files.workspaceFiles, workspaceId, project, owner,
-      available: () => services.available(owner) && authority.getSnapshot().workspaceId === workspaceId,
+      closeRetainedTerminal: createRetainedTerminalCloser({authority,workspaceId,projectId:project.projectId,services,owner,remote:remote.terminal,controller,cleanup,confirm:message=>window.confirm(message)}),
+      available: () => services.available(owner) && authority.getSnapshot().workspaceId === workspaceId && authority.getSnapshot().generation === lease.generation,
       terminalAvailable: item => { try { current(item.ownerSessionId); return true; } catch { return false; } },
       release: async () => { controller.releaseResources(); await fiber.dispose(); },
     };

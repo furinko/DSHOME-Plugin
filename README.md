@@ -1,6 +1,28 @@
 # DSHOME-Plugin
 
-## V2 development preview: 0.3.0-workspace.0-dev
+## Current candidate: whole-window modular workbench
+
+This development candidate preserves a genuine **原版 / 工作台** switch using the same native application root. The main work area is separate from the fixed right-hand native conversation. It is **not loaded or independently accepted as a finished release**.
+
+- Real workspace file listing and editable documents, explicit save with Host version-conflict checks and unknown-result reconciliation.
+- Multiple documents, webpages, notes and real SDK terminals; shared workspace content does not transfer terminal ownership between sessions.
+- Layout editing with cancel/apply, split resizing, swap, tab merging, collapse/expand and maximize; stable content containers preserve current drafts and running processes.
+- Project-scoped layout storage with backup, corruption/transaction recovery and cross-page conflict handling. Layout storage does not contain document text, webpage URLs or process identities; reload never replays commands.
+- Explicit document-selection references to the native composer. Opening a tool does not automatically share its contents with AI.
+- Retained-scene draft export and guarded release. New connection generations cannot silently borrow old file or terminal authority.
+- Trusted component extensions with bounded per-instance JSON state: [current extension contract](docs/MODULE-EXTENSIONS.md). This is not an untrusted-code sandbox or an execution-permission grant.
+
+### Verification and remaining limits
+
+Isolated browser evidence uses actual public SDK, filesystem, native composer, Gateway WebSockets and PTYs; workspace catalog/navigation, authorization answers and connection-generation notifications include explicit fixtures. Production GUI and independent whole-product review remain unverified. Some Windows symlink fixtures fail with EPERM and a Linux-only PTY test does not run on this machine; neither is counted passed.
+
+Latest focused evidence: [layout/visual checks](docs/PROGRESS-2026-10-30-DESIGN-INTERACTIONS.md), [multiple documents and terminal owners](docs/PROGRESS-2026-10-30-MULTI-INSTANCE.md), [legacy terminal fault/reconnect tests](docs/PROGRESS-2026-10-30-TERMINAL-RECOVERY.md). The whole-window suite also verifies a real successful terminal close with a deliberately lost acknowledgment: workspace release/reload remain blocked until explicit idempotent retry. Its single expected browser network error is retained, not silently filtered.
+
+Code replacement, removal and refresh are not lossless content recovery. Save/export drafts and reconcile unknown writes before upgrading. Never infer deployment permission from a passing test, commit or build. Remaining work includes whole-window active-terminal connection changes, additional extension failure/lifecycle cases, final packaging checks and review.
+
+Build with `node scripts/build.mjs`. Existing prepared environments without npm can run `node scripts/run-local-regressions.mjs test`, `node scripts/run-local-regressions.mjs test:dual` and `node scripts/run-local-regressions.mjs test:foundations`. Real SDK tests require `DSH_SDK_ROOT`; browser tests additionally require prepared fixture dependencies and `WORKBENCH_BROWSER` pointing to an existing Chrome executable. `node --test p0/browser.mjs` runs the whole-window integration scenario. Do not modify shared dependency junctions or the live-linked checkout to prepare tests.
+
+## Historical V2 Sidebar preview: 0.3.0-workspace.0-dev
 
 This branch contains the **in-development V2 workspace**, not a completed A1–A8 release. It composes a plugin-owned native Sidebar panel with files, an editable document, a real SDK terminal and a sandboxed webpage. Project/content state is separated from editable layouts; document writes use Host identity, workspace and version checks. The native conversation/composer is not moved into a second React root.
 

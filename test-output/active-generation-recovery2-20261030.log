@@ -1,0 +1,20 @@
+✖ P0 single-root original/workbench and native-workspace scene preservation (48096.5274ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49018.2734
+
+✖ failing tests:
+
+test at test\workspace-native-browser.mjs:42:1
+✖ P0 single-root original/workbench and native-workspace scene preservation (48096.5274ms)
+  page.waitForFunction: Timeout 30000ms exceeded.
+      at Module.runDesktopReconnect (C:\Users\kuro\.dsh\repos\DSHOME-workbench-next\p0\reconnect-scenario.mjs:35:14)
+      at async Module.runScenario (C:\Users\kuro\.dsh\repos\DSHOME-workbench-next\p0\full-scenario.mjs:166:19)
+      at async TestContext.<anonymous> (C:\Users\kuro\.dsh\repos\DSHOME-workbench-next\test\workspace-native-browser.mjs:186:22) {
+    name: 'TimeoutError'
+  }

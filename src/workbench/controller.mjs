@@ -6,6 +6,7 @@ export const BUILTINS = Object.freeze([
   { kind: 'document', label: '文档', minWidth: 400, minHeight: 240 },
   { kind: 'terminal', label: '终端', minWidth: 320, minHeight: 140 },
   { kind: 'web', label: '网页', minWidth: 320, minHeight: 160 },
+  { kind: 'note', label: '便笺', minWidth: 240, minHeight: 180 },
 ]);
 export function createWorkspaceController({ sessionId, getSessionId = () => sessionId, projectId, transport, storage, locks, terminals, terminalCleanup, uuid = () => crypto.randomUUID(), confirm = () => false }) {
   const persistence = createLayoutPersistence({ storage, locks, projectId, uuid });
@@ -22,7 +23,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     const state = model.getSnapshot();
     // Only committed instances own content. Editing the layout never starts a
     // process, opens an iframe, reads a file, or destroys a preexisting instance.
-    for (const panel of Object.values(state.panels)) if (!contents.has(panel.id)) contents.set(panel.id, { id: panel.id, kind: panel.kind, document: null, url: '', addressInput: '', selection: '', path: '.', expanded: new Set(['.']), contentId: 'dshome-workspace:' + uuid(), started: false });
+    for (const panel of Object.values(state.panels)) if (!contents.has(panel.id)) contents.set(panel.id, { id: panel.id, kind: panel.kind, document: null, noteText: '', url: '', addressInput: '', selection: '', path: '.', expanded: new Set(['.']), contentId: 'dshome-workspace:' + uuid(), started: false });
     publish();
   }
   const off = model.subscribe(sync);
@@ -55,6 +56,12 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     }
     if (model.getSnapshot().layout.collapsed.some(p => p.panelId === item.id)) model.expand(item.id);
     model.activate(item.id); publish(); return item.document;
+  }
+  function editNote(id, text) {
+    const item = content(id);
+    if (item.kind !== 'note') throw Error('不是便笺模块');
+    if (typeof text !== 'string' || text.length > 262144) throw Error('便笺内容超过上限或类型无效');
+    item.noteText = text; publish();
   }
   function navigate(id, value, ownOrigin) {
     const item = content(id);
@@ -93,6 +100,8 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
   async function closePanel(id) {
     const item = content(id);
     if (model.getSnapshot().editing) throw Error('编辑布局时请收起模块；关闭内容请先退出编辑');
+    if (item.moduleDirty && !confirm('关闭模块将丢弃内存中的内容状态，确定吗？')) return false;
+    if (item.kind === 'note' && item.noteText && !confirm('关闭便笺将丢弃内存中的文字；请先导出，确定关闭吗？')) return false;
     if (item.document && !await item.document.requestClose(s => confirm('关闭文档将丢弃未保存草稿或未知保存结果，确定吗？', s))) return false;
     if (item.kind === 'web' && item.url && !confirm('关闭网页将丢弃其中未提交的表单和页面状态，确定吗？')) return false;
     if (item.started && !confirm('关闭终端将结束此进程，确定吗？')) return false;
@@ -101,7 +110,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     return true;
   }
   const layoutRecovery = createLayoutRecovery({ persistence, model, initial: stored, publish, isLive: () => !disposed, confirm });
-  function hasUnsaved() { return !!terminalCleanup?.hasUnconfirmed() || [...contents.values()].some(item => { const s = item.document?.getSnapshot(); return s && (s.dirty || s.uncertain || s.phase === 'saving'); }); }
+  function hasUnsaved() { return !!terminalCleanup?.hasUnconfirmed() || [...contents.values()].some(item => { const s = item.document?.getSnapshot(); return !!item.moduleDirty || item.kind === 'note' && !!item.noteText || s && (s.dirty || s.uncertain || s.phase === 'saving'); }); }
   function releaseResources() {
     if (disposed) return; disposed = true; offCleanup?.(); terminalCleanup?.dispose(); terminals?.retainTabs([]); off(); for (const release of releases) release();
     for (const item of contents.values()) item.offDocument?.(); listeners.clear(); persistence.dispose();
@@ -121,7 +130,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     for (const item of contents.values()) { if (item.started) terminals.close(item.ownerSessionId, item.id, item.contentId, item.view?.id); item.offDocument?.(); }
     releaseResources(); contents.clear(); return true;
   }
-  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, navigate, startTerminal, closePanel, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
+  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, editNote, navigate, startTerminal, closePanel, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
     getSnapshot: () => snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     notify: text => publish({ notice: text }), updateContent(id, change) { Object.assign(content(id), change); publish(); },
     exportLayout: () => JSON.stringify(model.serialize(), null, 2), exportStoredLayout: () => storage.getItem(persistence.key),

@@ -1,4 +1,5 @@
 import React from 'react';
+import { ModuleView } from './module-view.mjs';
 import { chromeCSS } from './chrome-css.mjs';
 import { createLayoutDrag, dropEdge, LAYOUT_DRAG_TYPE } from './layout-drag.mjs';
 import { Terminal } from '@xterm/xterm';
@@ -6,7 +7,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import terminalCSS from '@xterm/xterm/css/xterm.css';
 import { terminalState, retryTerminal } from './terminal-state.mjs';
 import { textareaProjection, applyTextareaEdit } from './textarea.mjs';
-import { DocumentRecovery } from './recovery-ui.mjs';
+import { DocumentRecovery, downloadDraft } from './recovery-ui.mjs';
 import { LayoutRecovery } from './layout-recovery-ui.mjs';
 import { quoteDocumentSelection } from './reference.mjs';
 const h = React.createElement;
@@ -26,7 +27,7 @@ function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId }) {
+export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId, moduleRegistry }) {
   const state = useSource(c), layout = useSource(c.model), ref = React.useRef(null), room = useRoom(ref);
   const [selection, select] = React.useState(null), [menu, setMenu] = React.useState(false);
   const geometry = c.model.geometry(Math.max(0, room.width - 16), Math.max(0, room.height - 12));
@@ -63,7 +64,7 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
               button(layout.layout.maximized === panel.id ? '还原' : '放大', () => action(() => c.model.maximize(panel.id))),
               button('关闭', () => action(() => c.closePanel(panel.id)), { 'aria-label': '关闭 ' + panel.id })),
             h('nav', { className: 'wb-tabs', 'aria-label': panel.title + ' 标签' }, tabs.map(p => button(p.title, () => c.model.activate(p.id), { key: p.id, role: 'tab', 'aria-selected': p.id === panel.id }))),
-            h('div', { className: 'wb-panel-body' }, h(Content, { item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, showing: showing && !collapsed })));
+            h('div', { className: 'wb-panel-body' }, h(Content, { item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, moduleRegistry, showing: showing && !collapsed })));
         }),
         geometry.handles.map(handle => h(SplitHandle, { key: handle.nodeId, handle, c }))),
       layout.editing && h(LayoutEditor, { c, room, selected: selection, select }),
@@ -74,12 +75,16 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
       state.storage === 'corrupt' && button('导出损坏记录', () => action(() => download('dshome-layout-original.json', c.exportLayoutOriginal()))),
       state.layoutBackupKey && button('导出最近布局备份', () => action(() => download('dshome-layout-backup.json', c.exportLayoutBackup())))));
 }
-function Content({ item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable, terminalAvailable }) {
+function Content({ item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable, terminalAvailable, moduleRegistry }) {
   if (item.kind === 'files') return h(FileTree, { item, c, workspaceFiles });
   if (item.kind === 'document') return item.document ? h(DocumentEditor, { doc: item.document, c, inputActions, referenceReady, referenceCurrent, showing }) : h('div', { className: 'wb-empty' }, '从文件树选择真实文件，或输入工作区内的文件路径。', h(OpenFile, { c }));
   if (item.kind === 'terminal') return h(TerminalPanel, { item, c, showing, servicesAvailable: servicesAvailable && terminalAvailable(item) });
   if (item.kind === 'web') return h(WebPanel, { item, c });
-  return h('p', { role: 'alert' }, '模块提供者不可用，实例仍保留。');
+  if (item.kind === 'note') return h('div', { style:{height:'100%',display:'flex',flexDirection:'column',minHeight:0} },
+    h('p', {className:'wb-empty'}, '便笺仅保存在当前操作现场；布局保存不保存文字，刷新前请导出。'),
+    h('textarea', {className:'wb-note', 'aria-label':'便笺内容 '+item.id, value:item.noteText, maxLength:262144, style:{flex:1,minHeight:0,resize:'none',color:'inherit',background:'transparent'}, onChange:e=>c.editNote(item.id,e.target.value)}),
+    button('导出便笺',()=>{try {downloadDraft(item.id+'.txt',item.noteText);} catch(error){c.notify(errorText(error));}}));
+  return h(ModuleView, {registry:moduleRegistry,item,controller:c,active:showing});
 }
 function OpenFile({ c }) {
   const [path, setPath] = React.useState('');
@@ -231,7 +236,7 @@ function LayoutEditor({ c, room, selected, select }) {
       button('放到目标分区', () => action(() => c.model.dock(selected, pane, edge)), { disabled: !box || !pane }),
       button('收起所选模块', () => action(() => c.model.collapse(selected)), { disabled: !box || draft.layout.collapsed.some(i => i.panelId === selected) }),
       button('展开所选模块', () => action(() => c.model.expand(selected)), { disabled: !draft.layout.collapsed.some(i => i.panelId === selected) }),
-      h('label', null, '交换对象', h('select', { defaultValue: '', onChange: e => { if (e.target.value) action(() => c.model.swap(selected, e.target.value)); e.target.value = ''; }, disabled: !box }, h('option', { value: '' }, '选择另一现有实例交换'), panels.filter(p => p.id !== selected).map(p => h('option', { key: p.id, value: p.id }, p.title + ' · ' + p.id)))),
+      h('label', null, '交换对象', h('select', { 'aria-label': '交换对象', defaultValue: '', onChange: e => { if (e.target.value) action(() => c.model.swap(selected, e.target.value)); e.target.value = ''; }, disabled: !box }, h('option', { value: '' }, '选择另一现有实例交换'), panels.filter(p => p.id !== selected).map(p => h('option', { key: p.id, value: p.id }, p.title + ' · ' + p.id)))),
       button('撤销', () => c.model.undo(), { disabled: !state.canUndo }), button('重做', () => c.model.redo(), { disabled: !state.canRedo })),
     h('aside', { className: 'wb-module-properties' }, h('h3', null, '模块属性'), box ? h(React.Fragment, null,
       h('p', null, box.id), h('label', null, '显示名称', h('input', { value: box.title, maxLength: 120, onChange: e => action(() => c.model.renamePanel(selected, e.target.value)) })),

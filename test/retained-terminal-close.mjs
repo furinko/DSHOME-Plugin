@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createRetainedTerminalCloser} from '../src/workbench/retained-terminal-close.mjs';
+import {createTerminalCleanup} from '../src/workbench/terminal-cleanup.mjs';
+function fixture(){
+ const f={session:'A',valid:true,available:true,project:'P',confirm:true,queries:0,closes:0,removed:0};
+ const item={started:true,ownerSessionId:'A',view:{id:'real-id'}};f.item=item;
+ const controller={contents:new Map([['panel',item]]),model:{getSnapshot:()=>({editing:false})},updateContent:(id,patch)=>Object.assign(item,patch),closePanel:async id=>{f.removed++;controller.contents.delete(id);}};
+ f.cleanup=createTerminalCleanup();f.controller=controller;
+ f.close=createRetainedTerminalCloser({controller,cleanup:f.cleanup,authority:{capture:()=>({sessionId:f.session,signal:new AbortController().signal,check:()=>{if(!f.valid)throw Error('stale lease');}})},workspaceId:'W',projectId:'P',services:{available:()=>f.available,call:async()=>{f.queries++;await f.projectGate;return {ok:true,value:{projectId:f.project}};}},owner:{},remote:{close:async(session,id,...rest)=>{assert.equal(rest.length,0,'SDK close accepts exactly two args');assert.equal(session,'A');assert.equal(id,'real-id');f.closes++;await f.closeGate;if(f.fail)throw Error('lost reply');return {ok:true};}},confirm:()=>f.confirm});return f;
+}
+test('explicit current-owner close removes only confirmed old terminal',async()=>{const f=fixture();assert.equal(await f.close('panel'),true);assert.equal(f.closes,1);assert.equal(f.removed,1);assert.equal(f.cleanup.hasUnconfirmed(),false);});
+test('wrong owner, revoked service and cancelled confirmation do not call host',async()=>{for(const key of ['session','available','confirm']){const f=fixture();f[key]=key==='session'?'B':false;if(key==='confirm')assert.equal(await f.close('panel'),false);else await assert.rejects(f.close('panel'));assert.equal(f.queries,0);assert.equal(f.closes,0);assert.equal(f.item.started,true);}});
+test('different project and stale preflight cannot close',async()=>{const f=fixture();f.project='other';await assert.rejects(f.close('panel'),/项目/);assert.equal(f.closes,0);const g=fixture(),gate=Promise.withResolvers();g.projectGate=gate.promise;const work=g.close('panel');g.valid=false;gate.resolve();await assert.rejects(work,/stale/);assert.equal(g.closes,0);});
+test('lost close response remains retryable without forgetting content',async()=>{const f=fixture();f.fail=true;await assert.rejects(f.close('panel'),/lost/);assert.equal(f.item.started,true);assert.equal(f.cleanup.getSnapshot().requests[0].phase,'failed');f.fail=false;assert.equal(await f.close('panel'),true);assert.equal(f.closes,2);assert.equal(f.removed,1);});
+test('lease change after host close stays unknown; concurrent request refused',async()=>{const f=fixture(),gate=Promise.withResolvers();f.closeGate=gate.promise;const work=f.close('panel');await Promise.resolve();await Promise.resolve();await assert.rejects(f.close('panel'),/等待/);assert.equal(f.closes,1);f.valid=false;gate.resolve();await assert.rejects(work,/stale/);assert.equal(f.item.started,true);assert.equal(f.removed,0);assert.equal(f.cleanup.hasUnconfirmed(),true);});

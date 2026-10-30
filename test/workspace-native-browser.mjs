@@ -42,6 +42,7 @@ const close = server => new Promise(resolve => server.close(resolve));
 test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene preservation' : applicationShellMode ? 'Application root shell preserves native chat, retained workspaces and actual PTY across layout, global-page and Session switches' : nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product content; manual export and native input boundaries are measured' : 'Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches', { timeout: 120000 }, async t => {
   const parent = resolve('test-output/native-browser'); await mkdir(parent, { recursive: true }); const root = await mkdtemp(join(parent, 'case-'));
   const original = '\ufefffirst\r\nsecond 😀\r\n' + Array.from({ length: 180 }, (_, index) => '原生组件长文档 ' + index + '\r\n').join(''); await writeFile(join(root, 'a.md'), original); await writeFile(join(root, '.bashrc'), 'PS1="BROWSER_PTY> "; HISTFILE=/dev/null\n');
+  if(dualP0)await writeFile(join(root,'b.md'),'independent second document\n');
   const host = new Context(), metrics = { spawn: 0, terminate: 0, close: 0, closed: 0, activeRetains: 0, upgrades: 0 }, handles = [], upgradeRoutes = new Map(), admissions = new WeakMap(), wsEvents = [], browserConsole = [];
   const terminateFault = { handle: null, terminalId: null, enabled: false, closeRequests: 0 };
   let browser, page, complete = false, iframeLoads = 0, dropNextSaveReply = false;
@@ -124,7 +125,8 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
     new JournalRemote(host); host.typert.register((await load('@deepseek-ai/dsh-api-session-controller/typert')).TYPERT); await journal.appendUser('隔离 Host 日志中的既有消息');
   }
   const session = host.sessions.get('A'), agent = { id: 'A', session, ctx: host };
-  host.typert.lookups.register('agent', { parameter: 'agent', wire: 'agentId', resource: 'session', hostTypeSymbol: '@deepseek-ai/dsh-agent#Agent', wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId', resolve: id => id === 'A' ? agent : undefined });
+  const agents=new Map([['A',agent]]);if(dualP0)for(const id of ['B','C'])agents.set(id,{id,session:host.sessions.get(id),ctx:host});
+  host.typert.lookups.register('agent', { parameter: 'agent', wire: 'agentId', resource: 'session', hostTypeSymbol: '@deepseek-ai/dsh-agent#Agent', wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId', resolve: id => agents.get(id) });
   class ObservedController extends TerminalController {
     async *retain(sessionId, id, signal) { metrics.activeRetains++; try { yield* super.retain(sessionId, id, signal); } finally { metrics.activeRetains--; } }
     async close(agent, id) { metrics.close++; if (terminateFault.terminalId === id && ++terminateFault.closeRequests >= 2) terminateFault.enabled = false; await super.close(agent, id); metrics.closed++; }
@@ -147,7 +149,7 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   if (dualP0) sdkAssets.push(['workspace-controller', '@deepseek-ai/dsh-api-workspace-controller']);
   if (applicationShellMode || dualP0) sdkAssets.push(['ui-navigation', '@deepseek-ai/dsh-client-ui-sidebar']);
   if (nativeChromeMode) sdkAssets.push(['ui-theme', '@deepseek-ai/dsh-client-ui-theme']);
-  if (layoutRecovery) {
+  if (layoutRecovery || dualP0) {
     const peer = await build({ entryPoints: ['test/fixtures/layout-storage-peer.mjs'], bundle: true, write: false, format: 'iife', platform: 'browser', target: 'es2022' });
     assets.set('/layout-storage-peer.js', { type: 'text/javascript', body: peer.outputFiles[0].text });
     assets.set('/layout-storage-peer', { type: 'text/html', body: '<!doctype html><title>Isolated layout storage peer</title><script src="/layout-storage-peer.js"></script>' });
@@ -181,9 +183,12 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   await page.goto(url); await page.waitForFunction(() => window.testP0 || window.testNative || window.fixtureBootError);
   assert.equal(await page.evaluate(() => window.fixtureBootError), undefined);
   if (dualP0) {
-    const evidence = await (await import('../p0/full-scenario.mjs')).runScenario({page, context, url, childURL, metrics, errors, browserConsole, iframeLoads:()=>iframeLoads, readHostSource:()=>readFile(join(root,'a.md'),'utf8'), writeHostSource:text=>writeFile(join(root,'a.md'),text), setHostRoot:changed=>{host.sessions.get('A').header.cwd=changed?join(root,'..'):root;}});
+    const evidence = await (await import('../p0/full-scenario.mjs')).runScenario({page, context, url, childURL, metrics, errors, browserConsole, iframeLoads:()=>iframeLoads, readHostSource:()=>readFile(join(root,'a.md'),'utf8'), writeHostSource:text=>writeFile(join(root,'a.md'),text), readSecondarySource:()=>readFile(join(root,'b.md'),'utf8'), setHostRoot:changed=>{host.sessions.get('A').header.cwd=changed?join(root,'..'):root;}});
     await page.evaluate(() => window.testP0.dispose());
-    assert.deepEqual(errors, []); assert.deepEqual(browserConsole, []); assert.equal(metrics.spawn,1); assert.equal(metrics.activeRetains,0);
+    assert.deepEqual(errors, evidence.providerFaultDiagnostics.errors); assert.equal(evidence.terminalClose.actualHostCloseLostReply,true);
+    // Exactly one browser network diagnostic from the deliberate lost-close
+    // receipt. Preserve it in evidence; all additional errors still fail.
+    assert.deepEqual(browserConsole, ['Failed to load resource: net::ERR_FAILED',...evidence.providerFaultDiagnostics.console]); assert.equal(metrics.spawn,4); assert.equal(metrics.activeRetains,0);
     await writeFile('test-output/p0-result.json', JSON.stringify({evidence, metrics, errors, browserConsole, journals: [journal.metrics,journalB.metrics,journalC.metrics]}, null, 2)); complete = true; return;
   }
   if (nativeShellMode) {
@@ -217,9 +222,18 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   await page.waitForFunction(() => { const state = window.testNative.controller().content('TERM-01').view?.state.getSnapshot(); return state?.writable || state?.phase === 'failed' || window.testNative.errors.length; });
   const terminalState = await page.evaluate(() => window.testNative.controller().content('TERM-01').view?.state.getSnapshot());
   assert.equal(terminalState?.writable, true, JSON.stringify(terminalState));
-  const pid = handles[0].pid; assert.equal(metrics.spawn, 1); assert.equal(metrics.activeRetains, 1); assert.equal(metrics.upgrades, 1);
-  await page.locator('.xterm-helper-textarea').focus(); await page.keyboard.type("printf 'WB_%s:%s\\n' PID \"$$\"; for i in 1 2 3 4 5; do printf 'WB_%s:%s\\n' TICK \"$i\"; sleep 0.1; done"); await page.keyboard.press('Enter');
-  await page.waitForFunction(pid => document.querySelector('.xterm-rows')?.textContent.includes('WB_PID:' + pid), pid);
+  let pid = handles[0].pid; assert.equal(metrics.spawn, 1); assert.equal(metrics.activeRetains, 1); assert.equal(metrics.upgrades, 1);
+  let probeCommand="printf 'WB_%s:%s\\n' PID \"$$\"; for i in 1 2 3 4 5; do printf 'WB_%s:%s\\n' TICK \"$i\"; sleep 0.1; done";
+  if(process.platform==='win32') {
+    // The SDK may omit the Windows PID. Observe our CMD parent from a real
+    // child launched through that PTY, not from an invented/constant identity.
+    await writeFile(join(root,'.pty-probe.cjs'),"console.log('WB_PID:'+process.ppid);let i=0;const t=setInterval(()=>{console.log('WB_TICK:'+ ++i);if(i===5)clearInterval(t)},100);");
+    probeCommand='"'+process.execPath+'" ".pty-probe.cjs"';
+  }
+  await page.locator('.xterm-helper-textarea').focus();await page.keyboard.type(probeCommand);await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>/WB_PID:[1-9][0-9]*/.test(document.querySelector('.xterm-rows')?.textContent??''));
+  const observedPid=await page.evaluate(()=>Number(document.querySelector('.xterm-rows').textContent.match(/WB_PID:([1-9][0-9]*)/)[1]));
+  if(pid>0)assert.equal(observedPid,pid);else {assert.equal(process.platform,'win32');pid=observedPid;}
   const baseline = await page.evaluate(() => { window.probeNodes = { editor: document.querySelector('textarea.wb-editor'), iframe: document.querySelector('iframe[data-wb-iframe]'), terminal: document.querySelector('.xterm-screen'), chat: document.querySelector('#fixture-chat'), composer: document.querySelector('#fixture-composer [contenteditable=true]') ?? document.querySelector('#fixture-composer') }; return { viewport: { start: window.probeNodes.editor.selectionStart, end: window.probeNodes.editor.selectionEnd, scroll: window.probeNodes.editor.scrollTop }, text: window.probeNodes.editor.value, draft: window.testNative.reference?.input().state.getSnapshot().draft ?? window.probeNodes.composer.value, terminalId: window.testNative.controller().content('TERM-01').view.id }; });
   const before = { spawn: metrics.spawn, close: metrics.close, terminate: metrics.terminate };
   for (let index = 0; index < 5; index++) { await page.getByLabel('布局预设', { exact: true }).selectOption('review'); await page.getByLabel('布局预设', { exact: true }).selectOption('development'); }
@@ -293,7 +307,7 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   const guardUpdate = async (phase, field) => { const result = await (await import('./fixtures/native-update-guard-scenario.mjs')).assertNativeUpdateBlocked({ page, metrics, phase, field }); (updateGuardEvidence.checkpoints ??= []).push(result); };
   let guardClosePhase = 0;
   const terminalCleanupEvidence = terminalCleanupMode ? await (await import('./fixtures/native-terminal-cleanup-scenario.mjs')).runNativeTerminalCleanup({ page, handles, metrics, fault: terminateFault, originalPid: pid, onUnconfirmed: updateGuardMode ? () => guardUpdate('closing-' + guardClosePhase++, 'unconfirmedCloses') : undefined }) : null;
-  const terminalReconnectEvidence = reconnectMode ? await (await import('./fixtures/native-terminal-reconnect-scenario.mjs')).runNativeTerminalReconnect({ page, handles, metrics, root }) : null;
+  const terminalReconnectEvidence = reconnectMode ? await (await import('./fixtures/native-terminal-reconnect-scenario.mjs')).runNativeTerminalReconnect({ page, handles, metrics, root, pid }) : null;
   const serviceRebindEvidence = serviceRebindMode ? await (await import('./fixtures/native-service-rebind-scenario.mjs')).runNativeServiceRebind({ page, root, session, metrics, handles, onSaving: updateGuardMode ? () => guardUpdate('saving', 'saving') : undefined, onUncertain: updateGuardMode ? () => guardUpdate('uncertain', 'uncertain') : undefined }) : null;
   const beforeFinalClose = { close: metrics.close, terminate: metrics.terminate };
   page.on('dialog', dialog => dialog.accept());

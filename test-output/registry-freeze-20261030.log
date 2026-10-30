@@ -1,0 +1,12 @@
+{
+  "kind": "real-host-sdk-with-isolated-loader-and-temporary-old-fixture",
+  "pass": true,
+  "sameNameUpgradeReproducesStalePath": true,
+  "packageRelativeEntryOwnedAndImported": true,
+  "clientModuleIdUnchanged": true,
+  "responseStatus": 200,
+  "responseContainsCompleteWorkbench": true,
+  "clientSha256": "8db75dba41c594e624fb7802aa39353654e6fa30be0c5eb572451bf37091c844",
+  "liveServiceModified": false,
+  "authenticatedGuiVerified": false
+}

@@ -21,6 +21,7 @@ export function Frame({ NativeFrame, ...props }) {
       h('strong', null, 'DSHOME'),
       h('div', { role: 'group', 'aria-label': '整窗模式' },
         ...[['original', '原版'], ['workbench', '工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))),
+      view.mode === 'workbench' && view.desktop?.RecoveryShelf && h(view.desktop.RecoveryShelf,{selectedKey:view.selected}),
       h('span', { className: 'p0-label' }, '模块化工作台 · 文档需单独保存'),
       view.mode === 'workbench' && h('div', { className: 'p0-narrow-switch', role: 'group', 'aria-label': '窄窗区域' },
         h('button', { onClick: () => props.dualShell.setNarrowPane('workspace'), 'aria-pressed': view.narrowPane === 'workspace' }, '操作区'),
@@ -84,6 +85,7 @@ html[data-windows-titlebar] .p0-native:before{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{grid-column:1;grid-row:1}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:3;grid-row:1;border-left:1px solid var(--dsw-alias-border-l2)}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_rightbarCol{grid-column:2;grid-row:1;width:0;justify-self:end;z-index:5}
+.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-tools-visible=false]>.mP3x-q_rightbarCol{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_handle{display:none}
 .p0-desktop{grid-column:2;grid-row:1;min-width:0;min-height:0;position:relative;background:color-mix(in srgb,var(--dsw-alias-bg-base) 95%,#3277ff)}
 .p0-scene-area{height:100%;overflow:auto}.p0-scene{height:100%;box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:360px}.p0-scene[hidden]{display:none}.p0-scene-header{display:flex;align-items:center;justify-content:space-between;gap:8px}.p0-scene h1{font-size:21px;margin:0 0 5px}.p0-scene small,.p0-scene footer{opacity:.65;font-size:12px}.p0-scene h2{font-size:14px;margin:0}.p0-tools{display:grid;grid-template-columns:minmax(180px,.85fr) minmax(220px,1.15fr);gap:12px;flex:1;min-height:200px}.p0-scene[data-arrangement=stack] .p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.p0-tools article{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;padding:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base)}

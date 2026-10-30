@@ -1,0 +1,586 @@
+{
+  "evidence": {
+    "providerFaultDiagnostics": {
+      "errors": [
+        "DSHOME_EXPECTED_PROVIDER_FAILURE",
+        "DSHOME_EXPECTED_PROVIDER_FAILURE"
+      ],
+      "console": [
+        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:8231/product.js:5309:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:8231/product.js:5321:35)\n    at Content (http://127.0.0.1:8231/product.js:15198:22)\n    at div\n    at article\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:8231/product.js:15092:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:8231/product.js:16517:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:8231/ui-layout.js:806:20)\n    at div\n    at AppFrame (http://127.0.0.1:8231/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:8231/ui-layout.js:780:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:8231/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:8231/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:8231/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:8231/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:8231/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+      ]
+    },
+    "checks": [
+      {
+        "id": "real-original-native-tree",
+        "passed": true
+      },
+      {
+        "id": "web-close-cancel-keeps-form",
+        "passed": true
+      },
+      {
+        "id": "layout-save-does-not-save-document",
+        "passed": true
+      },
+      {
+        "id": "stable-content-and-chat",
+        "passed": true
+      },
+      {
+        "id": "real-file-save-from-current-session-B",
+        "passed": true
+      },
+      {
+        "id": "different-native-workspace-isolated",
+        "passed": true
+      },
+      {
+        "id": "explicit-reference-in-native-draft",
+        "passed": true
+      },
+      {
+        "id": "reference-return-restores-selection",
+        "passed": true
+      },
+      {
+        "id": "reference-foreign-session-refused",
+        "passed": true
+      },
+      {
+        "id": "real-version-conflict-and-explicit-recovery",
+        "passed": true
+      },
+      {
+        "id": "actual-host-root-change-refuses-old-file-write",
+        "passed": true
+      },
+      {
+        "id": "actual-PTY-start-and-output",
+        "passed": true
+      },
+      {
+        "id": "terminal-owner-not-silently-transferred",
+        "passed": true
+      },
+      {
+        "id": "real-pointer-drag-merges-panel-tabs",
+        "passed": true
+      },
+      {
+        "id": "iframe-not-reloaded",
+        "passed": true
+      },
+      {
+        "id": "layout-restores-without-command-replay",
+        "passed": true
+      },
+      {
+        "id": "desktop-retained-project-blocks-config-update",
+        "passed": true
+      },
+      {
+        "id": "reference-reopens-explicitly-closed-workspace",
+        "passed": true
+      },
+      {
+        "id": "right-chat-no-page-overflow-1920",
+        "passed": true
+      },
+      {
+        "id": "right-chat-no-page-overflow-1366",
+        "passed": true
+      },
+      {
+        "id": "right-chat-no-page-overflow-1040",
+        "passed": true
+      },
+      {
+        "id": "narrow-focus-boundary",
+        "passed": true
+      },
+      {
+        "id": "legacy-sidebar-tools-coexist",
+        "passed": true
+      },
+      {
+        "id": "collapsed-native-drawer-no-longer-obscures-main-workspace",
+        "passed": true
+      },
+      {
+        "id": "actual-theme-runtime-dark",
+        "passed": true
+      },
+      {
+        "id": "note-shares-stable-instance-with-explicit-export-and-close-protection",
+        "passed": true
+      },
+      {
+        "id": "extension-render-failure-preserves-exportable-state-and-provider-replacement-recovers",
+        "passed": true
+      },
+      {
+        "id": "extension-render-state-withdrawal-and-stale-callback-boundary",
+        "passed": true
+      },
+      {
+        "id": "withdrawn-scene-drafts-explicitly-exportable-without-host-authority",
+        "passed": true
+      },
+      {
+        "id": "retained-scene-release-requires-confirmation-and-frees-metadata-capacity",
+        "passed": true
+      }
+    ],
+    "windowChrome": {
+      "probes": [
+        {
+          "height": 32,
+          "mode": "原版",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 32,
+              "right": 1366,
+              "bottom": 76,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 76,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 824
+            },
+            "main": {
+              "x": 280,
+              "y": 76,
+              "right": 946,
+              "bottom": 900,
+              "width": 666,
+              "height": 824
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 32,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 32,
+          "mode": "工作台",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 32,
+              "right": 1366,
+              "bottom": 76,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 76,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 824
+            },
+            "main": {
+              "x": 946,
+              "y": 76,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 824
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 32,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 40,
+          "mode": "原版",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 40,
+              "right": 1366,
+              "bottom": 84,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 6,
+              "right": 40,
+              "bottom": 34,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 84,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 816
+            },
+            "main": {
+              "x": 280,
+              "y": 84,
+              "right": 946,
+              "bottom": 900,
+              "width": 666,
+              "height": 816
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 40,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 40,
+          "mode": "工作台",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 40,
+              "right": 1366,
+              "bottom": 84,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 6,
+              "right": 40,
+              "bottom": 34,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 84,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 816
+            },
+            "main": {
+              "x": 946,
+              "y": 84,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 816
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 40,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 48,
+          "mode": "原版",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 48,
+              "right": 1366,
+              "bottom": 92,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 10,
+              "right": 40,
+              "bottom": 38,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 808
+            },
+            "main": {
+              "x": 280,
+              "y": 92,
+              "right": 946,
+              "bottom": 900,
+              "width": 666,
+              "height": 808
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 48,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "height": 48,
+          "mode": "工作台",
+          "geometry": {
+            "toolbar": {
+              "x": 0,
+              "y": 48,
+              "right": 1366,
+              "bottom": 92,
+              "width": 1366,
+              "height": 44
+            },
+            "toggle": {
+              "x": 12,
+              "y": 10,
+              "right": 40,
+              "bottom": 38,
+              "width": 28,
+              "height": 28
+            },
+            "frame": {
+              "x": 0,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 808
+            },
+            "main": {
+              "x": 946,
+              "y": 92,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 808
+            },
+            "windowHeight": 900,
+            "padding": "0px"
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 48,
+            "top": 0,
+            "toolbarRegion": "no-drag",
+            "hit": "p0-shell"
+          }
+        },
+        {
+          "fullscreen": true,
+          "geometry": {
+            "brand": {
+              "x": 104,
+              "y": 13.5,
+              "right": 165.453125,
+              "bottom": 29.5
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30
+            },
+            "toolbar": {
+              "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 44
+            }
+          }
+        }
+      ],
+      "boundary": "Actual rc.3 sidebar/frame CSS under explicit Windows attributes; not Electron OS hit-testing or native window-button acceptance."
+    },
+    "scopeRaces": {
+      "withdrawnMembershipRefusesWrite": true,
+      "lateRealHostWriteNotFalselyClean": true,
+      "restoredMembershipDoesNotReviveOldLease": true,
+      "explicitDiskReconciliation": true,
+      "boundary": "Synthetic native workspace catalog withdrawal; real Host write and deliberately delayed transport response, not production permission administration."
+    },
+    "layoutRecovery": {
+      "unsupportedOriginalPreserved": true,
+      "cancelDoesNotReplace": true,
+      "realTransactionAbortPreservesOriginal": true,
+      "backupVerified": true,
+      "realCrossPageWebLocksAndCAS": true,
+      "storedLayoutKeepsExtraContentCollapsed": true,
+      "editorIdentityAndDirtyDraftKept": true,
+      "neighborIsolated": true,
+      "layoutNeverSavesDocument": true
+    },
+    "layoutInteractions": {
+      "dirtyDraftPreserved": true,
+      "maximizeRestore": true,
+      "collapseExpandRunningTerminal": true,
+      "keyboardSplitter": true,
+      "swapCancelAndApply": true,
+      "stableContentAndChat": {
+        "editor": true,
+        "frame": true,
+        "terminal": true,
+        "document": true,
+        "text": true,
+        "composer": true,
+        "chat": true
+      },
+      "noIframeReload": true,
+      "noTerminalRestart": true
+    },
+    "terminalClose": {
+      "actualHostCloseLostReply": true,
+      "unknownBlocksWorkspaceReleaseAndReload": true,
+      "visibleRetryAfterPanelRemoval": true,
+      "idempotentRetryDoesNotTerminateTwice": true,
+      "documentPreserved": true
+    },
+    "reconnect": {
+      "activeTerminalAcrossGeneration": true,
+      "oldInputStillRefused": true,
+      "wrongOwnerCloseRefused": true,
+      "explicitOwnerCloseConfirmed": true,
+      "cancelDoesNotClose": true,
+      "actualFixtureSocketsClosed": true,
+      "newGenerationGetsDistinctScene": true,
+      "oldDraftRetained": true,
+      "oldSaveRefused": true,
+      "noTerminalReplay": true,
+      "noAutomaticFileOpen": true,
+      "limits": [
+        "generation and reconnect hooks are fixture wiring",
+        "production login/authorization and idle expiry not verified"
+      ]
+    },
+    "multiDocument": {
+      "twoRealFiles": true,
+      "independentDraftsAndSaves": true,
+      "sharedDocumentIdentityAcrossSessions": true,
+      "savingBDoesNotWriteA": true,
+      "closingBDoesNotCloseA": true,
+      "dirtyACloseCancel": true
+    },
+    "multiTerminal": {
+      "realProcessesCreated": 2,
+      "distinctOwnersAndViews": true,
+      "crossOwnerWriteRefused": true,
+      "mixedOwnerWorkspaceCloseHasNoPartialEffect": true,
+      "closeBRetainsA": true,
+      "eachOwnerClosesOwnProcess": true
+    },
+    "notVerified": [
+      "production GUI",
+      "independent review",
+      "full remaining interaction matrix"
+    ],
+    "real": [
+      "public SDK",
+      "guarded filesystem save",
+      "native composer",
+      "actual PTY"
+    ],
+    "fixtures": [
+      "workspace catalog",
+      "navigation",
+      "host journal",
+      "authorization answers"
+    ]
+  },
+  "metrics": {
+    "spawn": 4,
+    "terminate": 4,
+    "close": 5,
+    "closed": 5,
+    "activeRetains": 0,
+    "upgrades": 4
+  },
+  "errors": [
+    "DSHOME_EXPECTED_PROVIDER_FAILURE",
+    "DSHOME_EXPECTED_PROVIDER_FAILURE"
+  ],
+  "browserConsole": [
+    "Failed to load resource: net::ERR_FAILED",
+    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:8231/product.js:5309:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:8231/product.js:5321:35)\n    at Content (http://127.0.0.1:8231/product.js:15198:22)\n    at div\n    at article\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:8231/product.js:15092:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:8231/product.js:16517:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:8231/ui-layout.js:806:20)\n    at div\n    at AppFrame (http://127.0.0.1:8231/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:8231/ui-layout.js:780:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:8231/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:8231/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:8231/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:8231/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:8231/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+  ],
+  "journals": [
+    {
+      "follows": 4,
+      "activeFollowers": 0,
+      "prompts": 0,
+      "appended": 1
+    },
+    {
+      "follows": 7,
+      "activeFollowers": 0,
+      "prompts": 0,
+      "appended": 0
+    },
+    {
+      "follows": 1,
+      "activeFollowers": 0,
+      "prompts": 0,
+      "appended": 0
+    }
+  ]
+}

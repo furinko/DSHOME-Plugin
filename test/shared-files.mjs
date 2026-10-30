@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createSharedFiles } from '../src/workbench/shared-files.mjs';
+test('old content never acquires authority from a new connection with reused text id',async()=>{
+ const first={id:'same'},second={id:'same'};let generation=first,calls=0;
+ const authority={run:async(_workspace,fn)=>fn({sessionId:'A',generation,check(){}})};
+ const files=createSharedFiles({authority,workspaceId:'W',projectId:'P',generation:first,invoke:async()=>{calls++;return {ok:true,value:{projectId:'P',absolutePath:'/a'}};}});
+ await files.transport.read('/a');assert.equal(calls,2);generation=second;
+ await assert.rejects(files.transport.save('/a','draft','v1'),{code:'WORKBENCH_CONNECTION_CHANGED'});await assert.rejects(files.workspaceFiles.list('A','.'),{code:'WORKBENCH_CONNECTION_CHANGED'});assert.equal(calls,2);
+});
 function setup() {
   let sessionId='A', current=0, projectId='P', reply, calls=[];
   const authority={async run(workspaceId,fn) { assert.equal(workspaceId,'W'); const captured=current; const lease={sessionId,signal:new AbortController().signal,check(){if(current!==captured) throw Error('stale lease');}}; const result=await fn(lease); lease.check(); return result; }};

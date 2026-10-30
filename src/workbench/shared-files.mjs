@@ -7,10 +7,11 @@ function unwrap(result) {
   }
   throw Object.assign(Error(result?.error?.message ?? '宿主没有返回有效回执'), { code: result?.error?.code ?? 'WORKBENCH_INVALID_RECEIPT' });
 }
-export function createSharedFiles({ authority, workspaceId, projectId, invoke }) {
+export function createSharedFiles({ authority, workspaceId, projectId, invoke, generation }) {
   if (!authority?.run || !workspaceId || !projectId || typeof invoke !== 'function') throw Error('Explicit workspace, project and authority required');
   async function call(method, args, signal, expectedPath) {
     return authority.run(workspaceId, async lease => {
+      if (generation !== undefined && lease.generation !== generation) throw Object.assign(Error('连接代次已变化，旧内容不能自动改绑'), {code:'WORKBENCH_CONNECTION_CHANGED'});
       const project = unwrap(await invoke('project', [lease.sessionId], lease.signal));
       lease.check();
       if (project.projectId !== projectId) throw Object.assign(Error('工作区根目录已变化；旧内容未自动改绑'), { code: 'WORKBENCH_PROJECT_CHANGED' });

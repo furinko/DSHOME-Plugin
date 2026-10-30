@@ -362,7 +362,7 @@ check('registers with the module loader', () => {
 const provide = (id) => {
   if (id === 'react/jsx-runtime') return { jsx: () => null };
   // 设置卡片用 useState 触发重渲染；没有它组件一渲染就崩。
-  if (id === 'react') return { useState: (init) => [typeof init === 'function' ? init() : init, () => {}] };
+  if (id === 'react') return { Component: class Component {}, useState: (init) => [typeof init === 'function' ? init() : init, () => {}] };
   return { FishLogo: () => null };
 };
 
@@ -2438,7 +2438,7 @@ function recordingProvide(jsxCalls) {
       return { jsx: (type, props) => { jsxCalls.push({ type, props }); return { type, props }; } };
     }
     if (id === 'react') {
-      return { useState: (init) => [typeof init === 'function' ? init() : init, () => {}] };
+      return { Component: class Component {}, useState: (init) => [typeof init === 'function' ? init() : init, () => {}] };
     }
     return { FishLogo: () => null };
   };
