@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 await import('../p0/build.mjs');
@@ -16,4 +16,9 @@ await writeFile(resolve(layout,entry),'// Content-keyed client layout identity.\
 manifest.exports['./shell-entry']=entry;
 await writeFile(path,JSON.stringify(manifest,null,2)+'\n');
 await writeFile(patchPath,patch.replace(oldReference,newReference));
+// Old content-keyed entries are generated shims; only the current exported
+// identity belongs in a distributable package.
+for (const name of await readdir(resolve(layout, 'lib'))) {
+  if (/^entry-[a-f0-9]{12}\.js$/.test(name) && './lib/' + name !== entry) await unlink(resolve(layout, 'lib', name));
+}
 console.log('Prepared dual layout',entry,'without loading any profile.');

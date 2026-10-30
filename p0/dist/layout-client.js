@@ -644,7 +644,7 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
     watchedSignal = signal;
     watchedSignal?.addEventListener("abort", sync, { once: true });
   };
-  const epochs = /* @__PURE__ */ new WeakMap(), scenes = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
+  const epochs = /* @__PURE__ */ new WeakMap(), rotations = /* @__PURE__ */ new Map(), scenes = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
   const publish = () => {
     snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
     for (const listener of [...listeners]) listener();
@@ -663,7 +663,8 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
       else {
         workspace = matches[0];
         if (!epochs.has(generation)) epochs.set(generation, ++epochNumber);
-        next = JSON.stringify([epochs.get(generation), workspace.workspaceId]);
+        const base = JSON.stringify([epochs.get(generation), workspace.workspaceId]);
+        next = rotations.has(base) ? JSON.stringify([epochs.get(generation), workspace.workspaceId, rotations.get(base)]) : base;
         if (!scenes.has(next)) {
           if (scenes.size >= maxScenes) {
             problem = "\u4FDD\u7559\u73B0\u573A\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u672A\u9759\u9ED8\u6E05\u9664\u65E7\u5185\u5BB9\u3002";
@@ -689,6 +690,16 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    newScene(key) {
+      if (disposed || !selected || key !== selected || !scenes.has(key)) throw Error("\u8BF7\u5728\u5F53\u524D\u5DF2\u786E\u8BA4\u7684\u5DE5\u4F5C\u533A\u65B0\u5EFA\u73B0\u573A");
+      if (scenes.size >= maxScenes) throw Error("\u4FDD\u7559\u73B0\u573A\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u8BF7\u5148\u5BFC\u51FA\u5E76\u91CA\u653E\u4E0D\u7528\u7684\u65E7\u73B0\u573A");
+      const generation = connection.getSnapshot(), scene = scenes.get(key);
+      if (!generation || generation.signal?.aborted) throw Error("\u8FDE\u63A5\u5C1A\u672A\u6062\u590D\uFF0C\u4E0D\u80FD\u65B0\u5EFA\u73B0\u573A");
+      const base = JSON.stringify([epochs.get(generation), scene.workspaceId]);
+      rotations.set(base, (rotations.get(base) ?? 0) + 1);
+      sync();
+      return selected;
     },
     forgetScene(key) {
       if (disposed || key === selected) throw Error("\u5F53\u524D\u73B0\u573A\u4E0D\u80FD\u4F5C\u4E3A\u65E7\u73B0\u573A\u91CA\u653E");

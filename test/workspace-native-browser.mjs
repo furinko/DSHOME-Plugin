@@ -31,6 +31,7 @@ const history = nativeShellMode || updateGuardMode || serviceRebindMode || recon
 const composer = history || process.env.WORKBENCH_NATIVE_COMPOSER === '1';
 const references = composer || process.env.WORKBENCH_NATIVE_REFERENCE === '1';
 const sdkRoot = process.env.DSH_SDK_ROOT;
+const reviewInfo = process.env.WORKBENCH_REVIEW_INFO;
 if (!sdkRoot) throw Error('DSH_SDK_ROOT required; no fake PTY fallback');
 const sdk = createRequire(resolve(sdkRoot, 'package.json')), dev = createRequire(resolve('.dev-sdk/package.json'));
 const load = name => import(pathToFileURL(sdk.resolve(name)));
@@ -39,7 +40,7 @@ const [{ Context }, { TypertRegistry }, { TypertGatewayService }, { SandboxedFil
 ]);
 const listen = server => new Promise((yes, no) => { server.once('error', no); server.listen(0, '127.0.0.1', () => yes('http://127.0.0.1:' + server.address().port)); });
 const close = server => new Promise(resolve => server.close(resolve));
-test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene preservation' : applicationShellMode ? 'Application root shell preserves native chat, retained workspaces and actual PTY across layout, global-page and Session switches' : nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product content; manual export and native input boundaries are measured' : 'Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches', { timeout: 120000 }, async t => {
+test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene preservation' : applicationShellMode ? 'Application root shell preserves native chat, retained workspaces and actual PTY across layout, global-page and Session switches' : nativeHmrMode ? 'Actual SDK SSE HMR and graph removal release product content; manual export and native input boundaries are measured' : 'Chromium actual native Sidebar/xterm with real Gateway WebSocket/PTY preserves all four modules over layout and mode switches', { timeout: reviewInfo ? 3600000 : 120000 }, async t => {
   const parent = resolve('test-output/native-browser'); await mkdir(parent, { recursive: true }); const root = await mkdtemp(join(parent, 'case-'));
   const original = '\ufefffirst\r\nsecond 😀\r\n' + Array.from({ length: 180 }, (_, index) => '原生组件长文档 ' + index + '\r\n').join(''); await writeFile(join(root, 'a.md'), original); await writeFile(join(root, '.bashrc'), 'PS1="BROWSER_PTY> "; HISTFILE=/dev/null\n');
   if(dualP0)await writeFile(join(root,'b.md'),'independent second document\n');
@@ -165,6 +166,12 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   }
   const childURL = await listen(child), url = await listen(server);
   assert.equal(upgradeRoutes.size, 1, 'actual Gateway must register its own WebSocket route');
+  if (reviewInfo) {
+    if (!dualP0) throw Error('Interactive review requires the whole-window fixture');
+    await writeFile(reviewInfo, JSON.stringify({ url, childURL, root, pid: process.pid, isolated: true, limits: ['fixture navigation/workspace catalog/admission; not the running DSH'], stop: 'Send SIGINT to this preview process' }, null, 2));
+    console.log('Isolated review UI: ' + url);
+    await new Promise(resolve => process.once('SIGINT', resolve)); complete = true; return;
+  }
   browser = await chromium.launch({ headless: true, ...(process.env.WORKBENCH_BROWSER ? { executablePath: process.env.WORKBENCH_BROWSER } : { channel: 'chromium' }), args: dualP0 ? [] : ['--no-sandbox'] });
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const externalRequests = [];

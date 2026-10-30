@@ -10,6 +10,7 @@ import { textareaProjection, applyTextareaEdit } from './textarea.mjs';
 import { DocumentRecovery, downloadDraft } from './recovery-ui.mjs';
 import { LayoutRecovery } from './layout-recovery-ui.mjs';
 import { quoteDocumentSelection } from './reference.mjs';
+import { documentMatches, documentPosition } from './editor-tools.mjs';
 const h = React.createElement;
 const useSource = source => React.useSyncExternalStore(source.subscribe, source.getSnapshot);
 const button = (label, onClick, props = {}) => h('button', { type: 'button', onClick, ...props }, label);
@@ -27,20 +28,43 @@ function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId, moduleRegistry }) {
+export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, onCloseWorkspace, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId, moduleRegistry }) {
   const state = useSource(c), layout = useSource(c.model), ref = React.useRef(null), room = useRoom(ref);
-  const [selection, select] = React.useState(null), [menu, setMenu] = React.useState(false);
+  const [selection, select] = React.useState(null), [menu, setMenu] = React.useState(false), [tools, setTools] = React.useState(false);
+  const importRef = React.useRef(null), sectionRef = React.useRef(null);
+  const wasEditing = React.useRef(false);
+  React.useLayoutEffect(() => {
+    if (layout.editing) sectionRef.current?.querySelector('.wb-layout-editor button:not(:disabled)')?.focus();
+    else if (wasEditing.current) sectionRef.current?.querySelector('[data-wb-edit-layout]')?.focus();
+    wasEditing.current = !!layout.editing;
+  }, [!!layout.editing]);
+  React.useEffect(() => {
+    if (!menu && !tools) return;
+    const close = event => { if (!sectionRef.current?.contains(event.target)) { setMenu(false); setTools(false); } };
+    document.addEventListener('pointerdown', close); return () => document.removeEventListener('pointerdown', close);
+  }, [menu, tools]);
   const geometry = c.model.geometry(Math.max(0, room.width - 16), Math.max(0, room.height - 12));
   function action(fn) { try { Promise.resolve(fn()).catch(e => c.notify(errorText(e))); } catch (e) { c.notify(errorText(e)); } }
   const serializedPanels = Object.values(layout.panels).sort((a, b) => a.id.localeCompare(b.id));
-  return h('section', { className: 'dshome-v2', 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId },
-    h('header', { className: 'wb-header' }, h('strong', null, layout.editing ? '布局编辑' : '操作区'), h('span', { className: 'wb-project', title: c.projectId }, projectTitle),
+  return h('section', { ref: sectionRef, className: 'dshome-v2', 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId,
+    onKeyDown: event => { if (event.nativeEvent.isComposing) return; if (layout.editing && (event.ctrlKey || event.metaKey) && event.key === 'Enter') { action(() => c.model.applyEdit()); event.preventDefault(); } if (event.key === 'Escape') { if (menu || tools) { setMenu(false); setTools(false); event.stopPropagation(); } else if (layout.editing) { c.model.cancelEdit(); event.preventDefault(); } } } },
+    h('header', { className: 'wb-header', role: 'toolbar', 'aria-label': '工作台工具栏' }, h('strong', null, layout.editing ? '布局编辑' : '操作区'), h('span', { className: 'wb-project', title: projectTitle }, projectTitle),
       layout.editing ? h(React.Fragment, null,
         button('取消', () => c.model.cancelEdit()), button('应用布局', () => action(() => c.model.applyEdit()), { className: 'wb-primary' })) : h(React.Fragment, null,
         h('select', { 'aria-label': '布局预设', value: layout.selectedPreset, onChange: e => action(() => c.model.selectPreset(e.target.value)) },
-          h('option', { value: 'custom' }, '自定义'), Object.keys(layout.presets).map(name => h('option', { key: name, value: name }, name === 'development' ? '开发' : name === 'review' ? '审阅' : name))),
-        button('编辑布局', () => c.model.beginEdit()), button('＋ 添加模块', () => setMenu(!menu), { 'aria-expanded': menu }),
-        button('保存布局', () => action(() => c.saveLayout()), { disabled: state.savingLayout }), button('检查布局存储', () => action(() => c.inspectLayout()), { disabled: state.savingLayout }), button('返回原版', onOriginal))),
+          h('option', { value: 'custom', disabled: true }, '自定义'), Object.keys(layout.presets).map(name => h('option', { key: name, value: name }, name === 'development' ? '开发' : name === 'review' ? '审阅' : name))),
+        button('编辑布局', () => { setMenu(false); setTools(false); c.model.beginEdit(); }, { 'data-wb-edit-layout': true }), button('＋ 添加模块', () => { setMenu(!menu); setTools(false); }, { 'aria-expanded': menu }),
+        button(state.savingLayout ? '正在保存…' : '保存布局', () => action(() => c.saveLayout()), { disabled: state.savingLayout, 'aria-label': '保存布局' }), button('恢复', () => action(() => c.inspectLayout()), { disabled: state.savingLayout, 'aria-label': '检查布局存储', title: '检查已保存的布局、处理冲突与恢复备份' }),
+        button('更多', () => { setTools(!tools); setMenu(false); }, { 'aria-expanded': tools, 'aria-label': '更多布局操作' }), button('返回原版', onOriginal),
+        onCloseWorkspace && button('×', onCloseWorkspace, { 'aria-label': '关闭操作现场', title: '关闭操作现场；有未保存内容时先确认', className: 'wb-icon-button' }))),
+    tools && !layout.editing && h('div', { className: 'wb-layout-tools', 'aria-label': '布局文件与预设' },
+      button('导入布局文件', () => importRef.current?.click()), button('导出布局', () => download('dshome-layout.json', c.exportLayout())),
+      h('form', { onSubmit: event => { event.preventDefault(); const name = new FormData(event.currentTarget).get('preset'); action(() => { if (Object.hasOwn(layout.presets, name) && !window.confirm('覆盖同名布局预设？不会关闭现有内容。')) return; c.model.savePreset(name); c.notify('预设已记录；点击保存布局后可在下次打开时使用。'); }); } },
+        h('input', { name: 'preset', 'aria-label': '新布局预设名称', placeholder: '预设名称（英文字母开头）', pattern: '[A-Za-z](?:[A-Za-z0-9_]|-){0,95}', maxLength: 96, required: true }), h('button', { type: 'submit' }, '保存为预设'))),
+    h('input', { ref: importRef, type: 'file', accept: '.json,application/json', hidden: true, 'aria-label': '选择布局文件', onChange: event => {
+      const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
+      action(async () => { if (file.size > 262144) throw Error('布局文件超过 256 KB'); const text = await file.text(); if (window.confirm('导入此项目的布局？现有内容会保留，未出现在布局中的模块将收起；不会保存文件或执行命令。')) c.importLayout(text); });
+    } }),
     menu && !layout.editing && h('nav', { className: 'wb-add', 'aria-label': '添加内容模块' }, c.model.modules().map(definition => button(definition.label, () => action(() => { c.model.addPanel(definition.kind); setMenu(false); }), { key: definition.kind }))),
     h(LayoutRecovery, { c, state, download }),
     state.terminalCleanup && (state.terminalCleanup.requests.length > 0 || state.terminalCleanup.overflow > 0) && h('section', { className: 'wb-terminal-cleanup', 'aria-label': '终端关闭任务', style: { padding: 8, maxHeight: 180, overflow: 'auto' } },
@@ -59,11 +83,12 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
           const style = { left: rect?.x ?? 0, top: rect?.y ?? 0, width: rect?.width ?? 1, height: rect?.height ?? 1, visibility: showing ? 'visible' : 'hidden', pointerEvents: showing ? 'auto' : 'none' };
           const tabs = serializedPanels.filter(p => geometry.rectangles[p.id]?.paneId === rect?.paneId);
           return h('article', { key: panel.id, className: 'wb-panel', style, 'data-wb-content': panel.id, 'aria-hidden': !showing, inert: !showing ? '' : undefined },
-            h('header', { className: 'wb-panel-header' }, h('strong', null, panel.title), h('small', null, panel.id),
-              button('收起', () => action(() => c.model.collapse(panel.id)), { 'aria-label': '收起 ' + panel.id }),
-              button(layout.layout.maximized === panel.id ? '还原' : '放大', () => action(() => c.model.maximize(panel.id))),
-              button('关闭', () => action(() => c.closePanel(panel.id)), { 'aria-label': '关闭 ' + panel.id })),
-            h('nav', { className: 'wb-tabs', 'aria-label': panel.title + ' 标签' }, tabs.map(p => button(p.title, () => c.model.activate(p.id), { key: p.id, role: 'tab', 'aria-selected': p.id === panel.id }))),
+            h('header', { className: 'wb-panel-header' }, h('strong', { title: panel.title + ' · ' + panel.id }, panel.title),
+              button('—', () => action(() => c.model.collapse(panel.id)), { 'aria-label': '收起 ' + panel.id, title: '收起 ' + panel.title }),
+              button(layout.layout.maximized === panel.id ? '↙' : '↗', () => action(() => c.model.maximize(panel.id)), { 'aria-label': layout.layout.maximized === panel.id ? '还原' : '放大', title: layout.layout.maximized === panel.id ? '还原模块' : '放大模块' }),
+              button('×', () => action(() => c.closePanel(panel.id)), { 'aria-label': '关闭 ' + panel.id, title: '关闭 ' + panel.title })),
+            h('nav', { className: 'wb-tabs', role: 'tablist', 'aria-label': panel.title + ' 标签' }, tabs.map((p, index) => button(p.title, () => c.model.activate(p.id), { key: p.id, role: 'tab', tabIndex: p.id === panel.id ? 0 : -1, 'aria-selected': p.id === panel.id,
+              onKeyDown: event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length; c.model.activate(tabs[next].id); requestAnimationFrame(() => sectionRef.current?.querySelector('[data-wb-content="' + tabs[next].id + '"] [role=tab][aria-selected=true]')?.focus()); } }))),
             h('div', { className: 'wb-panel-body' }, h(Content, { item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, moduleRegistry, showing: showing && !collapsed })));
         }),
         geometry.handles.map(handle => h(SplitHandle, { key: handle.nodeId, handle, c }))),
@@ -77,8 +102,8 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
 }
 function Content({ item, c, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable, terminalAvailable, moduleRegistry }) {
   if (item.kind === 'files') return h(FileTree, { item, c, workspaceFiles });
-  if (item.kind === 'document') return item.document ? h(DocumentEditor, { doc: item.document, c, inputActions, referenceReady, referenceCurrent, showing }) : h('div', { className: 'wb-empty' }, '从文件树选择真实文件，或输入工作区内的文件路径。', h(OpenFile, { c }));
-  if (item.kind === 'terminal') return h(TerminalPanel, { item, c, showing, servicesAvailable: servicesAvailable && terminalAvailable(item) });
+  if (item.kind === 'document') return item.document ? h(DocumentEditor, { doc: item.document, c, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable }) : h('div', { className: 'wb-empty' }, h('strong', null, '打开一份文档'), h('p', null, '从左侧文件树选择文件，或输入工作区内的路径。修改后使用保存文件，布局保存不会写入正文。'), h(OpenFile, { c }));
+  if (item.kind === 'terminal') return h(TerminalPanel, { item, c, showing, servicesAvailable: servicesAvailable && terminalAvailable(item), blockedReason: servicesAvailable === false ? '工作区接口暂停' : item.ownerSessionId && item.ownerSessionId !== c.sessionId ? '属于会话 ' + item.ownerSessionId + '，请返回该会话输入' : '原终端连接已变化，请新建终端' });
   if (item.kind === 'web') return h(WebPanel, { item, c });
   if (item.kind === 'note') return h('div', { style:{height:'100%',display:'flex',flexDirection:'column',minHeight:0} },
     h('p', {className:'wb-empty'}, '便笺仅保存在当前操作现场；布局保存不保存文字，刷新前请导出。'),
@@ -92,11 +117,13 @@ function OpenFile({ c }) {
     h('input', { 'aria-label': '文档路径', value: path, placeholder: 'docs/example.md', onChange: e => setPath(e.target.value) }), h('button', { type: 'submit', disabled: !path.trim() }, '打开文档'));
 }
 function FileTree({ item, c, workspaceFiles }) {
-  const [filter, setFilter] = React.useState('');
-  return h('div', { className: 'wb-files' }, h('input', { 'aria-label': '筛选已列出的文件', placeholder: '查找当前目录文件', value: filter, onChange: e => setFilter(e.target.value) }),
-    h(Directory, { path: '.', c, item, workspaceFiles, filter, depth: 0 }), h(OpenFile, { c }));
+  const [filter, setFilter] = React.useState(''), [hidden, showHidden] = React.useState(false), [refresh, setRefresh] = React.useState(0);
+  return h('div', { className: 'wb-files' }, h('div', { className: 'wb-file-tools' }, h('input', { 'aria-label': '筛选已列出的文件', placeholder: '筛选已展开的文件', value: filter, onChange: e => setFilter(e.target.value) }),
+    filter && button('×', () => setFilter(''), { 'aria-label': '清空文件筛选' }), button('↻', () => setRefresh(refresh + 1), { 'aria-label': '刷新文件树', title: '刷新文件树' }), button('·', () => showHidden(!hidden), { 'aria-label': '显示隐藏文件', title: '显示隐藏文件', 'aria-pressed': hidden })),
+    h('div', { role: 'tree', 'aria-label': '工作区文件', className: 'wb-file-tree' }, h(Directory, { path: '.', c, item, workspaceFiles, filter, hidden, refresh, depth: 0 })),
+    h('details', { className: 'wb-open-path' }, h('summary', null, '按路径打开文件'), h(OpenFile, { c })));
 }
-function Directory({ path, c, item, workspaceFiles, filter, depth }) {
+function Directory({ path, c, item, workspaceFiles, filter, hidden, refresh, depth }) {
   const [state, setState] = React.useState({ phase: 'loading' }), [attempt, retry] = React.useState(0);
   const expanded = item.expanded.has(path);
   React.useEffect(() => {
@@ -104,22 +131,41 @@ function Directory({ path, c, item, workspaceFiles, filter, depth }) {
     const lifetime = new AbortController(); setState({ phase: 'loading' });
     workspaceFiles.list(c.sessionId, path, lifetime.signal).then(unwrap).then(value => { if (!lifetime.signal.aborted) setState({ phase: 'ready', ...value }); }, error => { if (!lifetime.signal.aborted) setState({ phase: 'failed', error }); });
     return () => lifetime.abort();
-  }, [path, expanded, attempt]);
+  }, [path, expanded, attempt, refresh, c.sessionId, workspaceFiles]);
   if (!expanded) return null;
   if (state.phase === 'loading') return h('p', { role: 'status' }, '读取目录…');
   if (state.phase === 'failed') return h('p', { role: 'alert' }, errorText(state.error), button('重试', () => retry(attempt + 1)));
-  return h('div', { role: 'group', className: 'wb-tree-group' }, state.entries.filter(entry => !filter || entry.type === 'directory' || entry.name.toLowerCase().includes(filter.toLowerCase())).map(entry => {
+  const entries = state.entries.filter(entry => (hidden || !entry.name.startsWith('.')) && (!filter || entry.type === 'directory' || entry.name.toLowerCase().includes(filter.toLowerCase())));
+  return h('div', { role: 'group', className: 'wb-tree-group' }, !entries.length && h('p', { role: 'status' }, filter ? '没有匹配的文件' : '此目录没有可显示的文件'), entries.map(entry => {
     const child = path === '.' ? entry.name : path + '/' + entry.name;
-    return h('div', { key: child }, button((entry.type === 'directory' ? (item.expanded.has(child) ? '▾ ' : '▸ ') : '▧ ') + entry.name, () => {
+    return h('div', { key: child, role: 'treeitem', 'aria-level': depth + 1, 'aria-expanded': entry.type === 'directory' ? item.expanded.has(child) : undefined }, button((entry.type === 'directory' ? (item.expanded.has(child) ? '▾ ' : '▸ ') : '▧ ') + entry.name, () => {
       if (entry.type === 'directory') { if (item.expanded.has(child)) item.expanded.delete(child); else item.expanded.add(child); c.updateContent(item.id, {}); }
       else if (entry.type === 'file') c.openDocument(child).catch(e => c.notify(errorText(e)));
-    }, { className: 'wb-tree-entry', disabled: entry.type === 'other', style: { paddingLeft: 8 + depth * 12 }, 'aria-expanded': entry.type === 'directory' ? item.expanded.has(child) : undefined }),
-    entry.type === 'directory' && depth < 32 && h(Directory, { path: child, item, c, workspaceFiles, filter, depth: depth + 1 }));
+    }, { className: 'wb-tree-entry', title: child, disabled: entry.type === 'other', style: { paddingLeft: 8 + depth * 12 }, 'aria-expanded': entry.type === 'directory' ? item.expanded.has(child) : undefined,
+      onKeyDown: event => {
+        if (!['ArrowDown','ArrowUp','Home','End','ArrowLeft','ArrowRight'].includes(event.key)) return; event.preventDefault();
+        const node = event.currentTarget, list = [...node.closest('.wb-files').querySelectorAll('.wb-tree-entry:not(:disabled)')], index = list.indexOf(node);
+        if (event.key === 'ArrowLeft' && entry.type === 'directory' && item.expanded.has(child)) { item.expanded.delete(child); c.updateContent(item.id, {}); return; }
+        if (event.key === 'ArrowRight' && entry.type === 'directory' && !item.expanded.has(child)) { item.expanded.add(child); c.updateContent(item.id, {}); return; }
+        const target = event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : Math.max(0, Math.min(list.length - 1, index + (['ArrowUp','ArrowLeft'].includes(event.key) ? -1 : 1))); list[target]?.focus();
+      } }),
+    entry.type === 'directory' && depth < 32 && h(Directory, { path: child, item, c, workspaceFiles, filter, hidden, refresh, depth: depth + 1 }));
   }), state.truncated && h('p', { role: 'status' }, '目录已达到宿主条目上限，未显示的文件可用路径打开。'), button('刷新目录', () => retry(attempt + 1)));
 }
-function DocumentEditor({ doc, c, inputActions, referenceReady, referenceCurrent, showing }) {
-  const s = useSource(doc), ref = React.useRef(null), [preview, setPreview] = React.useState(false);
+function DocumentEditor({ doc, c, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable }) {
+  const s = useSource(doc), ref = React.useRef(null), findRef = React.useRef(null), [preview, setPreview] = React.useState(false), [finding, setFinding] = React.useState(false), [query, setQuery] = React.useState(''), [sensitive, setSensitive] = React.useState(false);
   const projection = React.useMemo(() => textareaProjection(s.text), [s.text]), loaded = s.version !== null;
+  const matches = React.useMemo(() => documentMatches(projection.text, query, sensitive), [projection.text, query, sensitive]);
+  const position = documentPosition(s.text, s.selectionStart);
+  const canSave = s.dirty && s.phase !== 'saving' && !s.uncertain && !s.comparing && servicesAvailable !== false;
+  const save = () => { if (canSave) doc.save().catch(e => c.notify(errorText(e))); };
+  function find(direction) {
+    if (!matches.length || !ref.current) return;
+    const boundary = projection.toDisplay(direction < 0 ? s.selectionStart : s.selectionEnd);
+    const match = direction < 0 ? [...matches].reverse().find(m => m.start < boundary) ?? matches.at(-1) : matches.find(m => m.start >= boundary) ?? matches[0];
+    ref.current.focus(); ref.current.setSelectionRange(match.start, match.end); doc.view({ selectionStart: projection.toRaw(match.start), selectionEnd: projection.toRaw(match.end) });
+    const row = projection.text.slice(0, match.start).split('\n').length; ref.current.scrollTop = Math.max(0, (row - 3) * (parseFloat(getComputedStyle(ref.current).lineHeight) || 22));
+  }
   React.useLayoutEffect(() => {
     if (!ref.current || !showing) return;
     const node = ref.current; node.scrollTop = s.scrollTop; node.scrollLeft = s.scrollLeft;
@@ -145,30 +191,47 @@ function DocumentEditor({ doc, c, inputActions, referenceReady, referenceCurrent
       c.updateContent(item.id, { lastReference: selected }); c.notify('所选文字及返回位置已插入原生对话草稿，尚未发送。');
     }).catch(error => c.notify(errorText(error)));
   };
-  return h('section', { className: 'wb-document' },
+  return h('section', { className: 'wb-document', onKeyDown: event => {
+    if (event.nativeEvent.isComposing) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save(); }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') { event.preventDefault(); setPreview(false); setFinding(true); requestAnimationFrame(() => findRef.current?.focus()); }
+    if (event.key === 'Escape' && finding) { event.stopPropagation(); setFinding(false); ref.current?.focus(); }
+  } },
     h('div', { className: 'wb-document-toolbar' }, h('span', { title: s.path }, s.path.split(/[\\/]/).at(-1)), h('small', null, s.dirty ? '草稿尚未保存' : '已保存'),
-      button(preview ? '编辑' : '预览', () => setPreview(!preview)), button('引用选区到对话', reference, { onMouseDown: e => e.preventDefault() }),
-      button('保存文件', () => doc.save().catch(e => c.notify(errorText(e))), { disabled: !s.dirty || s.phase === 'saving' || s.uncertain || s.comparing })),
+      button(preview ? '编辑' : '预览', () => setPreview(!preview)), button('查找', () => { setPreview(false); setFinding(!finding); requestAnimationFrame(() => findRef.current?.focus()); }, { 'aria-expanded': finding, title: 'Ctrl/⌘+F' }),
+      button('引用选区到对话', reference, { disabled: !referenceReady || s.selectionStart === s.selectionEnd, onMouseDown: e => e.preventDefault() }),
+      button('导出草稿', () => { try { downloadDraft(s.path, s.text); } catch (error) { c.notify(errorText(error)); } }),
+      button(s.comparing ? '正在比较…' : '比较磁盘', () => doc.compareDisk().catch(error => c.notify(errorText(error))), { disabled: s.comparing || s.phase === 'saving' || servicesAvailable === false, 'aria-label': '比较磁盘' }),
+      s.comparing && button('取消比较', () => doc.cancelComparison()),
+      button(s.phase === 'saving' ? '保存中…' : '保存文件', save, { disabled: !canSave, 'aria-label': '保存文件', title: servicesAvailable === false ? '工作区接口暂停，草稿可继续编辑与导出' : 'Ctrl/⌘+S' })),
+    finding && h('form', { className: 'wb-find', onSubmit: event => { event.preventDefault(); find(1); }, 'aria-label': '文档查找' },
+      h('input', { ref: findRef, 'aria-label': '查找文本', value: query, maxLength: 256, onChange: event => setQuery(event.target.value) }),
+      button('Aa', () => setSensitive(!sensitive), { 'aria-label': '区分大小写', 'aria-pressed': sensitive }),
+      h('span', { role: 'status' }, query ? matches.length ? matches.length + (matches.length === 10000 ? '+' : '') + ' 处匹配' : '没有匹配' : '输入查找内容'),
+      button('↑', () => find(-1), { 'aria-label': '上一个匹配', disabled: !matches.length }), button('↓', () => find(1), { 'aria-label': '下一个匹配', disabled: !matches.length }), button('×', () => { setFinding(false); ref.current?.focus(); }, { 'aria-label': '关闭文档查找' })),
     s.uncertain && h('p', { role: 'alert' }, '上次保存结果未知，草稿保留。', button('核对磁盘结果', () => doc.reconcile().then(result => c.notify(result.kind === 'conflict' ? '磁盘已变化，需要比较处理，未覆盖草稿。' : '已核对：' + result.kind)).catch(e => c.notify(errorText(e))))),
     s.error && h('p', { role: 'alert' }, errorText(s.error)),
-    h(DocumentRecovery, { doc, state: s, notify: text => c.notify(text) }),
+    h(DocumentRecovery, { doc, state: s, notify: text => c.notify(text), hideActions: true }),
     // Preview escapes as React text; repository HTML never becomes host markup.
     preview ? h('pre', { className: 'wb-document-preview', tabIndex: 0 }, s.text) : h('textarea', { ref, className: 'wb-editor', 'aria-label': '编辑 ' + s.path, value: projection.text, spellCheck: false,
-      onChange: e => { const text = applyTextareaEdit(s.text, e.currentTarget.value); doc.edit(text); retainView(e, text); }, onSelect: e => retainView(e), onScroll: e => retainView(e) }),
-    h('small', { className: 'wb-document-position' }, '选区 ' + s.selectionStart + '–' + s.selectionEnd + ' · 文档保存与布局保存相互独立'));
+      onChange: e => { const text = applyTextareaEdit(s.text, e.currentTarget.value); doc.edit(text); retainView(e, text); }, onSelect: e => retainView(e), onKeyUp: e => retainView(e), onPointerUp: e => retainView(e), onScroll: e => retainView(e) }),
+    h('small', { className: 'wb-document-position' }, '第 ' + position.line + ' 行，第 ' + position.column + ' 列 · ' + (s.text.includes('\r\n') ? 'CRLF' : 'LF') + ' · Ctrl/⌘+S 保存，Ctrl/⌘+F 查找'));
 }
 function WebPanel({ item, c }) {
+  const [status, setStatus] = React.useState(''), [error, setError] = React.useState('');
   return h('section', { className: 'wb-web' },
-    h('form', { onSubmit: e => { e.preventDefault(); try { c.navigate(item.id, item.addressInput, location.origin); } catch (e) { c.notify(errorText(e)); } } },
-      h('input', { type: 'url', 'aria-label': '网页地址', value: item.addressInput, placeholder: 'https://…', onChange: e => c.updateContent(item.id, { addressInput: e.target.value }) }), h('button', { type: 'submit' }, '前往')),
-    item.url ? h('iframe', { key: item.contentId, title: '网页 ' + item.id, src: item.url, sandbox: 'allow-scripts allow-forms allow-popups allow-downloads', referrerPolicy: 'no-referrer', 'data-wb-iframe': item.id }) : h('p', { className: 'wb-empty' }, '输入真实网页地址。网页可能禁止嵌入；不会伪造载入成功或读取跨域内容。'),
-    item.url && h('a', { href: item.url, target: '_blank', rel: 'noreferrer noopener' }, '若站点禁止嵌入，在浏览器打开 ↗'));
+    h('form', { onSubmit: e => { e.preventDefault(); try { c.navigate(item.id, item.addressInput.trim(), location.origin); setError(''); setStatus('正在请求网页…'); } catch (e) { setError(errorText(e)); } } },
+      h('input', { type: 'url', maxLength: 8192, 'aria-label': '网页地址', value: item.addressInput, placeholder: 'https://…', onChange: e => c.updateContent(item.id, { addressInput: e.target.value }) }), h('button', { type: 'submit', disabled: !item.addressInput.trim() }, '前往'),
+      button('↻', () => { if (window.confirm('重新加载会丢失此网页中未提交的表单，确定吗？')) { setStatus('正在重新请求网页…'); c.updateContent(item.id, { webRevision: (item.webRevision ?? 0) + 1 }); } }, { disabled: !item.url, 'aria-label': '重新加载网页', title: '重新加载当前网页' })),
+    error && h('p', { role: 'alert', className: 'wb-web-status' }, error),
+    item.url ? h('iframe', { key: item.contentId + ':' + (item.webRevision ?? 0), title: '网页 ' + item.id, src: item.url, sandbox: 'allow-scripts allow-forms allow-popups allow-downloads', referrerPolicy: 'no-referrer', 'data-wb-iframe': item.id, onLoad: () => setStatus('载体已响应；若页面不可用，可在浏览器打开。') }) : h('div', { className: 'wb-empty' }, h('strong', null, '在工作台旁浏览网页'), h('p', null, '输入 HTTP(S) 地址即可打开。部分站点不支持嵌入，可使用浏览器打开。')),
+    item.url && h('div', { className: 'wb-web-status' }, h('span', { role: 'status' }, status), h('a', { href: item.url, target: '_blank', rel: 'noreferrer noopener' }, '在浏览器打开 ↗')));
 }
-function TerminalPanel({ item, c, showing, servicesAvailable }) {
-  if (!item.started) return h('div', { className: 'wb-empty' }, '仅点击后启动真实终端。布局编辑和预设切换不会执行命令。', button('启动终端', () => { try { c.startTerminal(item.id); } catch (e) { c.notify(errorText(e)); } }));
-  return h(TerminalScreen, { view: item.view, showing, servicesAvailable, onError: e => c.notify(errorText(e)) });
+function TerminalPanel({ item, c, showing, servicesAvailable, blockedReason }) {
+  if (!item.started) return h('div', { className: 'wb-empty' }, servicesAvailable === false ? blockedReason : '仅点击后启动真实终端。布局编辑和预设切换不会执行命令。', button('启动终端', () => { try { c.startTerminal(item.id); } catch (e) { c.notify(errorText(e)); } }, { disabled: servicesAvailable === false }));
+  return h(TerminalScreen, { view: item.view, showing, servicesAvailable, blockedReason, onError: e => c.notify(errorText(e)) });
 }
-function TerminalScreen({ view, showing, onError, servicesAvailable = true }) {
+function TerminalScreen({ view, showing, onError, servicesAvailable = true, blockedReason }) {
   const state = useSource(view.state), ref = React.useRef(null), termRef = React.useRef(null), fitRef = React.useRef(null), rendered = React.useRef(-1), presentation = terminalState(state), writable = servicesAvailable && presentation.canInput, inputAllowed = React.useRef(false); inputAllowed.current = writable;
   React.useEffect(() => {
     const terminal = new Terminal({ disableStdin: true, cursorBlink: true, fontSize: 13, scrollback: 3000, allowProposedApi: false });
@@ -188,8 +251,8 @@ function TerminalScreen({ view, showing, onError, servicesAvailable = true }) {
     if (frame.type === 'snapshot') terminal.reset();
     terminal.write(frame.type === 'snapshot' ? frame.screen : frame.data, () => view.acknowledge(pending.revision));
   }, [state.render]);
-  return h('section', { className: 'wb-terminal' }, h('div', { className: 'wb-terminal-status', role: 'status' }, state.title || '终端', ' · ', servicesAvailable ? presentation.status : '工作区接口暂停', ' (', state.phase, ')', state.info?.cwd && ' · ' + state.info.cwd,
-    !writable && ' · 只读（不可输入）', presentation.retry && button(presentation.retryLabel, () => { try { Promise.resolve(retryTerminal(view)).catch(onError); } catch (error) { onError(error); } })),
+  return h('section', { className: 'wb-terminal' }, h('div', { className: 'wb-terminal-status', role: 'status' }, state.title || '终端', ' · ', servicesAvailable ? presentation.status : blockedReason || '工作区接口暂停', state.info?.cwd && ' · ' + state.info.cwd,
+    !writable && ' · 只读（不可输入）', presentation.retry && button(presentation.retryLabel, () => { try { Promise.resolve(retryTerminal(view)).catch(onError); } catch (error) { onError(error); } }, { disabled: !servicesAvailable })),
     presentation.help && h('p', { className: 'wb-terminal-help' }, presentation.help),
     state.error && h('p', { role: 'alert' }, state.error), h('div', { className: 'wb-terminal-screen', ref, 'data-wb-terminal': view.id }));
 }
@@ -306,5 +369,33 @@ export const css = terminalCSS + chromeCSS + `
 .wb-layout-editor select,.wb-module-properties input{max-width:100%;width:100%;margin-top:5px}
 .wb-layout-draft>button{margin:4px}
 .wb-add{border-bottom:1px solid var(--wb-border)}
+.dshome-v2{container-type:inline-size;position:relative;line-height:1.5}
+.dshome-v2 :where(button,input,select,textarea){box-sizing:border-box}
+.wb-header{gap:6px;padding:9px 12px;min-height:54px;flex-shrink:0;background:var(--wb-surface)}
+.wb-header strong{font-size:15px}.wb-header button,.wb-header select{min-height:30px;white-space:nowrap}
+.wb-project{font-size:12px;min-width:60px}.wb-panel-header{height:36px;padding:4px 8px;gap:3px}
+.wb-panel-header strong{overflow:hidden;text-overflow:ellipsis;font-size:12px}.wb-panel-header button,.wb-icon-button{min-width:27px;min-height:26px;font-size:15px;line-height:1;padding:3px}
+.wb-panel-header button:hover{background:var(--wb-selected)}
+.wb-layout-tools{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:9px 12px;background:var(--wb-surface);border-bottom:1px solid var(--wb-border)}
+.wb-layout-tools form{display:flex;gap:6px;flex-wrap:wrap}.wb-layout-tools input{min-width:180px;flex:1}
+.wb-header [aria-expanded=true]{background:var(--wb-selected)}
+.wb-find{display:flex;align-items:center;gap:5px;padding:6px 8px;background:var(--wb-backdrop);border-bottom:1px solid var(--wb-border);flex-wrap:wrap}
+.wb-find input{flex:1;min-width:100px}.wb-find span{font-size:11px;color:var(--wb-muted)}
+.wb-document-recovery{border:1px solid var(--wb-border);background:var(--wb-backdrop);color:var(--wb-text)}
+.wb-file-tools{display:flex;align-items:center;gap:3px;position:sticky;top:0;background:var(--wb-surface);padding-bottom:8px;z-index:1}
+.wb-file-tools input{min-width:0;flex:1;width:100%}.wb-file-tools button{padding:4px 6px;min-height:28px}
+.wb-files{display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:8px 7px}
+.wb-file-tree{flex:1;min-height:0;overflow:auto}.wb-tree-entry{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;min-height:28px;font-size:12px;padding-top:4px;padding-bottom:4px;border-radius:4px}
+.wb-tree-entry:hover{background:var(--wb-selected)}.wb-open-path{border-top:1px solid var(--wb-border);padding-top:7px;margin-top:7px;flex-shrink:0;font-size:11px}
+.wb-open-path summary{cursor:pointer}.wb-open-path form{display:flex;flex-wrap:wrap;gap:5px;padding-top:7px}.wb-open-path input{width:100%;min-width:0}
+.wb-empty{font-size:12px;padding:18px;max-width:560px}.wb-empty strong{font-size:14px}.wb-empty p{color:var(--wb-muted);margin:8px 0 12px}
+.wb-empty button{margin:4px 0}.wb-editor{font-size:13px}.wb-document-position{font-size:10px;color:var(--wb-muted);line-height:1.5;overflow-wrap:anywhere}
+.wb-web-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:5px 8px;margin:0;font-size:10px;color:var(--wb-muted)}
+.wb-web-status a{margin-left:auto;color:var(--wb-accent);white-space:nowrap}.wb-connection-notice{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--wb-border);background:var(--wb-backdrop)}
+.wb-connection-notice p{margin:0 0 6px}.wb-connection-notice button{margin-right:6px}
+.wb-layout-editor{min-width:0;grid-template-columns:160px minmax(260px,1fr) 200px;gap:8px;padding:10px}.wb-layout-editor h3{font-size:14px}
+.wb-status{font-size:10px;gap:5px;padding:5px 10px;flex-shrink:0}.wb-status button{min-height:25px}
+@container(max-width:820px){.wb-header .wb-project{flex-basis:calc(100% - 100px)}.wb-layout-editor{grid-template-columns:140px minmax(230px,1fr)}.wb-module-properties{grid-column:1/-1;max-height:220px}.wb-layout-editor{overflow:auto;align-content:start}.wb-layout-draft{min-height:350px}}
+@container(max-width:500px){.wb-header{padding:8px;gap:4px}.wb-header button,.wb-header select{font-size:11px;padding:5px 7px}.wb-layout-editor{display:flex;flex-direction:column}.wb-layout-editor>aside,.wb-layout-draft{flex-shrink:0}.wb-module-library{max-height:210px}.wb-find{gap:3px}.wb-find input{flex-basis:100%}}
 
 `;

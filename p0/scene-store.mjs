@@ -4,7 +4,7 @@ export function createSceneStore({ workspaces, session, connection, maxScenes = 
   let revision = 0, mode = 'original', chatWidth = 420, narrowPane = 'workspace', disposed = false;
   let snapshot, selected = null, reason = '', nextId = 0, epochNumber = 0, watchedSignal, desktop = null;
   const watchAbort = signal => { if (watchedSignal === signal) return; watchedSignal?.removeEventListener('abort', sync); watchedSignal = signal; watchedSignal?.addEventListener('abort', sync, { once: true }); };
-  const epochs = new WeakMap(), scenes = new Map(), listeners = new Set();
+  const epochs = new WeakMap(), rotations = new Map(), scenes = new Map(), listeners = new Set();
   const publish = () => {
     snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
     for (const listener of [...listeners]) listener();
@@ -23,7 +23,8 @@ export function createSceneStore({ workspaces, session, connection, maxScenes = 
       else {
         workspace = matches[0];
         if (!epochs.has(generation)) epochs.set(generation, ++epochNumber);
-        next = JSON.stringify([epochs.get(generation), workspace.workspaceId]);
+        const base = JSON.stringify([epochs.get(generation), workspace.workspaceId]);
+        next = rotations.has(base) ? JSON.stringify([epochs.get(generation), workspace.workspaceId, rotations.get(base)]) : base;
         if (!scenes.has(next)) {
           if (scenes.size >= maxScenes) { problem = '保留现场已达上限，未静默清除旧内容。'; next = null; }
           else scenes.set(next, { id: `p0-scene-${++nextId}`, key: next, workspaceId: workspace.workspaceId, title: workspace.title || workspace.workspaceId, note: '', address: '', url: '', arrangement: 'split', revision: 0 });
@@ -40,6 +41,15 @@ export function createSceneStore({ workspaces, session, connection, maxScenes = 
   const api = {
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+    newScene(key) {
+      if (disposed || !selected || key !== selected || !scenes.has(key)) throw Error('请在当前已确认的工作区新建现场');
+      if (scenes.size >= maxScenes) throw Error('保留现场已达上限，请先导出并释放不用的旧现场');
+      const generation = connection.getSnapshot(), scene = scenes.get(key);
+      if (!generation || generation.signal?.aborted) throw Error('连接尚未恢复，不能新建现场');
+      const base = JSON.stringify([epochs.get(generation), scene.workspaceId]);
+      rotations.set(base, (rotations.get(base) ?? 0) + 1); sync();
+      return selected;
+    },
     forgetScene(key) {
       if(disposed || key===selected) throw Error('当前现场不能作为旧现场释放');
       if(!scenes.has(key))return false;

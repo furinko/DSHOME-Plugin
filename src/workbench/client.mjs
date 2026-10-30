@@ -128,7 +128,7 @@ export function applyWorkbench(ctx, hostRequire) {
   const beforeUnload = e => { if ([...shelves.values()].some(s => s.hasUnsaved())) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload); keep(() => window.removeEventListener('beforeunload', beforeUnload));
   function startBindings() {
-  desktop = createDesktopRuntime({ ctx, services, getOwner: () => activeOwner, hostRequire, referenceReady: () => referenceReady, referenceRevision: () => referenceGeneration });
+  desktop = createDesktopRuntime({ ctx, services, getOwner: () => activeOwner, hostRequire, referenceReady: () => referenceReady, referenceRevision: () => referenceGeneration, onRefreshServices: reconnectFiles });
   keep(ctx.reflect.provide('dshomeDesktop', desktop));
   keep(() => desktop.dispose());
   for (const seat of ['conversation.session.header.utilities', 'conversation.hero.options']) {

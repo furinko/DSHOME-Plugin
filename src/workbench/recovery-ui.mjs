@@ -13,15 +13,15 @@ function TextPane({ title, text }) {
   return h('section', { style: { minWidth: 0, display: 'flex', flexDirection: 'column' }, 'aria-label': title }, h('strong', null, title), h('small', null, endings),
     h('pre', { tabIndex: 0, style: { flex: 1, overflow: 'auto', margin: 0, padding: 6, border: '1px solid #d7e2f1', whiteSpace: 'pre', fontSize: 12 }, 'aria-label': title + '全文' }, text));
 }
-export function DocumentRecovery({ doc, state: s, notify }) {
+export function DocumentRecovery({ doc, state: s, notify, hideActions = false }) {
   const run = fn => { try { Promise.resolve(fn()).catch(error => notify(error.message)); } catch (error) { notify(error.message); } };
   const comparison = s.comparison, stale = comparison && (comparison.editRevision !== s.editRevision || comparison.baseVersion !== s.version);
   return h(React.Fragment, null,
-    h('div', { className: 'wb-recovery-actions', style: { padding: '3px 8px', display: 'flex', gap: 6, flexWrap: 'wrap' } },
+    !hideActions && h('div', { className: 'wb-recovery-actions', style: { padding: '3px 8px', display: 'flex', gap: 6, flexWrap: 'wrap' } },
       button(s.comparing ? '正在比较磁盘…' : '比较磁盘', () => run(() => doc.compareDisk()), { disabled: s.comparing || s.phase === 'saving' }),
       s.comparing && button('取消比较', () => doc.cancelComparison()),
       button('导出草稿', () => run(() => downloadDraft(s.path, s.text)))),
-    comparison && h('section', { role: 'region', 'aria-label': '文档比较与恢复', style: { padding: 8, flex: '0 1 320px', minHeight: 180, maxHeight: '65%', display: 'flex', flexDirection: 'column', gap: 5, border: '1px solid #d7e2f1', background: '#f5f8fd', overflow: 'auto' } },
+    comparison && h('section', { className: 'wb-document-recovery', role: 'region', 'aria-label': '文档比较与恢复', style: { padding: 8, flex: '0 1 320px', minHeight: 180, maxHeight: '65%', display: 'flex', flexDirection: 'column', gap: 5, overflow: 'auto' } },
       h('strong', null, '文档比较与恢复'),
       h('small', null, '采用操作只改变本地基线，不写磁盘；保存仍检查此快照的版本。快照不证明旧在途写入已停止。'),
       stale && h('p', { role: 'alert' }, '比较之后草稿已变化，请刷新比较再决定。'),

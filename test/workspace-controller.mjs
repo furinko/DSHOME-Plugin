@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import { createWorkspaceController } from '../src/workbench/controller.mjs';
 const storage = () => { const map = new Map(); return { map, getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v) }; };
 const locks = { request: async (_name, _options, run) => run() }; // Explicit unit double, not a browser Web Locks proof.
+test('layout import preserves live content and rejects another project or mismatched module kind', async () => {
+  const { c, calls } = setup(); const doc = await c.openDocument('a.md'); await doc.load(); doc.edit('unsaved');
+  const original = c.model.serialize(), other = structuredClone(original); other.projectId = 'other';
+  assert.throws(() => c.importLayout(JSON.stringify(other)), { code: 'WRONG_PROJECT' });
+  const incoming = structuredClone(original); delete incoming.panels['DOC-01'];
+  const model = c.model; model.collapse('DOC-01'); const collapsed = model.serialize();
+  c.importLayout(JSON.stringify(original));
+  assert.equal(c.content('DOC-01').document, doc); assert.equal(doc.getSnapshot().text, 'unsaved'); assert.equal(calls.views.length, 0);
+  assert.throws(() => c.importLayout('x'.repeat(262145)), /256 KB/);
+  const bad = structuredClone(collapsed); bad.panels['DOC-01'].kind = 'note';
+  assert.throws(() => c.importLayout(JSON.stringify(bad)), { code: 'PANEL_KIND_CONFLICT' }); c.releaseResources();
+});
 function setup(options = {}) {
   const calls = { views: [], holds: [], close: [] };
   const terminals = { retainTabs: tabs => calls.holds.push(tabs), view: (...args) => { calls.views.push(args); return { id: 'real-view-test-double' }; }, close: (...args) => calls.close.push(args) };
@@ -22,6 +34,27 @@ test('foreign terminal close refusal does not create a false cleanup intent', as
 test('loaded web close and whole-workspace close require explicit loss confirmation', async () => {
   const {c}=setup({confirm:()=>false}); c.navigate('WEB-01','https://example.org','https://host.example.org');
   assert.equal(await c.closePanel('WEB-01'),false); assert.equal(c.content('WEB-01').url,'https://example.org/'); assert.equal(c.closeWorkspace(),false); c.releaseResources();
+});
+test('opening an already loaded relative file reuses its editor and unsaved draft after canonical path receipt', async () => {
+  const { c } = setup(); const doc = await c.openDocument('a.md'); await doc.load(); doc.edit('keep dirty');
+  const count = c.contents.size;
+  assert.equal(await c.openDocument('a.md'), doc); assert.equal(await c.openDocument('/workspace/a.md'), doc);
+  assert.equal(c.contents.size, count); assert.equal(doc.getSnapshot().text, 'keep dirty'); c.releaseResources();
+});
+test('host canonical identity deduplicates absolute/relative/alias opens in either order without replacing drafts', async () => {
+  for (const first of ['/workspace/a.md', './a.md', 'a.md']) {
+    const { c } = setup({ transport: { read: async () => ({ absolutePath: '/workspace/a.md', projectId: 'host-root', text: 'disk', version: 'v1' }), save() {} } });
+    const doc = await c.openDocument(first); doc.edit('keep dirty');
+    for (const path of ['a.md', './a.md', '/workspace/a.md', 'symlink-a.md']) assert.equal(await c.openDocument(path), doc);
+    assert.equal([...c.contents.values()].filter(i => i.document).length, 1); assert.equal(doc.getSnapshot().text, 'keep dirty'); c.releaseResources();
+  }
+});
+test('concurrent aliases allocate only one document and failed reads can be retried', async () => {
+  let failed = false;
+  const { c } = setup({ transport: { read: async path => { if (path === 'missing' && !failed) { failed = true; throw Error('missing fixture'); } return { absolutePath: '/workspace/a.md', projectId: 'root', text: 'disk', version: 'v1' }; }, save() {} } });
+  await assert.rejects(c.openDocument('missing'), /missing fixture/);
+  const docs = await Promise.all(['a.md', './a.md', '/workspace/a.md'].map(path => c.openDocument(path)));
+  assert.ok(docs.every(doc => doc === docs[0])); assert.equal([...c.contents.values()].filter(i => i.document).length, 1); c.releaseResources();
 });
 test('initial workspace describes four modules but never starts a terminal or loads a file', () => {
   let reads = 0; const { c, calls } = setup({ transport: { read: () => { reads++; }, save() {} } });

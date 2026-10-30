@@ -38,7 +38,8 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.getByRole('button',{name:'会话 C',exact:true}).click(); await page.waitForFunction(()=>document.querySelector('.p0-full-scene:not([hidden])')?.dataset.workspace==='W2'); await scene().getByRole('button',{name:'▧ a.md',exact:true}).waitFor();
   assert.equal(await scene().locator('textarea.wb-editor').count(),0); ok('different-native-workspace-isolated',true);
   await page.getByRole('button',{name:'会话 A',exact:true}).click(); await editor().waitFor(); assert.equal(await nativeInput().textContent(),chatDraft); assert.equal(await form().inputValue(),'整窗网页未提交状态');
-  await editor().evaluate(node=>{node.focus();node.setSelectionRange(0,8);node.dispatchEvent(new Event('select',{bubbles:true}));});
+  await editor().press('Control+Home');
+  for (let index=0;index<8;index++) await editor().press('Shift+ArrowRight');
   await scene().getByRole('button',{name:'引用选区到对话',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('[data-lexical-editor=true]')?.textContent.includes('dshome'));
   ok('explicit-reference-in-native-draft',(await nativeInput().textContent()).includes('完整工作台草稿'));
@@ -79,6 +80,8 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   ok('actual-PTY-start-and-output',true);
   await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(()=>document.querySelector('.p0-full-scene:not([hidden]) .xterm-helper-textarea')?.getAttribute('aria-disabled')==='true');
   assert.equal(metrics.spawn,1); ok('terminal-owner-not-silently-transferred',true);
+  await scene().getByRole('status').filter({hasText:'属于会话 A，请返回该会话输入'}).waitFor();
+  assert.equal(await scene().locator('.wb-connection-notice').count(),0); ok('terminal-owner-feedback-distinct-from-service-pause',true);
   await page.getByRole('button',{name:'会话 A',exact:true}).click();
   const layoutInteractions=await (await import('./layout-interactions-scenario.mjs')).runLayoutInteractions({page,metrics,iframeLoads});
   const terminalClose=await (await import('./terminal-close-scenario.mjs')).runDesktopTerminalClose({page,metrics});
@@ -173,6 +176,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   ok('retained-scene-release-requires-confirmation-and-frees-metadata-capacity',true);
   const multiDocument=await (await import('./multi-document-scenario.mjs')).runMultiDocumentScenario({page,readHostSource,readSecondarySource});
   const multiTerminal=await (await import('./multi-terminal-scenario.mjs')).runMultiTerminalScenario({page,metrics});
+  const ux=await (await import('./ux-scenario.mjs')).runUXScenario({page,metrics,readHostSource});
   assert.deepEqual(errors,providerFaultDiagnostics.errors);
-  return {providerFaultDiagnostics,checks,windowChrome,scopeRaces,layoutRecovery,layoutInteractions,terminalClose,reconnect,multiDocument,multiTerminal,notVerified:['production GUI','independent review','full remaining interaction matrix'],real:['public SDK','guarded filesystem save','native composer','actual PTY'],fixtures:['workspace catalog','navigation','host journal','authorization answers']};
+  return {providerFaultDiagnostics,checks,windowChrome,scopeRaces,layoutRecovery,layoutInteractions,terminalClose,reconnect,multiDocument,multiTerminal,ux,notVerified:['running profile GUI after upgrade','OS-level IME and non-Linux platforms','production authentication and idle expiry'],real:['public SDK','guarded filesystem save','native composer','actual PTY'],fixtures:['workspace catalog','navigation','host journal','authorization answers']};
 }

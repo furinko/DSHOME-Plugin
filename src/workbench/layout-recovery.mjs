@@ -1,5 +1,5 @@
 /* Layout-only persistence/recovery. Never reads, replaces or closes content. */
-const failure = code => Object.assign(Error({ LAYOUT_CONFLICT: '布局存储已被另一窗口修改；未覆盖，请重新检查比较。', LAYOUT_STALE: '比较后当前布局已变化；请重新检查，未采用旧选择。', BACKUP_EXISTS: '原件备份标识已存在；未覆盖，请重新检查。' }[code] ?? '布局操作失败：' + code), { code });
+const failure = code => Object.assign(Error({ LAYOUT_CONFLICT: '布局存储已被另一窗口修改；未覆盖，请重新检查比较。', LAYOUT_STALE: '比较后当前布局已变化；请重新检查，未采用旧选择。', BACKUP_EXISTS: '原件备份标识已存在；未覆盖，请重新检查。', STORAGE_WRITE_FAILED: '布局保存未成功确认。请检查浏览器存储空间和权限；当前内容仍保留，可先导出布局。', STORAGE_UNAVAILABLE: '浏览器布局存储暂不可用，当前内容仍保留。', STORAGE_LIMIT: '布局记录超过存储上限，请减少布局预设后重试。', STORAGE_LOCK_UNAVAILABLE: '浏览器暂不支持安全保存布局，可先导出布局文件。' }[code] ?? '布局操作失败：' + code), { code });
 export function createLayoutRecovery({ persistence, model, initial, publish, isLive, confirm }) {
   let baseline = initial, ticket = null, serial = 0, saving, backupKey = initial.backupKey ?? null;
   function current(t) { return isLive() && ticket === t && !model.getSnapshot().editing && model.getSnapshot().revision === t.localRevision; }

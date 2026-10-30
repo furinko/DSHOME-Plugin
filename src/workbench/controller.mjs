@@ -43,17 +43,35 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
   }
   sync();
   function content(id) { live(); const item = contents.get(id); if (!item) throw Error('内容实例不存在'); return item; }
-  async function openDocument(path) {
+  let openingDocuments = Promise.resolve();
+  function openDocument(path) {
+    const work = openingDocuments.catch(() => {}).then(() => openOneDocument(path));
+    openingDocuments = work; return work;
+  }
+  async function openOneDocument(path) {
     live();
     if (model.getSnapshot().editing) throw Error('请先应用或取消布局草稿');
-    let item = [...contents.values()].find(item => item.document?.getSnapshot().path === path);
+    let item = [...contents.values()].find(item => item.document && (item.document.getSnapshot().path === path || item.openedPaths?.has(path)));
+    let file;
+    if (!item) {
+      // Only the host receipt establishes identity (including symlinks and root
+      // scope). Resolve before allocating another editor or adopting disk text.
+      file = await transport.read(path); live();
+      if (model.getSnapshot().editing) throw Error('请先应用或取消布局草稿');
+      if (typeof file?.absolutePath === 'string' && typeof file?.version === 'string') item = [...contents.values()].find(candidate => {
+        const state = candidate.document?.getSnapshot();
+        return state?.version !== null && state?.path === file.absolutePath && state.projectId === file.projectId;
+      });
+    }
     if (!item) item = [...contents.values()].find(item => item.kind === 'document' && !item.document);
     if (!item) { const existing = [...contents.values()].find(item => item.kind === 'document'); const id = model.addPanel('document', { targetPaneId: existing ? paneOf(existing.id) : undefined }); item = content(id); }
     if (!item.document) {
-      item.document = createDocument({ path, transport });
+      let firstRead = true;
+      item.document = createDocument({ path, transport: { read: (request, signal) => { if (firstRead) { firstRead = false; signal?.throwIfAborted(); return Promise.resolve(file); } return transport.read(request, signal); }, save: (...args) => transport.save(...args) } });
       item.offDocument = item.document.subscribe(() => publish());
-      item.document.load().catch(error => publish({ notice: error.message }));
+      await item.document.load();
     }
+    (item.openedPaths ??= new Set()).add(path);
     if (model.getSnapshot().layout.collapsed.some(p => p.panelId === item.id)) model.expand(item.id);
     model.activate(item.id); publish(); return item.document;
   }
@@ -110,6 +128,14 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     return true;
   }
   const layoutRecovery = createLayoutRecovery({ persistence, model, initial: stored, publish, isLive: () => !disposed, confirm });
+  function importLayout(text) {
+    live();
+    if (typeof text !== 'string' || text.length > 262144) throw Error('布局文件超过 256 KB 或格式无效');
+    if (snapshot.savingLayout || snapshot.layoutRecovery || model.getSnapshot().editing) throw Error('请先完成当前布局编辑、保存或恢复');
+    const project = JSON.parse(text.replace(/^\uFEFF/, ''));
+    model.adoptLayout(project, model.getSnapshot().revision);
+    publish({ notice: '布局已导入；现有文档、网页和终端保留。确认效果后点击保存布局。' });
+  }
   function hasUnsaved() { return !!terminalCleanup?.hasUnconfirmed() || [...contents.values()].some(item => { const s = item.document?.getSnapshot(); return !!item.moduleDirty || item.kind === 'note' && !!item.noteText || s && (s.dirty || s.uncertain || s.phase === 'saving'); }); }
   function releaseResources() {
     if (disposed) return; disposed = true; offCleanup?.(); terminalCleanup?.dispose(); terminals?.retainTabs([]); off(); for (const release of releases) release();
@@ -130,7 +156,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     for (const item of contents.values()) { if (item.started) terminals.close(item.ownerSessionId, item.id, item.contentId, item.view?.id); item.offDocument?.(); }
     releaseResources(); contents.clear(); return true;
   }
-  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, editNote, navigate, startTerminal, closePanel, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
+  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, editNote, navigate, startTerminal, closePanel, importLayout, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
     getSnapshot: () => snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     notify: text => publish({ notice: text }), updateContent(id, change) { Object.assign(content(id), change); publish(); },
     exportLayout: () => JSON.stringify(model.serialize(), null, 2), exportStoredLayout: () => storage.getItem(persistence.key),
