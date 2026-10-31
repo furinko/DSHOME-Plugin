@@ -2,7 +2,7 @@
 
 ## Current candidate: whole-window modular workbench
 
-Candidate `0.4.0-preview.1` redesigns DSHOME as a lighter modern workspace: new chrome and panel hierarchy, filename tabs, quick file/command palette, editor line numbers, and an adaptive single-module view for narrow windows. Source, isolated SDK/Chromium interactions and read-only independent review are complete; **this redesign has not been loaded into the running DSH**. See the [redesign acceptance record](docs/UI-UX-REDESIGN-2026-10-31.md).
+Candidate `0.4.0-preview.1` redesigns DSHOME as a lighter modern workspace: new chrome and panel hierarchy, filename tabs, quick file/command palette, editor line numbers, and an adaptive single-module view for narrow windows. Source, isolated SDK/Chromium interactions and read-only independent review are complete. This redesign was **loaded and accepted for the listed Linux production workflows on 2026-10-31**, without restarting or upgrading DSH. See [production acceptance and the existing-page refresh limitation](docs/PRODUCTION-MODERN-2026-10-31.md) and the [redesign record](docs/UI-UX-REDESIGN-2026-10-31.md).
 
 The genuine **原版 / 工作台** switch still uses the same native application root, with the native conversation beside the work area. The previous `0.3.0-dual.1` was loaded and accepted for the listed Linux production workflows on 2026-10-31: [previous production acceptance](docs/PRODUCTION-ACCEPTANCE-2026-10-31.md).
 
