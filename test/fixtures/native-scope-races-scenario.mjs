@@ -30,7 +30,7 @@ export async function runNativeScopeRaces({ page, root, session, metrics, host, 
     assert.equal(intercepted, 1); assert.equal(observed.reply.ok, false, 'a request arriving after the Host workspace changed must be rejected, even if it changes back before the response');
     assert.equal(observed.reply.error.code, 'workbench/workspace-changed'); assert.equal(metrics.spawn, spawnBefore);
     if (!terminalNegative) {
-      const panel = page.locator('[data-wb-content="FILE-01"]'); await panel.getByRole('alert').waitFor(); assert.equal(await page.getByRole('button', { name: '▧ ONLY-B-ENTRY.txt', exact: true }).count(), 0);
+      const panel = page.locator('[data-wb-content="FILE-01"]'); await panel.getByRole('alert').waitFor(); assert.equal(await page.getByRole('button', { name: '打开文件 ONLY-B-ENTRY.txt', exact: true }).count(), 0);
       const list = host.fs.listDir.bind(host.fs); let ioReads = 0, targetPath;
       host.fs.listDir = async (target, control) => { ioReads++; targetPath = host.fs.processPath(target); session.header.cwd = other; try { return await list(target, control); } finally { session.header.cwd = root; } };
       try {

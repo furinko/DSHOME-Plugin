@@ -13,9 +13,9 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   } finally {await baseline.close();}
   await nativeInput().press('Control+End'); await page.keyboard.insertText(' · 完整工作台草稿'); const chatDraft=await nativeInput().textContent();
   await page.getByRole('button',{name:'工作台',exact:true}).click();
-  await scene().getByRole('button',{name:'▧ a.md',exact:true}).waitFor();
+  await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).waitFor();
   const original=await readHostSource();
-  await scene().getByRole('button',{name:'▧ a.md',exact:true}).click();
+  await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).click();
   const editor=()=>scene().locator('textarea.wb-editor'); await editor().waitFor();
   await editor().press('Control+End'); await page.keyboard.insertText('整窗文档草稿'); const draft=await editor().inputValue();
   await scene().getByLabel('网页地址',{exact:true}).fill(childURL); await scene().getByRole('button',{name:'前往',exact:true}).click();
@@ -35,7 +35,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   assert.equal(await editor().inputValue(),draft); await scene().getByRole('button',{name:'保存文件',exact:true}).click();
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>e.controller.content('DOC-01').document?.getSnapshot().dirty===false));
   assert.ok((await readHostSource()).includes('整窗文档草稿')); ok('real-file-save-from-current-session-B',true);
-  await page.getByRole('button',{name:'会话 C',exact:true}).click(); await page.waitForFunction(()=>document.querySelector('.p0-full-scene:not([hidden])')?.dataset.workspace==='W2'); await scene().getByRole('button',{name:'▧ a.md',exact:true}).waitFor();
+  await page.getByRole('button',{name:'会话 C',exact:true}).click(); await page.waitForFunction(()=>document.querySelector('.p0-full-scene:not([hidden])')?.dataset.workspace==='W2'); await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).waitFor();
   assert.equal(await scene().locator('textarea.wb-editor').count(),0); ok('different-native-workspace-isolated',true);
   await page.getByRole('button',{name:'会话 A',exact:true}).click(); await editor().waitFor(); assert.equal(await nativeInput().textContent(),chatDraft); assert.equal(await form().inputValue(),'整窗网页未提交状态');
   await editor().press('Control+Home');
@@ -75,6 +75,9 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await scene().getByRole('button',{name:'启动终端',exact:true}).click();
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>e.controller.content('TERM-01').view?.state.getSnapshot().writable));
   assert.equal(metrics.spawn,1);
+  await scene().locator('.xterm-helper-textarea').press('Control+k'); assert.equal(await scene().getByRole('dialog').count(),0);
+  await scene().locator('.xterm-helper-textarea').press('Control+Shift+p'); await scene().getByRole('dialog',{name:'命令面板'}).waitFor(); await page.keyboard.press('Escape');
+  ok('terminal-readline-shortcuts-retained-with-shift-p-command-access',true);
   await scene().locator('.xterm-helper-textarea').focus(); await page.keyboard.type('echo DSHOME_REAL_PTY_20261029'); await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.p0-full-scene:not([hidden]) .xterm-rows')?.textContent.includes('DSHOME_REAL_PTY_20261029'));
   ok('actual-PTY-start-and-output',true);
@@ -127,6 +130,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.evaluate(()=>window.testP0.ctx.theme.setTheme('dark')); await page.waitForFunction(()=>document.body.hasAttribute('data-ds-dark-theme')); ok('actual-theme-runtime-dark',true);
   await page.screenshot({path:'test-output/full-desktop-dark.png'});
   const windowChrome=await (await import('./window-scenario.mjs')).runWindowScenario(page);
+  await page.setViewportSize({width:1920,height:1080});
   await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 便笺',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
   const note=()=>scene().locator('textarea.wb-note'); await note().fill('独立便笺 🐋\n不会写入布局');
   await note().evaluate(n=>{window.noteProbe=n;});
@@ -177,6 +181,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const multiDocument=await (await import('./multi-document-scenario.mjs')).runMultiDocumentScenario({page,readHostSource,readSecondarySource});
   const multiTerminal=await (await import('./multi-terminal-scenario.mjs')).runMultiTerminalScenario({page,metrics});
   const ux=await (await import('./ux-scenario.mjs')).runUXScenario({page,metrics,readHostSource});
+  const modern=await (await import('./modern-scenario.mjs')).runModernScenario({page,metrics,iframeLoads,readSecondarySource});
   assert.deepEqual(errors,providerFaultDiagnostics.errors);
-  return {providerFaultDiagnostics,checks,windowChrome,scopeRaces,layoutRecovery,layoutInteractions,terminalClose,reconnect,multiDocument,multiTerminal,ux,notVerified:['running profile GUI after upgrade','OS-level IME and non-Linux platforms','production authentication and idle expiry'],real:['public SDK','guarded filesystem save','native composer','actual PTY'],fixtures:['workspace catalog','navigation','host journal','authorization answers']};
+  return {providerFaultDiagnostics,checks,windowChrome,scopeRaces,layoutRecovery,layoutInteractions,terminalClose,reconnect,multiDocument,multiTerminal,ux,modern,notVerified:['running profile GUI after upgrade','OS-level IME and non-Linux platforms','production authentication and idle expiry'],real:['public SDK','guarded filesystem save','native composer','actual PTY'],fixtures:['workspace catalog','navigation','host journal','authorization answers']};
 }

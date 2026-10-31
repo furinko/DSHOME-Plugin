@@ -215,9 +215,10 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
     await page.waitForFunction(() => window.testNative.reference.input().state.getSnapshot().draft.endsWith(' · 原生输入栏实际键入'));
     assert.ok((await nativeField.innerText()).includes('原生输入栏实际键入'));
   }
-  await page.getByRole('button', { name: '工作台', exact: true }).click();
+  const enterWorkbenchLabel = composer ? '工作台' : '侧栏工具', leaveWorkbenchLabel = composer ? '原版' : '收起工具';
+  await page.getByRole('button', { name: enterWorkbenchLabel, exact: true }).click();
   await page.locator('.dshome-v2').waitFor();
-  await page.getByRole('button', { name: '▧ a.md', exact: true }).click(); const editor = page.locator('textarea.wb-editor'); await editor.waitFor();
+  await page.getByRole('button', { name: '打开文件 a.md', exact: true }).click(); const editor = page.locator('textarea.wb-editor'); await editor.waitFor();
   await editor.press('Control+End'); await page.keyboard.insertText('浏览器保留的草稿');
   await editor.press('Control+Home');
   for (let index = 0; index < 3; index++) await editor.press('ArrowRight');
@@ -245,7 +246,7 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   const before = { spawn: metrics.spawn, close: metrics.close, terminate: metrics.terminate };
   for (let index = 0; index < 5; index++) { await page.getByLabel('布局预设', { exact: true }).selectOption('review'); await page.getByLabel('布局预设', { exact: true }).selectOption('development'); }
   await page.waitForFunction(() => document.querySelector('.xterm-rows')?.textContent.includes('WB_TICK:5'));
-  await page.getByRole('button', { name: '原版', exact: true }).first().click(); await page.getByRole('button', { name: '工作台', exact: true }).first().click();
+  await page.getByRole('button', { name: leaveWorkbenchLabel, exact: true }).first().click(); await page.getByRole('button', { name: enterWorkbenchLabel, exact: true }).first().click();
   const after = await page.evaluate(() => ({ sameEditor: window.probeNodes.editor === document.querySelector('textarea.wb-editor'), sameIframe: window.probeNodes.iframe === document.querySelector('iframe[data-wb-iframe]'), sameTerminal: window.probeNodes.terminal === document.querySelector('.xterm-screen'), sameChat: window.probeNodes.chat === document.querySelector('#fixture-chat'), sameComposer: window.probeNodes.composer === (document.querySelector('#fixture-composer [contenteditable=true]') ?? document.querySelector('#fixture-composer')), viewport: { start: window.probeNodes.editor.selectionStart, end: window.probeNodes.editor.selectionEnd, scroll: window.probeNodes.editor.scrollTop }, text: window.probeNodes.editor.value, draft: window.testNative.reference?.input().state.getSnapshot().draft ?? window.probeNodes.composer.value, terminalId: window.testNative.controller().content('TERM-01').view.id, slotErrors: window.testNative.errors }));
   assert.equal(after.sameEditor && after.sameIframe && after.sameTerminal && after.sameChat && after.sameComposer, true); assert.equal(after.text, baseline.text); assert.equal(after.draft, baseline.draft); assert.equal(after.terminalId, baseline.terminalId); assert.deepEqual(after.slotErrors, []);
   assert.equal(baseline.viewport.start, 3); assert.equal(baseline.viewport.end, 9); assert.ok(baseline.viewport.scroll > 0); assert.deepEqual(after.viewport, baseline.viewport);

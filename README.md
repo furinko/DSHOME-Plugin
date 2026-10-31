@@ -2,7 +2,9 @@
 
 ## Current candidate: whole-window modular workbench
 
-This development candidate preserves a genuine **原版 / 工作台** switch using the same native application root. The main work area is separate from the fixed right-hand native conversation. Candidate `0.3.0-dual.1` has passed Linux isolated SDK/browser regression and read-only independent code review. It was **loaded and accepted for the listed Linux production workflows on 2026-10-31**, on DSH rc.2 without restarting or upgrading the host: [production acceptance record](docs/PRODUCTION-ACCEPTANCE-2026-10-31.md).
+Candidate `0.4.0-preview.1` redesigns DSHOME as a lighter modern workspace: new chrome and panel hierarchy, filename tabs, quick file/command palette, editor line numbers, and an adaptive single-module view for narrow windows. Source, isolated SDK/Chromium interactions and read-only independent review are complete; **this redesign has not been loaded into the running DSH**. See the [redesign acceptance record](docs/UI-UX-REDESIGN-2026-10-31.md).
+
+The genuine **原版 / 工作台** switch still uses the same native application root, with the native conversation beside the work area. The previous `0.3.0-dual.1` was loaded and accepted for the listed Linux production workflows on 2026-10-31: [previous production acceptance](docs/PRODUCTION-ACCEPTANCE-2026-10-31.md).
 
 - Filterable, refreshable workspace file listing, canonical-path document reuse, editable documents, literal Unicode search and Ctrl/⌘+F / Ctrl/⌘+S. Explicit save uses Host version-conflict checks and unknown-result reconciliation.
 - Multiple documents, webpages, notes and real SDK terminals; shared workspace content does not transfer terminal ownership between sessions.

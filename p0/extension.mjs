@@ -2,6 +2,7 @@ import React from 'react';
 import { createSceneStore, parseWebAddress } from './scene-store.mjs';
 import { createPanelLayout } from './panels.mjs';
 import { LayoutControls, LayoutCanvas, layoutCSS } from './layout-view.mjs';
+import { Icon } from '../src/workbench/icons.mjs';
 const h = React.createElement;
 const useState = store => React.useSyncExternalStore(store.subscribe, store.getSnapshot);
 
@@ -18,11 +19,11 @@ export function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
   return h('div', { className: 'p0-shell', 'data-p0-shell': true },
     h('header', { className: 'p0-toolbar' },
-      h('strong', null, 'DSHOME'),
-      h('div', { role: 'group', 'aria-label': '整窗模式' },
+      h('strong', { className: 'p0-brand' }, h(Icon, { name: 'layout', size: 19 }), 'DSHOME'),
+      h('div', { className: 'p0-mode-switch', role: 'group', 'aria-label': '整窗模式' },
         ...[['original', '原版'], ['workbench', '工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))),
       view.mode === 'workbench' && view.desktop?.RecoveryShelf && h(view.desktop.RecoveryShelf,{selectedKey:view.selected}),
-      h('span', { className: 'p0-label' }, '模块化工作台 · 文档需单独保存'),
+      h('span', { className: 'p0-label' }, view.mode === 'workbench' ? '专注手头的事，让对话随时在旁' : '从一次对话开始'),
       view.mode === 'workbench' && h('div', { className: 'p0-narrow-switch', role: 'group', 'aria-label': '窄窗区域' },
         h('button', { onClick: () => props.dualShell.setNarrowPane('workspace'), 'aria-pressed': view.narrowPane === 'workspace' }, '操作区'),
         h('button', { onClick: () => props.dualShell.setNarrowPane('chat'), 'aria-pressed': view.narrowPane === 'chat' }, '聊天'))),
@@ -70,7 +71,7 @@ function Scene({ scene, store, active }) {
 export const css = layoutCSS + `
 .p0-full-scene{height:100%;min-height:0}.p0-full-scene[hidden]{display:none}
 
-.p0-shell{height:100%;display:grid;grid-template-rows:44px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:14px Arial,"Microsoft YaHei",sans-serif}
+.p0-shell{height:100%;display:grid;grid-template-rows:52px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
 /* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
 html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}
 /* Moving the native titlebar reservation must also move its Electron drag surface. */
@@ -78,9 +79,10 @@ html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell:before{content:"";p
 html[data-windows-titlebar][data-fullscreen] .p0-toolbar{padding-left:104px}
 html[data-windows-titlebar] .p0-native{padding-top:0}
 html[data-windows-titlebar] .p0-native:before{display:none}
-.p0-toolbar{display:flex;align-items:center;gap:18px;padding:0 14px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-sidebar-fill);min-width:0;-webkit-app-region:no-drag}
+.p0-toolbar{display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;-webkit-app-region:no-drag}
+.p0-brand{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.6px;font-weight:700;white-space:nowrap}.p0-brand .wb-icon{color:var(--dsw-alias-brand-primary,#3f5ce8)}
 .p0-toolbar button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 12px;border-radius:6px;cursor:pointer}
-.p0-toolbar [aria-pressed=true]{background:#285ad8;color:white;border-color:#285ad8}.p0-toolbar [role=group]{display:flex;gap:5px}.p0-label{font-size:12px;opacity:.7;margin-left:auto}.p0-narrow-switch{display:none!important}
+.p0-toolbar [role=group]{display:flex;gap:3px}.p0-toolbar .p0-mode-switch{padding:3px;border-radius:9px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 94%,var(--dsw-alias-label-primary))}.p0-toolbar .p0-mode-switch button{min-width:66px;padding:5px 12px;border-color:transparent;background:transparent;border-radius:6px;font-size:12px;line-height:1.4}.p0-toolbar .p0-mode-switch [aria-pressed=true]{background:var(--dsw-alias-bg-base);border-color:var(--dsw-alias-border-l2);box-shadow:0 1px 3px #0b17300a;font-weight:600}.p0-toolbar button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-toolbar button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}.p0-label{font-size:11px;opacity:.6;margin-left:auto;white-space:nowrap}.p0-narrow-switch{display:none!important}.p0-narrow-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 84%,#3f5ce8)}
 .p0-native[data-dual-mode=original]>.p0-desktop,.p0-native[data-dual-global=true]>.p0-desktop{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{grid-column:1;grid-row:1}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:3;grid-row:1;border-left:1px solid var(--dsw-alias-border-l2)}

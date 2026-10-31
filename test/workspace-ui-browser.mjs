@@ -21,6 +21,11 @@ test('real Chromium component integration: stable iframe/draft, actual Gateway d
   const parent = resolve('test-output/ui-browser'); await mkdir(parent, { recursive: true }); const root = await mkdtemp(join(parent, 'case-'));
   const original = Array.from({ length: 180 }, (_, i) => 'line ' + (i + 1) + ' · 真实文件内容').join('\r\n') + '\r\n'; await writeFile(join(root, 'a.md'), original);
   const mixed = '\ufefftitle\r\nline😀 two\r\nthird\nlast\r'; await writeFile(join(root, 'mixed.md'), mixed);
+  await writeFile(join(root, 'slow-modern.md'), 'late cancelled receipt');
+  let slowStarted, releaseSlow, slowFinished;
+  const slowReady = new Promise(resolve => { slowStarted = resolve; });
+  const slowGate = new Promise(resolve => { releaseSlow = resolve; });
+  const slowDone = new Promise(resolve => { slowFinished = resolve; });
   const ctx = new Context(); const session = { id: 'A', header: { cwd: root } };
   ctx.reflect.provide('sessions', new Map([['A', session]]));
   ctx.reflect.provide('sandboxPolicy', { defaultMode: 'workspace-write', resolve: () => ({ mode: 'workspace-write', workspaceRoot: root }) });
@@ -43,13 +48,31 @@ test('real Chromium component integration: stable iframe/draft, actual Gateway d
   const url = await listen(shell);
   let browser;
   t.after(async () => { await browser?.close(); await Promise.all([close(shell), close(child)]); await ctx.fiber.dispose(); const checked = await realpath(root), allowed = await realpath(parent); assert.ok(checked.startsWith(allowed + sep)); await rm(checked, { recursive: true }); });
-  browser = await chromium.launch({ headless: true, channel: 'chromium', args: ['--no-sandbox'] });
+  browser = await chromium.launch({ headless: true, ...(process.env.WORKBENCH_BROWSER ? { executablePath: process.env.WORKBENCH_BROWSER } : { channel: 'chromium' }), args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } }); const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.exposeFunction('testGateway', (method, args) => carrier.call('/api', 'dshomeWorkspace/' + method, { args }, new AbortController().signal, peer));
+  await page.exposeFunction('testGateway', async (method, args) => {
+    const delayed = method === 'read' && args.path === 'slow-modern.md';
+    if (delayed) { slowStarted(); await slowGate; }
+    const result = await carrier.call('/api', 'dshomeWorkspace/' + method, { args }, new AbortController().signal, peer);
+    if (delayed) slowFinished();
+    return result;
+  });
   await page.goto(url); await page.waitForFunction(() => !!window.testController);
-  await page.getByRole('button', { name: '▧ a.md', exact: true }).click();
+  await page.getByRole('button', { name: '打开文件 a.md', exact: true }).click();
   const editor = page.locator('textarea.wb-editor'); await editor.waitFor();
+  // Keep the modal escapable even when a provider ignores cancellation.
+  // The delayed receipt still comes from the actual SDK Gateway.
+  const contentCount = await page.evaluate(() => window.testController.contents.size);
+  await editor.press('Control+p');
+  await page.getByRole('dialog').getByRole('combobox').fill('slow-modern.md');
+  await page.getByRole('dialog').getByRole('combobox').press('Enter'); await slowReady;
+  await page.keyboard.press('Escape'); await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert.equal(await editor.evaluate(n => n === document.activeElement), true);
+  releaseSlow(); await slowDone;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.evaluate(() => window.testController.contents.size), contentCount);
+  assert.equal(await page.evaluate(() => [...window.testController.contents.values()].some(i => i.document?.getSnapshot().path.endsWith('slow-modern.md'))), false);
   const draft = original + '尚未保存的修改\r\n'; await editor.fill(draft);
   await editor.evaluate(node => { node.setSelectionRange(7, 21); node.dispatchEvent(new Event('select', { bubbles: true })); node.scrollTop = 260; node.dispatchEvent(new Event('scroll', { bubbles: true })); window.testEditor = node; });
   await page.getByLabel('网页地址', { exact: true }).fill(childURL); await page.getByRole('button', { name: '前往', exact: true }).click();
@@ -98,5 +121,5 @@ test('real Chromium component integration: stable iframe/draft, actual Gateway d
   await page.evaluate(() => window.testRemountNegativeControl());
   assert.equal(await page.evaluate(() => window.testIframe.isConnected), false); assert.equal(await page.evaluate(() => window.testEditor.isConnected), false);
   assert.deepEqual(errors, []);
-  await writeFile('test-output/workspace-ui-result.json', JSON.stringify({ scope: 'real Chromium + React product components + real SDK Gateway and FS; shell/input/file-list and owner Peer are explicit test doubles; native slots and PTY NOT covered', viewport: [1920,1080], switches: 10, iframeLoads, draftPreserved: true, formAndNoncePreserved: true, realDiskSave: true, mixedEOLByteExact: true, BOMPreserved: true, rawReferenceOffsetsVerified: true, unmountNegativeControlDetected: true, errors }, null, 2));
+  await writeFile('test-output/workspace-ui-result.json', JSON.stringify({ scope: 'real Chromium + React product components + real SDK Gateway and FS; shell/input/file-list and owner Peer are explicit test doubles; native slots and PTY NOT covered', viewport: [1920,1080], switches: 10, iframeLoads, draftPreserved: true, formAndNoncePreserved: true, realDiskSave: true, slowReadEscapeAndLateReceiptIgnored: true, mixedEOLByteExact: true, BOMPreserved: true, rawReferenceOffsetsVerified: true, unmountNegativeControlDetected: true, errors }, null, 2));
 });

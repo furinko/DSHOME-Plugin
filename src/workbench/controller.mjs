@@ -44,19 +44,29 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
   sync();
   function content(id) { live(); const item = contents.get(id); if (!item) throw Error('内容实例不存在'); return item; }
   let openingDocuments = Promise.resolve();
-  function openDocument(path) {
-    const work = openingDocuments.catch(() => {}).then(() => openOneDocument(path));
+  function openDocument(path, { signal } = {}) {
+    const work = openingDocuments.catch(() => {}).then(() => openOneDocument(path, signal));
     openingDocuments = work; return work;
   }
-  async function openOneDocument(path) {
+  async function readForOpen(path, signal) {
+    signal?.throwIfAborted();
+    if (!signal) return transport.read(path);
+    // Release the serialized open queue on cancellation even if a provider is
+    // slow to acknowledge abort. Its late receipt never allocates content.
+    let abort;
+    try { return await Promise.race([transport.read(path, signal), new Promise((_, reject) => { abort = () => reject(signal.reason); signal.addEventListener('abort', abort, { once: true }); if (signal.aborted) abort(); })]); }
+    finally { if (abort) signal.removeEventListener('abort', abort); }
+  }
+  async function openOneDocument(path, signal) {
     live();
+    signal?.throwIfAborted();
     if (model.getSnapshot().editing) throw Error('请先应用或取消布局草稿');
     let item = [...contents.values()].find(item => item.document && (item.document.getSnapshot().path === path || item.openedPaths?.has(path)));
     let file;
     if (!item) {
       // Only the host receipt establishes identity (including symlinks and root
       // scope). Resolve before allocating another editor or adopting disk text.
-      file = await transport.read(path); live();
+      file = await readForOpen(path, signal); live(); signal?.throwIfAborted();
       if (model.getSnapshot().editing) throw Error('请先应用或取消布局草稿');
       if (typeof file?.absolutePath === 'string' && typeof file?.version === 'string') item = [...contents.values()].find(candidate => {
         const state = candidate.document?.getSnapshot();
@@ -71,9 +81,13 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
       item.offDocument = item.document.subscribe(() => publish());
       await item.document.load();
     }
+    signal?.throwIfAborted();
     (item.openedPaths ??= new Set()).add(path);
     if (model.getSnapshot().layout.collapsed.some(p => p.panelId === item.id)) model.expand(item.id);
-    model.activate(item.id); publish(); return item.document;
+    model.activate(item.id);
+    // Presentation intent is transient. Reference returns and other public
+    // callers must reveal the document even in a single-module narrow view.
+    publish({ focusedPanelId: item.id, focusRevision: (snapshot.focusRevision ?? 0) + 1 }); return item.document;
   }
   function editNote(id, text) {
     const item = content(id);

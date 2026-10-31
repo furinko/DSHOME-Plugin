@@ -21,7 +21,7 @@ export async function runNativeProjectShelf({ page, root, session, handles, metr
     assert.equal(await page.evaluate(() => window.testNative.controller() === window.shelfA.c && window.shelfA.doc.getSnapshot().dirty), true); process.kill(pid, 0);
     await page.getByRole('button', { name: '打开 Host 当前项目', exact: true }).click();
     await page.waitForFunction(key => { const s = window.__dshomePluginWorkbench.projects('A'); return s.selected === key && s.projects.length === 2 && !s.busy; }, bKey);
-    await bPane.getByRole('button', { name: '▧ a.md', exact: true }).click();
+    await bPane.getByRole('button', { name: '打开文件 a.md', exact: true }).click();
     await page.waitForFunction(() => window.testNative.controller().content('DOC-01').document?.getSnapshot().phase === 'ready');
     await bPane.locator('textarea.wb-editor').fill('project B saved only here\n'); await bPane.getByRole('button', { name: '保存文件', exact: true }).click();
     await page.waitForFunction(() => { const s = window.testNative.controller().content('DOC-01').document.getSnapshot(); return !s.dirty && s.phase === 'ready'; });

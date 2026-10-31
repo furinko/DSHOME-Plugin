@@ -83,7 +83,7 @@ export function createDesktopRuntime({ ctx, services, getOwner, hostRequire, ref
         onRefreshServices && h('button', { type: 'button', onClick: () => Promise.resolve(onRefreshServices()).catch(error => entry.controller.notify(error.message)) }, '重新接入文件接口'),
         h('button', { type: 'button', disabled: !services.available(getOwner()), onClick: () => { try { ctx.get('dualShellP0').newScene(scene.key); } catch (error) { entry.controller.notify(error.message); } } }, '新建操作现场'),
         h('small', null, '新现场不会导入旧权限或重放命令；旧草稿可在顶部“保留现场”导出。')),
-      h('div',{style:{flex:1,minHeight:0}},h(Workspace, { controller:entry.controller, workspaceFiles:entry.workspaceFiles, active, projectTitle:scene.title, moduleRegistry:modules,
+      h('div',{style:{flex:1,minHeight:0}},h(Workspace, { controller:entry.controller, workspaceFiles:entry.workspaceFiles, adaptive:true, active, projectTitle:scene.title, moduleRegistry:modules,
       servicesAvailable:available, terminalAvailable:entry.terminalAvailable,
       inputActions:seat, referenceReady:referenceReady() && !!seat, referenceCurrent:isCurrent, onOriginal, onCloseWorkspace: () => close(scene) })));
   }

@@ -5,7 +5,7 @@ export async function runNativeShellScenario({ page, metrics, handles, childURL,
   assert.equal(await input.textContent(), '原生会话壳中的聊天草稿'); await input.press('Control+End'); await page.keyboard.insertText(' · 原生壳实际键入');
   await page.evaluate(() => { window.shellInput = document.querySelector('[contenteditable=true][data-lexical-editor=true]'); });
   await modes.getByRole('button', { name: '工作台', exact: true }).click(); await page.locator('.dshome-v2:visible').waitFor();
-  await page.locator('[data-wb-content="FILE-01"]:visible').getByRole('button', { name: '▧ a.md', exact: true }).click();
+  await page.locator('[data-wb-content="FILE-01"]:visible').getByRole('button', { name: '打开文件 a.md', exact: true }).click();
   const editor = page.locator('textarea.wb-editor:visible'); await editor.waitFor(); await editor.press('Control+End'); await page.keyboard.insertText('原生会话壳文档草稿');
   const web = page.locator('[data-wb-content="WEB-01"]:visible'); await web.locator('input').fill(childURL); await web.getByRole('button', { name: '前往', exact: true }).click();
   const form = page.frameLocator('iframe[data-wb-iframe]').getByRole('textbox', { name: '未提交表单' }); await form.fill('原生壳内网页表单');

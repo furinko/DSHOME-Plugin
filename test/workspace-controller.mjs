@@ -128,3 +128,27 @@ test('cancelled terminal close creates no close intent', async () => { const { c
 test('explicit resource release does not claim queued terminal cleanup succeeded', async () => { const { createTerminalCleanup } = await import('../src/workbench/terminal-cleanup.mjs'); const cleanup = createTerminalCleanup(), { c } = setup({ terminalCleanup: cleanup }); c.startTerminal('TERM-01'); await c.closePanel('TERM-01'); c.releaseResources(); assert.equal(cleanup.hasUnconfirmed(), true); assert.equal(cleanup.getSnapshot().confirmed, 0); });
 
 test('terminal acknowledgement clears its own warning but not newer unrelated feedback', async () => { const { createTerminalCleanup } = await import('../src/workbench/terminal-cleanup.mjs'); for (const unrelated of [false, true]) { const cleanup = createTerminalCleanup(), { c } = setup({ terminalCleanup: cleanup }); c.startTerminal('TERM-01'); await c.closePanel('TERM-01'); assert.equal(c.closeWorkspace(), false); if (unrelated) c.notify('another operation failed'); await cleanup.closeRemote(async () => ({ ok: true }), 'A', 'real-view-test-double'); if (unrelated) assert.equal(c.getSnapshot().notice, 'another operation failed'); else assert.match(c.getSnapshot().notice, /宿主已确认/); } });
+test('cancelled quick-open releases its queue and ignores a provider that returns a late receipt', async () => {
+  let resolveLate, entered;
+  const ready = new Promise(resolve => { entered = resolve; });
+  const slow = new Promise(resolve => { resolveLate = resolve; });
+  const { c } = setup({ transport: { read: (path, signal) => { if (path === 'slow') { assert.ok(signal); entered(); return slow; } return Promise.resolve({ text: 'body', version: 'v1', absolutePath: '/workspace/' + path }); }, save() {} } });
+  const controller = new AbortController(), pending = c.openDocument('slow', { signal: controller.signal });
+  await ready; controller.abort(Error('cancel quick open'));
+  await assert.rejects(pending, /cancel quick open/);
+  const fast = await c.openDocument('fast');
+  resolveLate({ text: 'late', version: 'v1', absolutePath: '/workspace/slow' }); await new Promise(resolve => setImmediate(resolve));
+  assert.equal([...c.contents.values()].filter(i => i.document).length, 1);
+  assert.equal(fast.getSnapshot().path, '/workspace/fast');
+  assert.equal(c.getSnapshot().focusedPanelId, 'DOC-01');
+  assert.equal(JSON.stringify(c.model.serialize()).includes('focusRevision'), false);
+  c.releaseResources();
+});
+test('an already-cancelled open never reads or allocates, and repeated opens send a fresh view intent', async () => {
+  let reads = 0;
+  const { c } = setup({ transport: { read: async path => { reads++; return { text: 'body', version: 'v1', absolutePath: '/workspace/' + path }; }, save() {} } });
+  const controller = new AbortController(); controller.abort(Error('already cancelled'));
+  await assert.rejects(c.openDocument('a.md', { signal: controller.signal }), /already cancelled/); assert.equal(reads, 0);
+  await c.openDocument('a.md'); const revision = c.getSnapshot().focusRevision;
+  await c.openDocument('a.md'); assert.equal(c.getSnapshot().focusRevision, revision + 1); assert.equal(reads, 1); c.releaseResources();
+});
