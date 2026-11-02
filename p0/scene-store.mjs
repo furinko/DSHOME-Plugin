@@ -1,12 +1,12 @@
 // In-memory P0 presentation state. No filesystem, terminal or conversation authority.
 export function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
   if (![workspaces, session, connection].every(s => s?.getSnapshot && s?.subscribe)) throw Error('Authoritative workspace/session/connection sources required');
-  let revision = 0, mode = 'original', chatWidth = 420, narrowPane = 'workspace', disposed = false;
+  let revision = 0, mode = 'original', chatWidth = 420, narrowPane = 'workspace', navigationOpen = false, workspaceFocus = false, disposed = false;
   let snapshot, selected = null, reason = '', nextId = 0, epochNumber = 0, watchedSignal, desktop = null;
   const watchAbort = signal => { if (watchedSignal === signal) return; watchedSignal?.removeEventListener('abort', sync); watchedSignal = signal; watchedSignal?.addEventListener('abort', sync, { once: true }); };
   const epochs = new WeakMap(), rotations = new Map(), scenes = new Map(), listeners = new Set();
   const publish = () => {
-    snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
+    snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, navigationOpen, workspaceFocus, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
     for (const listener of [...listeners]) listener();
   };
   function sync() {
@@ -58,8 +58,10 @@ export function createSceneStore({ workspaces, session, connection, maxScenes = 
     },
     setDesktop(value) { if (!disposed && value && desktop !== value) { desktop = value; publish(); } },
     setMode(next) { if (!['original', 'workbench'].includes(next)) throw Error('Unknown shell mode'); if (disposed || next === mode) return; mode = next; publish(); },
+    setNavigationOpen(value) {if(disposed)return;navigationOpen=!!value;publish();},
+    setWorkspaceFocus(value) {if(disposed)return;workspaceFocus=!!value;if(workspaceFocus)narrowPane='workspace';publish();},
     resizeChat(value) { if (!Number.isFinite(value)) throw Error('Invalid width'); if (disposed) return; chatWidth = Math.max(320, Math.min(560, Math.round(value))); publish(); },
-    setNarrowPane(next) { if (!['workspace', 'chat'].includes(next)) throw Error('Unknown pane'); if (disposed) return; narrowPane = next; publish(); },
+    setNarrowPane(next) { if (!['workspace', 'chat'].includes(next)) throw Error('Unknown pane'); if (disposed) return; narrowPane = next; if(next==='chat')workspaceFocus=false; publish(); },
     update(key, patch) {
       if (disposed || key !== selected || !scenes.has(key)) throw Error('Inactive workspace; edit rejected');
       const scene = scenes.get(key);

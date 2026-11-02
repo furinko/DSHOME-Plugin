@@ -1,3 +1,4 @@
+import {navigate} from './interaction-helpers.mjs';
 import assert from 'node:assert/strict';
 export async function runScenario({ page, context, url, childURL, metrics, errors, iframeLoads }) {
   const checks = [];
@@ -98,21 +99,21 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   ok('split-tabs-preserve-web', await form().inputValue()==='未提交网页表单：A与B共用，不应刷新' && await visibleScene().locator('.p0-note').isVisible());
   for (let i=0;i<3;i++) { await page.getByRole('button',{name:'原版',exact:true}).click(); ok('real-original-round-'+i, !await page.getByRole('region',{name:'主操作区'}).isVisible()); assert.equal(await input().textContent(),draftA); await page.getByRole('button',{name:'工作台',exact:true}).click(); }
   ok('same-native-root-and-input', await page.evaluate(() => window.probeP0.root === document.querySelector('.mP3x-q_frame') && window.probeP0.input === document.querySelector('[data-lexical-editor=true]')));
-  await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B');
+  await navigate(page,'会话 B'); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B');
   await input().pressSequentially('B 独立草稿'); const draftB = await input().textContent();
   ok('same-workspace-same-scene', await page.evaluate(() => window.probeP0.scene === window.testP0.ctx.dualShellP0.getSnapshot().selected && window.probeP0.frame === document.querySelector('.p0-scene:not([hidden]) iframe')));
   ok('shared-workspace-layout', await visibleScene().locator('.p0-tools').getAttribute('data-layout-axis') === 'y');
   assert.equal(await form().inputValue(),'未提交网页表单：A与B共用，不应刷新');
-  await page.getByRole('button',{name:'会话 C',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'C');
+  await navigate(page,'会话 C'); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'C');
   ok('same-path-different-workspace-isolated', await page.getByRole('textbox',{name:'工作区便笺'}).inputValue() === '' && await visibleScene().getAttribute('data-workspace') === 'W2');
   ok('different-workspace-layout-isolated', await visibleScene().locator('.p0-tools').getAttribute('data-layout-axis') === 'x');
   await page.getByRole('textbox',{name:'工作区便笺'}).fill('W2自己的便笺');
-  await page.getByRole('button',{name:'会话 A',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
+  await navigate(page,'会话 A'); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
   assert.equal(await input().textContent(),draftA);
   ok('A-note-preserved', (await page.getByRole('textbox',{name:'工作区便笺'}).inputValue()).startsWith('这个工作区'));
-  await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B'); assert.equal(await input().textContent(), draftB);
-  await page.getByRole('button',{name:'会话 A',exact:true}).click(); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
-  await page.getByRole('button',{name:'其他主面板',exact:true}).click(); await page.getByRole('region',{name:'隔离全局页面'}).waitFor();
+  await navigate(page,'会话 B'); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B'); assert.equal(await input().textContent(), draftB);
+  await navigate(page,'会话 A'); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'A');
+  await navigate(page,'其他主面板'); await page.getByRole('region',{name:'隔离全局页面'}).waitFor();
   assert.equal(await page.getByRole('region',{name:'主操作区'}).isVisible(),false);
   await page.getByRole('button',{name:'回到当前会话',exact:true}).click(); await visibleScene().waitFor();
   ok('global-main-round-trip', await form().inputValue() === '未提交网页表单：A与B共用，不应刷新');

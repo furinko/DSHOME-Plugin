@@ -1,3 +1,5 @@
+import {sameLocalEntry} from './local-directory.mjs';
+import {localFormat, preparePreview} from './local-preview.mjs';
 import { createLocalFileTransport } from './local-file.mjs';
 import { createWorkspaceModel, createLayoutPersistence } from './model.mjs';
 import { createDocument } from './document.mjs';
@@ -14,7 +16,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
   const stored = persistence.read();
   const model = createWorkspaceModel({ projectId, initial: stored.kind === 'ready' ? stored.project : undefined });
   const releases = BUILTINS.map(definition => model.registerModule(definition));
-  const contents = new Map(), listeners = new Set(); let revision = 0, disposed = false;
+  const localRoots = new Map(), contents = new Map(), listeners = new Set(); let revision = 0, disposed = false;
   let snapshot = Object.freeze({ revision, notice: stored.kind === 'corrupt' ? '布局记录损坏：已原样保留，本次使用临时布局；导出原记录后再重置。' : stored.kind === 'unavailable' ? '布局存储不可用：不会伪称保存成功。' : '', storage: stored.kind, savingLayout: false, layoutRecovery: null, layoutBackupKey: stored.backupKey ?? null, terminalCleanup: terminalCleanup?.getSnapshot() ?? null });
   function publish(change = {}) { snapshot = Object.freeze({ ...snapshot, ...change, ...(Object.hasOwn(change, 'notice') ? { noticeSource: change.noticeSource ?? null } : {}), revision: ++revision }); for (const fn of [...listeners]) fn(); }
   const offCleanup = terminalCleanup?.subscribe(() => { if (disposed) return; const state = terminalCleanup.getSnapshot(), confirmed = !state.requests.length && !state.overflow && snapshot.noticeSource === 'terminal-close'; publish({ terminalCleanup: state, ...(confirmed ? { notice: '宿主已确认终端关闭；项目和文档草稿仍保留。', noticeSource: 'terminal-close-confirmed' } : {}) }); });
@@ -52,16 +54,27 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
   function openLocalFile(file, handle) {
     const work = openingDocuments.catch(() => {}).then(async () => {
       live(); if (model.getSnapshot().editing) throw Error('请先退出布局编辑');
-      for (const item of contents.values()) if (handle && item.localHandle && await handle.isSameEntry(item.localHandle)) { live(); model.activate(item.id); publish({focusedPanelId:item.id,focusRevision:revision+1}); return item.document; }
+      for (const item of contents.values()) if (handle && item.localHandle && await sameLocalEntry(handle,item.localHandle)) { live(); model.activate(item.id); publish({focusedPanelId:item.id,focusRevision:revision+1}); return item.document ?? item.preview; }
       const local = createLocalFileTransport({file,handle});
-      const doc = createDocument({path:file.name,transport:local}); await doc.load(); live();
+      let doc=null,preview=null;
+      if(localFormat(file.name)==='text'){doc=createDocument({path:file.name,transport:local});try{await doc.load();}catch(error){if(!['FS_ENCODING','FS_BINARY'].includes(error.code))throw error;doc=null;preview={kind:'encoding',file};}}
+      else preview=await preparePreview(file);
+      live();
       if (model.getSnapshot().editing) throw Error('请先退出布局编辑');
       const existing = [...contents.values()].find(i=>i.kind==='document');
       const id = model.addPanel('document',{targetPaneId:existing?paneOf(existing.id):undefined});
-      const item=content(id); item.document=doc; item.localHandle=handle; item.localFile=true; item.localWritable=!!handle?.createWritable;
-      item.offDocument=doc.subscribe(()=>publish()); model.activate(id); publish({focusedPanelId:id,focusRevision:revision+1}); return doc;
+      const item=content(id); item.document=doc; item.preview=preview; item.localName=file.name; item.localHandle=handle; item.localFile=true; item.localWritable=!!handle?.createWritable;
+      item.offDocument=doc?.subscribe(()=>publish()); model.activate(id); publish({focusedPanelId:id,focusRevision:revision+1}); return doc ?? preview;
     }); openingDocuments=work; return work;
   }
+  async function addLocalFolder(handle) {
+    live();if(model.getSnapshot().editing)throw Error('请先退出布局编辑');
+    if(handle?.kind!=='directory'||typeof handle.values!=='function')throw Error('无法读取这个文件夹');
+    for(const root of localRoots.values()) if(await sameLocalEntry(handle,root.handle)) {live();return root.id;}
+    live();if(localRoots.size>=32)throw Error('最多添加 32 个本机文件夹');
+    const id=uuid();localRoots.set(id,{id,handle});publish();return id;
+  }
+  function removeLocalFolder(id) {live();localRoots.delete(id);publish();}
   async function readForOpen(path, signal) {
     signal?.throwIfAborted();
     if (!signal) return transport.read(path);
@@ -88,7 +101,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
         return state?.version !== null && state?.path === file.absolutePath && state.projectId === file.projectId;
       });
     }
-    if (!item) item = [...contents.values()].find(item => item.kind === 'document' && !item.document);
+    if (!item) item = [...contents.values()].find(item => item.kind === 'document' && !item.document && !item.localFile);
     if (!item) { const existing = [...contents.values()].find(item => item.kind === 'document'); const id = model.addPanel('document', { targetPaneId: existing ? paneOf(existing.id) : undefined }); item = content(id); }
     if (!item.document) {
       let firstRead = true;
@@ -168,7 +181,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
   function hasUnsaved() { return !!terminalCleanup?.hasUnconfirmed() || [...contents.values()].some(item => { const s = item.document?.getSnapshot(); return !!item.moduleDirty || item.kind === 'note' && !!item.noteText || s && (s.dirty || s.uncertain || s.phase === 'saving'); }); }
   function releaseResources() {
     if (disposed) return; disposed = true; offCleanup?.(); terminalCleanup?.dispose(); terminals?.retainTabs([]); off(); for (const release of releases) release();
-    for (const item of contents.values()) item.offDocument?.(); listeners.clear(); persistence.dispose();
+    for (const item of contents.values()) item.offDocument?.(); listeners.clear(); localRoots.clear(); persistence.dispose();
   }
   function closeWorkspace() {
     live();
@@ -185,7 +198,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     for (const item of contents.values()) { if (item.started) terminals.close(item.ownerSessionId, item.id, item.contentId, item.view?.id); item.offDocument?.(); }
     releaseResources(); contents.clear(); return true;
   }
-  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, openLocalFile, editNote, navigate, startTerminal, closePanel, importLayout, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
+  return Object.freeze({ model, contents, localRoots, addLocalFolder, removeLocalFolder, get sessionId() { return getSessionId(); }, projectId, content, openDocument, openLocalFile, editNote, navigate, startTerminal, closePanel, importLayout, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
     getSnapshot: () => snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     notify: text => publish({ notice: text }), updateContent(id, change) { Object.assign(content(id), change); publish(); },
     exportLayout: () => JSON.stringify(model.serialize(), null, 2), exportStoredLayout: () => storage.getItem(persistence.key),

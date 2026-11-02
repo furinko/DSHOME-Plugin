@@ -1,3 +1,4 @@
+import {runLocalFormats} from './local-formats-scenario.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
@@ -9,17 +10,17 @@ export async function runDragFiles(page) {
   await editor.fill('修改副本'); assert.equal(await scene.getByRole('button',{name:'保存文件',exact:true}).filter({visible:true}).isDisabled(),true);
   const download=page.waitForEvent('download');await scene.getByRole('button',{name:'导出草稿',exact:true}).filter({visible:true}).click();assert.ok(await (await download).path());
   await editor.evaluate(n=>window.dragFileEditor=n);
-  const header=editor.locator('xpath=ancestor::article').locator('.wb-panel-header');
+  const header=editor.locator('xpath=ancestor::article').locator('[role=tab][aria-selected=true]');
   const target=scene.locator('[data-wb-content=WEB-01]');
-  const beforeLayout=await page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout();});
+  const beforeLayout=await page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return JSON.stringify(JSON.parse(window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout()).layout);});
   const hb=await header.boundingBox(),tb=await target.boundingBox();
-  const exported=()=>page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout();});
+  const exported=()=>page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return JSON.stringify(JSON.parse(window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout()).layout);});
   await page.mouse.move(hb.x+50,hb.y+12);await page.mouse.down();await page.mouse.move(hb.x+53,hb.y+12);await page.mouse.up();
   assert.equal(await exported(),beforeLayout);
   await page.mouse.move(hb.x+50,hb.y+12);await page.mouse.down();await page.mouse.move(tb.x+30,tb.y+120,{steps:12});await page.keyboard.press('Escape');await page.mouse.up();
   assert.equal(await exported(),beforeLayout);
   await page.mouse.move(hb.x+50,hb.y+12);await page.mouse.down();await page.mouse.move(tb.x+30,tb.y+120,{steps:12});await page.mouse.up();
-  assert.notEqual(await page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout();}),beforeLayout);
+  assert.notEqual(await page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return JSON.stringify(JSON.parse(window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout()).layout);}),beforeLayout);
   assert.equal(await scene.locator('textarea.wb-editor').evaluateAll(nodes=>nodes.includes(window.dragFileEditor)),true);
   assert.equal(await scene.locator('textarea.wb-editor').filter({visible:true}).inputValue(),'修改副本');
   assert.equal(await scene.getByRole('tree',{name:'本机文件',exact:true}).getByRole('button',{name:'打开本机文件 outside.txt',exact:true}).count(),1);
@@ -55,5 +56,6 @@ export async function runDragFiles(page) {
     const id=[...c.contents.values()].find(i=>i.document===doc).id;await c.closePanel(id);await root.removeEntry('isolated-local-handle.txt');
     return {same:doc===duplicate,saved};
   });assert.deepEqual(handleResult,{same:true,saved:'handle-saved'});
-  return {browserHandleWrite:true,inputImport:true,snapshotExport:true,directDockKeepsEditor:true,fileDrop:true};
+  const formats=await runLocalFormats(page);
+  return {formats,browserHandleWrite:true,inputImport:true,snapshotExport:true,directDockKeepsEditor:true,fileDrop:true};
 }

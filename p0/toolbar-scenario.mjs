@@ -1,3 +1,4 @@
+import {navigate} from './interaction-helpers.mjs';
 import { runInteractionScenario } from './interaction-scenario.mjs';
 import assert from 'node:assert/strict';
 
@@ -52,7 +53,7 @@ export async function runToolbarScenario({ page, context, url }) {
     probes.push({ width,box:before });
   }
   await page.setViewportSize({ width:1366,height:900 }); const globalBox=await modes().boundingBox();
-  await page.getByRole('button',{name:'其他主面板',exact:true}).click(); await page.getByRole('region',{name:'隔离全局页面'}).waitFor();
+  await navigate(page,'其他主面板'); await page.getByRole('region',{name:'隔离全局页面'}).waitFor();
   await click('聊天'); await click('工作台');
   assert.deepEqual(await modes().boundingBox(),globalBox);
   assert.equal(await page.getByRole('region',{name:'隔离全局页面'}).isVisible(),true);
@@ -60,11 +61,11 @@ export async function runToolbarScenario({ page, context, url }) {
   // Native global panels remount the conversation; only mode switching promises
   // stable content DOM. The root mode control itself must survive both.
   assert.equal(await modes().evaluate(n=>n===window.fixedModeNode),true);
-  await page.getByRole('button',{name:'会话 B',exact:true}).click();
+  await navigate(page,'会话 B');
   await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
   await click('工作台'); await click('聊天'); assert.deepEqual(await modes().boundingBox(),globalBox);
   assert.equal(await modes().evaluate(n=>n===window.fixedModeNode),true);
-  await page.getByRole('button',{name:'会话 A',exact:true}).click();
+  await navigate(page,'会话 A');
   await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='A');
   await page.setViewportSize({ width:1920,height:1080 });
   const interaction = await runInteractionScenario(page); return { interaction, noSeparateModeRow:true,originalFrameGeometryExact:true,oneStableModeNode:true,brandFollowsMode:true,globalAndBlankSessionReachable:true,narrowPaneDoesNotMoveMode:true,probes };

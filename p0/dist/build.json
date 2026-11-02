@@ -1,7 +1,7 @@
 {
   "upstreamSha256": "eb011a7b5699fac7f3ad0aa15408f46a6cf47f79b8cc15db1f81739e81e70587",
-  "outputSha256": "243d52684e5b427e4685a69ee3fae5623138ceef01b10d3cae5da3e8e8322448",
-  "extensionSha256": "f0814194f17053233981434e6940706cc0494ad3bcacdf91bbfb424b2ac0a6fb",
+  "outputSha256": "7cbb4c874505e0ef0ea64ebbbe7adca924950eea7a808a63d2ef39ada1dd7369",
+  "extensionSha256": "6e041540a216f0a42d9866023aa68ecb8fe049b375d89009f9f851eac6b71f48",
   "patches": [
     {
       "id": "private-extension-module",
@@ -31,17 +31,17 @@
     {
       "id": "responsive-chat-width",
       "before": "const viewport = layoutInfo.viewportWidth;",
-      "after": "const viewport = layoutInfo.viewportWidth;\n\t\t\tconst dualChatMax = Math.max(320, Math.min(560, Math.floor(viewport * .32)));\n\t\t\tconst dualChatWidth = Math.min(dualView.chatWidth, dualChatMax);"
+      "after": "const viewport = layoutInfo.viewportWidth;\n\t\t\tconst dualChatMax = Math.max(320, Math.min(560, Math.floor(viewport * .32)));\n\t\t\tconst dualChatWidth = dualView.workspaceFocus ? 0 : Math.min(dualView.chatWidth, dualChatMax);"
     },
     {
       "id": "frame-semantic-mode",
       "before": "className: AppFrame_module_css_default.frame,",
-      "after": "className: AppFrame_module_css_default.frame + \" p0-native\",\n\t\t\t\t\"data-dual-tools-visible\": String(layoutInfo.rightbarShown), \"data-dual-viewport\": viewport, \"data-dual-mode\": dualView.mode,\n\t\t\t\t\"data-dual-global\": String(dualGlobal),\n\t\t\t\t\"data-dual-narrow\": dualView.narrowPane,"
+      "after": "className: AppFrame_module_css_default.frame + \" p0-native\",\n\t\t\t\t\"data-dual-tools-visible\": String(layoutInfo.rightbarShown), \"data-dual-viewport\": viewport, \"data-dual-mode\": dualView.mode,\n\t\t\t\t\"data-dual-global\": String(dualGlobal), \"data-dual-navigation\": String(dualView.navigationOpen), \"data-dual-focus\": String(dualView.workspaceFocus),\n\t\t\t\t\"data-dual-narrow\": dualView.narrowPane,"
     },
     {
       "id": "native-original-geometry-kept",
       "before": "gridTemplateColumns: `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`",
-      "after": "gridTemplateColumns: dualActive ? `${cols.sidebar}px minmax(0px, 1fr) ${dualChatWidth}px` : `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`"
+      "after": "gridTemplateColumns: dualActive ? `52px minmax(0px, 1fr) ${dualChatWidth}px` : `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`"
     },
     {
       "id": "hidden-chat-accessibility",
@@ -51,7 +51,7 @@
     {
       "id": "stable-conversation-parent",
       "before": "(CenterColumn, { children: main })",
-      "after": "(CenterColumn, { children: main, hiddenByP0: dualActive && viewport <= 900 && dualView.narrowPane === \"workspace\" })"
+      "after": "(CenterColumn, { children: main, hiddenByP0: dualActive && (dualView.workspaceFocus || (viewport <= 900 && dualView.narrowPane === \"workspace\")) })"
     },
     {
       "id": "native-tools-drawer-width",
@@ -62,6 +62,26 @@
       "id": "append-stable-desktop",
       "before": "\t\t\t\t\t\tonDrag: onRightbarDrag,\n\t\t\t\t\t\tonEnd: onDragEnd\n\t\t\t\t\t})",
       "after": "\t\t\t\t\t\tonDrag: onRightbarDrag,\n\t\t\t\t\t\tonEnd: onDragEnd\n\t\t\t\t\t}),\n\t\t\t\t\t(0, react_jsx_runtime.jsx)(__p0.Desktop, {store: dualShell, chatWidth: dualChatWidth, chatMax: dualChatMax, active: dualActive && (viewport > 900 || dualView.narrowPane === \"workspace\")}, \"p0-desktop\")"
+    },
+    {
+      "id": "workbench-sidebar-content",
+      "before": "collapsed: sidebarCollapsed,\n\t\t\t\twidth: cols.sidebar",
+      "after": "collapsed: dualActive ? false : sidebarCollapsed,\n\t\t\t\twidth: dualActive ? 300 : cols.sidebar"
+    },
+    {
+      "id": "sidebar-memo-mode",
+      "before": "\t\t\t\tsidebarCollapsed,\n\t\t\t\tcols.sidebar\n\t\t\t]);",
+      "after": "\t\t\t\tsidebarCollapsed,\n\t\t\t\tcols.sidebar, dualActive\n\t\t\t]);"
+    },
+    {
+      "id": "drawer-accessibility",
+      "before": "className: AppFrame_module_css_default.sidebarCol,\n\t\t\t\t\t\tchildren: sidebar",
+      "after": "className: AppFrame_module_css_default.sidebarCol,\n\t\t\t\t\t\t\"data-whale-navigation\": true, \"aria-hidden\": dualActive && !dualView.navigationOpen || undefined, inert: dualActive && !dualView.navigationOpen ? \"\" : undefined,\n\t\t\t\t\t\tchildren: sidebar"
+    },
+    {
+      "id": "navigation-toolbar",
+      "before": "\t\t\t\t\t(0, react_jsx_runtime.jsx)(DocumentTitle, {",
+      "after": "\t\t\t\t\tdualActive && (0, react_jsx_runtime.jsx)(__p0.Navigation, {store:dualShell,renderSlot}),\n\t\t\t\t\t(0, react_jsx_runtime.jsx)(DocumentTitle, {"
     }
   ],
   "rootRegistrations": 1

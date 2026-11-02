@@ -1,5 +1,9 @@
 # DSHOME-Plugin
 
+## Current local candidate: 本机文件夹、格式预览与鲸鱼窄工具栏
+
+左侧保留鲸鱼 Logo，工作区/会话收进抽屉；模块栏合并、操作区可专注放大。本机文件与文件夹分开添加，支持常用格式本地预览。完整 Office 编辑尚未实现。独立候选，未部署；见 [能力、证据与限制](docs/LOCAL-FORMATS-NAVIGATION-2026-11-02.md)。
+
 ## Current local candidate: 文件树与拖动交互整理
 
 本机文件融入文件树；操作区拖入与原生聊天附件分流；模块使用指针拖动、距离阈值、落点与跟随提示、Esc 取消。参考淋雨家工作台的文件/预览分工与紧凑标题。独立候选，未部署；见 [范围与验证](docs/FILES-DOCKING-2026-11-02.md)。

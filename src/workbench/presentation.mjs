@@ -2,6 +2,7 @@ const defaults = { files: '文件', document: '文档', terminal: '终端', web:
 export function fileName(path) { return String(path ?? '').split(/[\\/]/).filter(Boolean).at(-1) || '未命名文档'; }
 export function panelCaption(panel, item) {
   if (panel.title !== defaults[panel.kind]) return panel.title;
+  if (panel.kind === 'document' && item?.localName) return item.localName;
   if (panel.kind === 'document' && item?.document?.getSnapshot().version != null) return fileName(item.document.getSnapshot().path);
   if (panel.kind === 'web' && item?.url) { try { return new URL(item.url).hostname; } catch {} }
   return panel.title;

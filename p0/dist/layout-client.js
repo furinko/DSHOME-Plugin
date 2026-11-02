@@ -213,7 +213,7 @@ window.__ModuleLoader__.load({
 			const frameRef = (0, react.useRef)(null);
 			const viewport = layoutInfo.viewportWidth;
 			const dualChatMax = Math.max(320, Math.min(560, Math.floor(viewport * .32)));
-			const dualChatWidth = Math.min(dualView.chatWidth, dualChatMax);
+			const dualChatWidth = dualView.workspaceFocus ? 0 : Math.min(dualView.chatWidth, dualChatMax);
 			(0, react.useLayoutEffect)(() => {
 				const el = frameRef.current;
 				/* v8 ignore next -- the ref is always attached by effect time: the frame div renders unconditionally. */
@@ -304,12 +304,12 @@ window.__ModuleLoader__.load({
 			const productTitle = "DeepSeek Harness";
 			const rightbarMax = cols.rightbar === 0 ? 0 : clampWidth(rightbarPreference, 300, viewport * RIGHTBAR_MAX_RATIO);
 			const sidebar = (0, react.useMemo)(() => renderSlot("sidebar", {
-				collapsed: sidebarCollapsed,
-				width: cols.sidebar
+				collapsed: dualActive ? false : sidebarCollapsed,
+				width: dualActive ? 300 : cols.sidebar
 			}), [
 				renderSlot,
 				sidebarCollapsed,
-				cols.sidebar
+				cols.sidebar, dualActive
 			]);
 			const main = (0, react.useMemo)(() => (0, react_jsx_runtime.jsx)(MainPanel, {
 				usePanelInfo,
@@ -322,11 +322,11 @@ window.__ModuleLoader__.load({
 				ref: frameRef,
 				className: AppFrame_module_css_default.frame + " p0-native",
 				"data-dual-tools-visible": String(layoutInfo.rightbarShown), "data-dual-viewport": viewport, "data-dual-mode": dualView.mode,
-				"data-dual-global": String(dualGlobal),
+				"data-dual-global": String(dualGlobal), "data-dual-navigation": String(dualView.navigationOpen), "data-dual-focus": String(dualView.workspaceFocus),
 				"data-dual-narrow": dualView.narrowPane,
 				style: {
 					...document.documentElement.hasAttribute("data-windows-titlebar") ? { "--dsh-windows-sidebar-width": `${cols.sidebar}px` } : {},
-					gridTemplateColumns: dualActive ? `${cols.sidebar}px minmax(0px, 1fr) ${dualChatWidth}px` : `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`
+					gridTemplateColumns: dualActive ? `52px minmax(0px, 1fr) ${dualChatWidth}px` : `${cols.sidebar}px minmax(${cols.rightbar === 0 ? 0 : 400}px, 1fr) minmax(0px, ${rightbarMax}px)`
 				},
 				"data-sidebar-collapsed": sidebarCollapsed || void 0,
 				"data-rightbar-collapsed": cols.rightbar === 0 || void 0,
@@ -335,6 +335,7 @@ window.__ModuleLoader__.load({
 				"data-dragging": dragging || void 0,
 				"data-animating": animating > 0 || void 0,
 				children: [
+					dualActive && (0, react_jsx_runtime.jsx)(__p0.Navigation, {store:dualShell,renderSlot}),
 					(0, react_jsx_runtime.jsx)(DocumentTitle, {
 						productTitle,
 						useSessions,
@@ -342,9 +343,10 @@ window.__ModuleLoader__.load({
 					}),
 					(0, react_jsx_runtime.jsx)("div", {
 						className: AppFrame_module_css_default.sidebarCol,
+						"data-whale-navigation": true, "aria-hidden": dualActive && !dualView.navigationOpen || undefined, inert: dualActive && !dualView.navigationOpen ? "" : undefined,
 						children: sidebar
 					}),
-					(0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(CenterColumn, { children: main, hiddenByP0: dualActive && viewport <= 900 && dualView.narrowPane === "workspace" }), (0, react_jsx_runtime.jsx)(RightbarColumn, { children: renderSlot("rightbar", {
+					(0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [(0, react_jsx_runtime.jsx)(CenterColumn, { children: main, hiddenByP0: dualActive && (dualView.workspaceFocus || (viewport <= 900 && dualView.narrowPane === "workspace")) }), (0, react_jsx_runtime.jsx)(RightbarColumn, { children: renderSlot("rightbar", {
 						width: dualActive ? Math.max(0, Math.min(normal.rightbar, viewport - cols.sidebar - dualChatWidth)) : normal.rightbar,
 						viewportWidth: viewport,
 						canShow: normal.rightbar > 0
@@ -628,17 +630,19 @@ __export(extension_exports, {
   Controls: () => Controls,
   Desktop: () => Desktop,
   Frame: () => Frame,
+  Navigation: () => Navigation,
   SceneActions: () => SceneActions,
   css: () => css,
   install: () => install
 });
 module.exports = __toCommonJS(extension_exports);
+var import_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 var import_react3 = __toESM(require("react"), 1);
 
 // scene-store.mjs
 function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
   if (![workspaces, session, connection].every((s) => s?.getSnapshot && s?.subscribe)) throw Error("Authoritative workspace/session/connection sources required");
-  let revision = 0, mode = "original", chatWidth = 420, narrowPane = "workspace", disposed = false;
+  let revision = 0, mode = "original", chatWidth = 420, narrowPane = "workspace", navigationOpen = false, workspaceFocus = false, disposed = false;
   let snapshot, selected = null, reason = "", nextId = 0, epochNumber = 0, watchedSignal, desktop = null;
   const watchAbort = (signal) => {
     if (watchedSignal === signal) return;
@@ -648,7 +652,7 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
   };
   const epochs = /* @__PURE__ */ new WeakMap(), rotations = /* @__PURE__ */ new Map(), scenes = /* @__PURE__ */ new Map(), listeners = /* @__PURE__ */ new Set();
   const publish = () => {
-    snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
+    snapshot = Object.freeze({ revision: ++revision, mode, chatWidth, narrowPane, navigationOpen, workspaceFocus, selected, reason, desktop, scenes: Object.freeze([...scenes.values()]) });
     for (const listener of [...listeners]) listener();
   };
   function sync() {
@@ -724,6 +728,17 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
       mode = next;
       publish();
     },
+    setNavigationOpen(value) {
+      if (disposed) return;
+      navigationOpen = !!value;
+      publish();
+    },
+    setWorkspaceFocus(value) {
+      if (disposed) return;
+      workspaceFocus = !!value;
+      if (workspaceFocus) narrowPane = "workspace";
+      publish();
+    },
     resizeChat(value) {
       if (!Number.isFinite(value)) throw Error("Invalid width");
       if (disposed) return;
@@ -734,6 +749,7 @@ function createSceneStore({ workspaces, session, connection, maxScenes = 8 }) {
       if (!["workspace", "chat"].includes(next)) throw Error("Unknown pane");
       if (disposed) return;
       narrowPane = next;
+      if (next === "chat") workspaceFocus = false;
       publish();
     },
     update(key, patch) {
@@ -773,6 +789,41 @@ var layoutCSS = `
 
 // ../src/workbench/icons.mjs
 var import_react2 = __toESM(require("react"), 1);
+var paths = {
+  files: ["M3 7h7l2 2h9v11H3z", "M3 7V4h6l2 3"],
+  document: ["M6 3h8l4 4v14H6z", "M14 3v5h4", "M9 12h6M9 16h6"],
+  terminal: ["M4 5h16v14H4z", "m8 9 3 3-3 3M13 15h3"],
+  web: ["M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0", "M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18"],
+  note: ["M4 3h16v12l-6 6H4z", "M14 21v-6h6", "M8 8h8M8 11h5"],
+  search: ["M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0", "m15 15 6 6"],
+  layout: ["M3 4h18v16H3z", "M8 4v16M8 13h13"],
+  plus: ["M12 5v14M5 12h14"],
+  save: ["M5 3h13l3 3v15H3V3z", "M7 3v6h10V3M7 21v-7h10v7"],
+  more: ["M4 12h1M11 12h1M18 12h1"],
+  close: ["m6 6 12 12M6 18 18 6"],
+  minimize: ["M5 12h14"],
+  maximize: ["M9 3H3v6M15 3h6v6M21 15v6h-6M3 15v6h6"],
+  restore: ["M8 3v5H3M16 3v5h5M21 16h-5v5M3 16h5v5"],
+  download: ["M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"],
+  compare: ["M8 3H3v18h5M16 3h5v18h-5M9 8h6m-3-3 3 3-3 3M15 16H9m3-3-3 3 3 3"],
+  quote: ["M5 6h5v6H6c0 3 1 4 3 5M14 6h5v6h-4c0 3 1 4 3 5"],
+  refresh: ["M20 7v5h-5M4 17v-5h5", "M5 8a8 8 0 0 1 13-3l2 3M19 16a8 8 0 0 1-13 3l-2-3"],
+  check: ["m5 12 4 4L19 6"],
+  chevron: ["m9 5 7 7-7 7"],
+  arrow: ["m12 5-7 7m7-7 7 7M12 5v14"],
+  eye: ["M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12", "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"],
+  clock: ["M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0", "M12 7v5l3 2"],
+  command: ["M8 8H5a3 3 0 1 1 3-3v14a2 2 0 1 1-2-2h13a2 2 0 1 1-2 2V5a2 2 0 1 1 2 2H8v10"],
+  external: ["M14 3h7v7m0-7L10 14", "M10 3H3v18h18v-7"],
+  connection: ["M8 5h8v5H8zM5 15h14v5H5zM12 10v5"]
+};
+function Icon({ name, size = 18, className = "" }) {
+  return import_react2.default.createElement(
+    "svg",
+    { className: "wb-icon " + className, width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.65, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true, focusable: false },
+    (Object.hasOwn(paths, name) ? paths[name] : paths.document).map((d, index) => import_react2.default.createElement("path", { key: index, d }))
+  );
+}
 
 // extension.mjs
 var h2 = import_react3.default.createElement;
@@ -818,8 +869,38 @@ function SceneActions({ store, native = false }) {
     view.desktop?.RecoveryShelf && h2(view.desktop.RecoveryShelf, { selectedKey: view.selected })
   );
 }
+function Navigation({ store, renderSlot }) {
+  const view = useState(store), root = import_react3.default.useRef(null);
+  import_react3.default.useEffect(() => {
+    if (!view.navigationOpen) return;
+    const close = (e) => {
+      if (e.key === "Escape") {
+        store.setNavigationOpen(false);
+        root.current?.querySelector("[data-nav-trigger]")?.focus();
+      }
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [view.navigationOpen]);
+  return h2(
+    import_react3.default.Fragment,
+    null,
+    view.navigationOpen && h2("button", { className: "p0-navigation-backdrop", "aria-label": "\u6536\u8D77\u5DE5\u4F5C\u533A\u5BFC\u822A", onClick: () => store.setNavigationOpen(false) }),
+    h2(
+      "nav",
+      { className: "p0-navigation-rail", ref: root, "aria-label": "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0\u5DE5\u5177\u680F" },
+      h2("div", { className: "p0-whale-logo", title: "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0", "aria-label": "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0" }, h2(import_dsh_client_ui_primitives.FishLogo, { size: 28 })),
+      h2("button", { type: "button", "data-nav-trigger": true, "aria-label": "\u5DE5\u4F5C\u533A\u4E0E\u4F1A\u8BDD", "aria-expanded": view.navigationOpen, title: "\u5DE5\u4F5C\u533A\u4E0E\u4F1A\u8BDD", onClick: () => store.setNavigationOpen(!view.navigationOpen) }, h2(Icon, { name: "layout", size: 22 })),
+      h2("button", { type: "button", "aria-label": view.workspaceFocus ? "\u6062\u590D\u53F3\u4FA7\u804A\u5929" : "\u4E13\u6CE8\u64CD\u4F5C\u533A", "aria-pressed": view.workspaceFocus, title: view.workspaceFocus ? "\u6062\u590D\u53F3\u4FA7\u804A\u5929" : "\u4E13\u6CE8\u64CD\u4F5C\u533A", onClick: () => store.setWorkspaceFocus(!view.workspaceFocus) }, h2(Icon, { name: view.workspaceFocus ? "restore" : "maximize", size: 21 }))
+    )
+  );
+}
 function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
+  const globalPanel = props.usePanelInfo((info) => info.activePanelId !== null);
+  import_react3.default.useEffect(() => {
+    if (globalPanel || view.mode !== "workbench") props.dualShell.setNavigationOpen(false);
+  }, [globalPanel, view.mode]);
   return h2(
     "div",
     { className: "p0-shell", "data-p0-shell": true, "data-mode": view.mode, "data-pane": view.narrowPane },
@@ -916,13 +997,19 @@ var css = layoutCSS + `
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_handle{display:none}
 .p0-desktop{grid-column:2;grid-row:1;min-width:0;min-height:0;position:relative;background:color-mix(in srgb,var(--dsw-alias-bg-base) 95%,#3277ff)}
 .p0-scene-area{height:100%;overflow:auto}.p0-scene{height:100%;box-sizing:border-box;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:360px}.p0-scene[hidden]{display:none}.p0-scene-header{display:flex;align-items:center;justify-content:space-between;gap:8px}.p0-scene h1{font-size:21px;margin:0 0 5px}.p0-scene small,.p0-scene footer{opacity:.65;font-size:12px}.p0-scene h2{font-size:14px;margin:0}.p0-tools{display:grid;grid-template-columns:minmax(180px,.85fr) minmax(220px,1.15fr);gap:12px;flex:1;min-height:200px}.p0-scene[data-arrangement=stack] .p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.p0-tools article{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;padding:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base)}
-.p0-tools p{font-size:12px;opacity:.7;margin:0}.p0-note textarea{flex:1;min-height:70px;width:100%;box-sizing:border-box;resize:none;border:0;outline:1px solid transparent;background:transparent;color:inherit;font:14px/1.65 Consolas,monospace}.p0-note textarea:focus{outline-color:#88aaff}.p0-web form{display:flex;gap:6px}.p0-web button{white-space:nowrap;flex:0 0 auto}.p0-web input{min-width:0;width:100%;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:5px;padding:6px}.p0-web iframe{border:1px solid var(--dsw-alias-border-l2);width:100%;flex:1;min-height:60px;box-sizing:border-box;background:white}.p0-chat-separator{position:absolute;top:0;bottom:0;right:-3px;width:6px;cursor:col-resize;z-index:8}.p0-chat-separator:focus-visible{outline:2px solid #285ad8}
+.p0-tools p{font-size:12px;opacity:.7;margin:0}.p0-note textarea{flex:1;min-height:70px;width:100%;box-sizing:border-box;resize:none;border:0;outline:1px solid transparent;background:transparent;color:inherit;font:14px/1.65 Consolas,monospace}.p0-note textarea:focus{outline-color:#88aaff}.p0-web form{display:flex;gap:6px}.p0-web button{white-space:nowrap;flex:0 0 auto}.p0-web input{min-width:0;width:100%;color:inherit;background:transparent;border:1px solid var(--dsw-alias-border-l2);border-radius:5px;padding:6px}.p0-web iframe{border:1px solid var(--dsw-alias-border-l2);width:100%;flex:1;min-height:60px;box-sizing:border-box;background:white}.p0-native[data-dual-focus=true] .p0-chat-separator{display:none}.p0-native[data-dual-focus=true][data-dual-mode=workbench]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-chat-separator{position:absolute;top:0;bottom:0;right:-3px;width:6px;cursor:col-resize;z-index:8}.p0-chat-separator:focus-visible{outline:2px solid #285ad8}
 .p0-layout-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.p0-layout-controls label{display:flex;align-items:center;gap:4px}
 .p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=x]{grid-template-columns:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
 .p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=y]{grid-template-columns:1fr;grid-template-rows:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
 @media(max-width:1100px){.p0-scene{padding:10px}.p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
 @media(max-width:540px){.p0-shell .dshome-wb-switch{padding:1px;gap:1px}.p0-shell .dshome-wb-switch button{font-size:11px;padding:3px 4px;min-height:26px}}
-@media(max-width:900px){.p0-narrow-switch{display:inline-flex!important}.p0-shell[data-mode=workbench][data-pane=chat] .p0-native-controls{display:inline-flex}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:0 minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}}
+@media(max-width:900px){.p0-narrow-switch{display:inline-flex!important}.p0-shell[data-mode=workbench][data-pane=chat] .p0-native-controls{display:inline-flex}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:52px minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}}
+
+.p0-navigation-rail{position:absolute;top:var(--dsh-frame-chrome-top,0px);bottom:0;left:0;width:52px;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:12px;background:var(--dsw-specific-sidebar-fill);border-right:1px solid var(--dsw-alias-border-l2);z-index:42;box-sizing:border-box}
+.p0-whale-logo{height:38px;display:grid;place-items:center}.p0-navigation-rail button{width:36px;height:36px;padding:6px;display:grid;place-items:center;background:transparent;color:inherit;border:0;border-radius:6px;cursor:pointer}.p0-navigation-rail button:hover,.p0-navigation-rail button[aria-expanded=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 85%,#647cf4)}
+.p0-navigation-backdrop{position:absolute;inset:0;z-index:40;background:#0002;border:0;cursor:default}
+.p0-native[data-dual-mode=workbench][data-dual-global=false]>[data-whale-navigation]{position:absolute;left:52px;top:var(--dsh-frame-chrome-top,0px);bottom:0;width:min(300px,calc(100vw - 52px));z-index:41;box-shadow:8px 0 30px #0002;visibility:hidden;pointer-events:none}
+.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-navigation=true]>[data-whale-navigation]{visibility:visible;pointer-events:auto}
 `;
 
 return module.exports; })();

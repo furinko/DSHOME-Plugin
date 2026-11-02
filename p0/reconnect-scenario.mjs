@@ -1,3 +1,4 @@
+import {navigate} from './interaction-helpers.mjs';
 import assert from 'node:assert/strict';
 export async function runDesktopReconnect({page,readHostSource,metrics}) {
   const disk=await readHostSource(),counts={...metrics};
@@ -29,8 +30,8 @@ export async function runDesktopReconnect({page,readHostSource,metrics}) {
   assert.equal(metrics.spawn-counts.spawn,1);assert.equal(metrics.close,counts.close);
   const closeButton=()=>page.getByRole('button',{name:'确认关闭旧终端 RETAINED-TERM · A',exact:true});
   async function openShelf(){const shelf=page.locator('.wb-retained-drafts:visible');if(!await shelf.evaluate(n=>n.open))await shelf.locator('summary').click();}
-  await page.getByRole('button',{name:'会话 B',exact:true}).click();await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');await openShelf();await closeButton().click();await page.getByRole('alert').filter({hasText:'请返回原所属会话 A'}).waitFor();assert.equal(metrics.close,counts.close);
-  await page.getByRole('button',{name:'会话 A',exact:true}).click();await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='A');await openShelf();
+  await navigate(page,'会话 B');await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');await openShelf();await closeButton().click();await page.getByRole('alert').filter({hasText:'请返回原所属会话 A'}).waitFor();assert.equal(metrics.close,counts.close);
+  await navigate(page,'会话 A');await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='A');await openShelf();
   let dialog=page.waitForEvent('dialog'),click=closeButton().click();await (await dialog).dismiss();await click;assert.equal(metrics.close,counts.close);
   dialog=page.waitForEvent('dialog');click=closeButton().click();await (await dialog).accept();await click;
   await page.waitForFunction(()=>!window.scopeEntry.controller.contents.has('RETAINED-TERM'));

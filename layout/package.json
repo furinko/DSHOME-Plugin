@@ -10,7 +10,7 @@
     "./client": "./lib/client.js",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json",
-    "./shell-entry": "./lib/entry-243d52684e5b.js"
+    "./shell-entry": "./lib/entry-7cbb4c874505.js"
   },
   "dsh": {
     "client": {
@@ -21,7 +21,8 @@
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-theme",
         "@deepseek-ai/dsh-client-shortcuts",
-        "@deepseek-ai/dsh-api-workspace-controller"
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-primitives"
       ]
     }
   }

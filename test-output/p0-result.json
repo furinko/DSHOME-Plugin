@@ -3,6 +3,15 @@
     "toolbar": {
       "interaction": {
         "dragFiles": {
+          "formats": {
+            "folderLazyOpen": true,
+            "folderRemoveKeepsDocument": true,
+            "officeContentPreview": true,
+            "officeEditing": false,
+            "imageDecoded": true,
+            "utf16Readonly": true,
+            "focusAndDrawer": true
+          },
           "browserHandleWrite": true,
           "inputImport": true,
           "snapshotExport": true,
@@ -87,7 +96,7 @@
         "DSHOME_EXPECTED_PROVIDER_FAILURE"
       ],
       "console": [
-        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:11901/product.js:5458:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:11901/product.js:5470:35)\n    at Content (http://127.0.0.1:11901/product.js:15945:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:11901/product.js:15507:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:11901/product.js:17345:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:11901/ui-layout.js:831:20)\n    at div\n    at AppFrame (http://127.0.0.1:11901/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:11901/ui-layout.js:821:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:11901/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:11901/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:11901/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:11901/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:11901/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:14650/product.js:5768:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:14650/product.js:5780:35)\n    at Content (http://127.0.0.1:14650/product.js:16283:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:14650/product.js:15824:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:14650/product.js:17686:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:14650/ui-layout.js:911:20)\n    at div\n    at AppFrame (http://127.0.0.1:14650/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:14650/ui-layout.js:897:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:14650/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:14650/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:14650/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:14650/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:14650/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
       ]
     },
     "checks": [
@@ -235,11 +244,11 @@
               "height": 900
             },
             "main": {
-              "x": 280,
+              "x": 53.671875,
               "y": 32,
               "right": 946,
               "bottom": 900,
-              "width": 666,
+              "width": 892.328125,
               "height": 868
             },
             "padding": "32px",
@@ -296,10 +305,10 @@
               "bottom": 76
             },
             "toggle": {
-              "x": 12,
-              "y": 2,
-              "right": 40,
-              "bottom": 30
+              "x": 7.5,
+              "y": 92,
+              "right": 43.5,
+              "bottom": 128
             }
           },
           "drag": {
@@ -327,9 +336,9 @@
             "main": {
               "x": 280,
               "y": 40,
-              "right": 946,
+              "right": 1366,
               "bottom": 900,
-              "width": 666,
+              "width": 1086,
               "height": 860
             },
             "padding": "40px",
@@ -386,10 +395,10 @@
               "bottom": 84
             },
             "toggle": {
-              "x": 12,
-              "y": 6,
-              "right": 40,
-              "bottom": 34
+              "x": 7.5,
+              "y": 100,
+              "right": 43.5,
+              "bottom": 136
             }
           },
           "drag": {
@@ -476,10 +485,10 @@
               "bottom": 92
             },
             "toggle": {
-              "x": 12,
-              "y": 10,
-              "right": 40,
-              "bottom": 38
+              "x": 7.5,
+              "y": 108,
+              "right": 43.5,
+              "bottom": 144
             }
           },
           "drag": {
@@ -518,10 +527,10 @@
             "height": 32
           },
           "toggle": {
-            "x": 12,
-            "y": 10,
-            "width": 28,
-            "height": 28
+            "x": 7.5,
+            "y": 60,
+            "width": 36,
+            "height": 36
           }
         }
       ],
@@ -626,15 +635,15 @@
       "commandNavigationDoesNotSpawnOrReload": true,
       "narrow": {
         "panel": {
-          "left": 289,
-          "right": 856,
-          "width": 567
+          "left": 58,
+          "right": 702,
+          "width": 644
         },
         "work": {
-          "left": 280,
-          "right": 871
+          "left": 52,
+          "right": 708
         },
-        "editorWidth": 518
+        "editorWidth": 595
       }
     },
     "notVerified": [
@@ -669,7 +678,7 @@
   ],
   "browserConsole": [
     "Failed to load resource: net::ERR_FAILED",
-    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:11901/product.js:5458:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:11901/product.js:5470:35)\n    at Content (http://127.0.0.1:11901/product.js:15945:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:11901/product.js:15507:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:11901/product.js:17345:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:11901/ui-layout.js:831:20)\n    at div\n    at AppFrame (http://127.0.0.1:11901/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:11901/ui-layout.js:821:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:11901/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:11901/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:11901/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:11901/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:11901/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:14650/product.js:5768:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:14650/product.js:5780:35)\n    at Content (http://127.0.0.1:14650/product.js:16283:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:14650/product.js:15824:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:14650/product.js:17686:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:14650/ui-layout.js:911:20)\n    at div\n    at AppFrame (http://127.0.0.1:14650/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:14650/ui-layout.js:897:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:14650/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:14650/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:14650/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:14650/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:14650/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
   ],
   "journals": [
     {

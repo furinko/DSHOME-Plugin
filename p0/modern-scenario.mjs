@@ -31,7 +31,7 @@ export async function runModernScenario({ page, metrics, iframeLoads, readSecond
   assert.ok(dimensions.scroll > 0); assert.ok(gutter.lines[0] > 1); assert.ok(gutter.lines.length <= Math.ceil(dimensions.height / 24) + 3); assert.ok(gutter.lines.at(-1) <= dimensions.total);
   assert.ok(Math.abs(gutter.textTop - (dimensions.top + 18 + (gutter.lines[0] - 1) * 24 - dimensions.scroll)) < 1);
   const identity = await page.evaluate(() => { const scene = document.querySelector('.p0-full-scene:not([hidden])'); window.modernNodes = [...scene.querySelectorAll('textarea.wb-editor,iframe[data-wb-iframe],.xterm')]; return { layout: window.testP0.ctx.get('dshomeDesktop').entries.get(window.testP0.ctx.get('dualShellP0').getSnapshot().selected).controller.exportLayout(), count: window.modernNodes.length }; });
-  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setViewportSize({ width: 1040, height: 800 });
   await scene().locator('[data-compact=true]').waitFor();
   assert.equal(await page.evaluate(() => window.testP0.ctx.get('dshomeDesktop').entries.get(window.testP0.ctx.get('dualShellP0').getSnapshot().selected).controller.exportLayout()), identity.layout, 'resize alone must not change persisted layout');
   const moduleSelect = scene().getByLabel('切换当前模块', { exact: true });
