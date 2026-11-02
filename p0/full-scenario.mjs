@@ -1,8 +1,9 @@
+import {setMode} from './interaction-helpers.mjs';
 import { ensureLayout, navigate } from './interaction-helpers.mjs';
 import assert from 'node:assert/strict';
 export async function runScenario({page,context,url,childURL,metrics,errors,browserConsole,iframeLoads,readHostSource,writeHostSource,setHostRoot,readSecondarySource}) {
   const toolbar = await (await import('./toolbar-scenario.mjs')).runToolbarScenario({ page, context, url });
-  await page.getByRole('group',{name:'整窗模式',exact:true}).getByRole('button',{name:'聊天',exact:true}).click();
+  await setMode(page,'聊天');
   const checks=[]; const ok=(id,value)=>{assert.ok(value,id);checks.push({id,passed:true});};
   const scene=()=>page.locator('.p0-full-scene:not([hidden])');
   const nativeInput=()=>page.locator('[contenteditable=true][data-lexical-editor=true]:visible');
@@ -15,7 +16,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
     await baseline.evaluate(()=>window.testP0.dispose());
   } finally {await baseline.close();}
   await nativeInput().press('Control+End'); await page.keyboard.insertText(' · 完整工作台草稿'); const chatDraft=await nativeInput().textContent();
-  await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await setMode(page,'工作台');
   await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).waitFor();
   const original=await readHostSource();
   await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).click();
@@ -32,7 +33,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   for(let i=0;i<3;i++) {await ensureLayout(scene()); await scene().getByLabel('布局预设',{exact:true}).selectOption('review');await ensureLayout(scene()); await scene().getByLabel('布局预设',{exact:true}).selectOption('development');}
   assert.equal(await editor().inputValue(),draft); assert.equal(await form().inputValue(),'整窗网页未提交状态');
   await ensureLayout(scene()); await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'取消',exact:true}).click();
-  await page.getByRole('button',{name:'聊天',exact:true}).click(); await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await setMode(page,'聊天'); await setMode(page,'工作台');
   ok('stable-content-and-chat',await page.evaluate(()=>window.fullProbe.editor===document.querySelector('textarea.wb-editor')&&window.fullProbe.frame===document.querySelector('iframe[data-wb-iframe]')&&window.fullProbe.input===document.querySelector('[data-lexical-editor=true]')));
   await navigate(page,'会话 B'); await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
   assert.equal(await editor().inputValue(),draft); await scene().getByRole('button',{name:'保存文件',exact:true}).click();
@@ -47,7 +48,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.waitForFunction(()=>document.querySelector('[data-lexical-editor=true]')?.textContent.includes('dshome'));
   ok('explicit-reference-in-native-draft',(await nativeInput().textContent()).includes('完整工作台草稿'));
   const referenceURI=(await nativeInput().textContent()).match(/dshome-ref:\/\/v1\/[A-Za-z0-9_-]+/)[0];
-  await page.getByRole('button',{name:'聊天',exact:true}).click();
+  await setMode(page,'聊天');
   await page.evaluate(uri=>window.__dshomePluginWorkbench.returnReference(uri,{sessionId:'A'}),referenceURI); await editor().waitFor();
   const returned=await editor().evaluate(n=>({start:n.selectionStart,end:n.selectionEnd})); ok('reference-return-restores-selection',returned.start===0&&returned.end>returned.start);
   await navigate(page,'会话 B'); await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
@@ -108,7 +109,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.screenshot({path:'test-output/full-desktop.png'});
   ok('iframe-not-reloaded',iframeLoads()===1);
   page.once('dialog',dialog=>dialog.accept());
-  await page.reload(); await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await page.reload(); await setMode(page,'工作台');
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>Object.values(e.controller.model.getSnapshot().panels).filter(p=>p.kind==='web').length===2));
   const afterReload=await page.evaluate(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].find(e=>e.available()).controller.exportLayout());
   assert.deepEqual(JSON.parse(afterReload),JSON.parse(beforeReload)); assert.equal(metrics.spawn,1); ok('layout-restores-without-command-replay',true);
@@ -139,7 +140,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await ensureLayout(scene()); await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 便笺',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
   const note=()=>scene().locator('textarea.wb-note'); await note().fill('独立便笺 🐋\n不会写入布局');
   await note().evaluate(n=>{window.noteProbe=n;});
-  await page.getByRole('button',{name:'聊天',exact:true}).click(); await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await setMode(page,'聊天'); await setMode(page,'工作台');
   await navigate(page,'会话 B'); await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
   assert.equal(await note().inputValue(),'独立便笺 🐋\n不会写入布局'); assert.ok(await note().evaluate(n=>n===window.noteProbe));
   const noteId=await note().evaluate(n=>n.closest('[data-wb-content]').dataset.wbContent);

@@ -1,7 +1,8 @@
+import {setMode} from './interaction-helpers.mjs';
 import assert from 'node:assert/strict';
 export async function runFixedModeContentScenario({ page, childURL, readHostSource, iframeLoads, metrics }) {
   const scene=()=>page.locator('.p0-full-scene:not([hidden])');
-  const mode=title=>page.getByRole('group',{name:'整窗模式',exact:true}).getByRole('button',{name:title,exact:true}).click();
+  const mode=title=>setMode(page,title);
   const disk=await readHostSource(), before={spawn:metrics.spawn,close:metrics.close,terminate:metrics.terminate};
   await page.setViewportSize({width:1920,height:1080}); await mode('工作台');
   await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).click();
@@ -16,9 +17,9 @@ export async function runFixedModeContentScenario({ page, childURL, readHostSour
   await page.evaluate(()=>{window.fixedContentNodes={editor:document.querySelector('textarea.wb-editor'),web:document.querySelector('iframe[data-wb-iframe]'),input:document.querySelector('[data-lexical-editor=true]')};});
   for(const width of [1920,1366,760,390]) {
     await page.setViewportSize({width,height:900});
-    const box=await page.getByRole('group',{name:'整窗模式',exact:true}).boundingBox();
+    const box=await page.getByRole('switch',{name:'工作台模式',exact:true}).boundingBox();
     for(let i=0;i<3;i++) { await mode('聊天'); await mode('工作台'); }
-    assert.deepEqual(await page.getByRole('group',{name:'整窗模式',exact:true}).boundingBox(),box);
+    assert.deepEqual(await page.getByRole('switch',{name:'工作台模式',exact:true}).boundingBox(),box);
     assert.equal(await editor().inputValue(),draft); assert.equal(await form().inputValue(),'固定入口未提交网页表单');
     assert.equal(await form().evaluate(()=>window.probeNonce),nonce);
     assert.equal(await page.locator('[data-lexical-editor=true]').textContent(),chatDraft);

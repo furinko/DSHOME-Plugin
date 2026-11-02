@@ -1,7 +1,8 @@
+import {setMode} from './interaction-helpers.mjs';
 import {runDragFiles} from './drag-files-scenario.mjs';
 import assert from 'node:assert/strict';
 export async function runInteractionScenario(page) {
-  await page.getByRole('group', { name: '整窗模式', exact: true }).getByRole('button', { name: '工作台', exact: true }).click();
+  await setMode(page,'工作台');
   const scene = page.locator('.p0-full-scene:not([hidden])');
   const layout = scene.getByRole('button', { name: '布局选项', exact: true });
   assert.equal(await scene.getByRole('button', { name: '保存布局', exact: true }).count(), 0);

@@ -848,15 +848,26 @@ function install(ctx) {
   return store;
 }
 function Controls({ store }) {
-  const view = useState(store);
+  const view = useState(store), checked = view.mode === "workbench";
   return h2(
     "div",
-    { className: "p0-inline-controls" },
-    h2(
-      "div",
-      { className: "p0-mode-switch", role: "group", "aria-label": "\u6574\u7A97\u6A21\u5F0F", title: "\u53EA\u5207\u6362\u5448\u73B0\uFF0C\u4FDD\u7559\u5F53\u524D\u4F1A\u8BDD\u548C\u5DE5\u4F5C\u73B0\u573A" },
-      ...[["original", "\u804A\u5929"], ["workbench", "\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => store.setMode(mode) }, title))
-    )
+    { className: "p0-brand-controls" },
+    h2("div", { className: "p0-workbench-brand", "aria-label": "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0" }, h2(import_dsh_client_ui_primitives.FishLogo, { size: 26 }), h2("strong", null, "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0")),
+    h2("button", {
+      className: "p0-mode-switch",
+      type: "button",
+      role: "switch",
+      "aria-label": "\u5DE5\u4F5C\u53F0\u6A21\u5F0F",
+      "aria-checked": checked,
+      title: checked ? "\u5207\u6362\u5230\u804A\u5929\uFF08\u4FDD\u7559\u5DE5\u4F5C\u73B0\u573A\uFF09" : "\u5207\u6362\u5230\u5DE5\u4F5C\u53F0\uFF08\u4FDD\u7559\u804A\u5929\u8349\u7A3F\uFF09",
+      onClick: () => store.setMode(checked ? "original" : "workbench"),
+      onKeyDown: (e) => {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          e.preventDefault();
+          store.setMode(e.key === "ArrowRight" ? "workbench" : "original");
+        }
+      }
+    }, h2("span", { className: "p0-mode-thumb", "aria-hidden": true }), h2("span", { "aria-hidden": true }, "\u804A\u5929"), h2("span", { "aria-hidden": true }, "\u5DE5\u4F5C\u53F0"))
   );
 }
 function SceneActions({ store, native = false }) {
@@ -889,7 +900,6 @@ function Navigation({ store, renderSlot }) {
     h2(
       "nav",
       { className: "p0-navigation-rail", ref: root, "aria-label": "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0\u5DE5\u5177\u680F" },
-      h2("div", { className: "p0-whale-logo", title: "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0", "aria-label": "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0" }, h2(import_dsh_client_ui_primitives.FishLogo, { size: 28 })),
       h2("button", { type: "button", "data-nav-trigger": true, "aria-label": "\u5DE5\u4F5C\u533A\u4E0E\u4F1A\u8BDD", "aria-expanded": view.navigationOpen, title: "\u5DE5\u4F5C\u533A\u4E0E\u4F1A\u8BDD", onClick: () => store.setNavigationOpen(!view.navigationOpen) }, h2(Icon, { name: "layout", size: 22 })),
       h2("button", { type: "button", "aria-label": view.workspaceFocus ? "\u6062\u590D\u53F3\u4FA7\u804A\u5929" : "\u4E13\u6CE8\u64CD\u4F5C\u533A", "aria-pressed": view.workspaceFocus, title: view.workspaceFocus ? "\u6062\u590D\u53F3\u4FA7\u804A\u5929" : "\u4E13\u6CE8\u64CD\u4F5C\u533A", onClick: () => store.setWorkspaceFocus(!view.workspaceFocus) }, h2(Icon, { name: view.workspaceFocus ? "restore" : "maximize", size: 21 }))
     )
@@ -969,20 +979,33 @@ var css = layoutCSS + `
 .p0-shell[data-mode=workbench] [data-slot="sidebar.brand.name"] .dshome-brand-version{display:none}
 .p0-inline-controls{display:inline-flex;align-items:center;gap:6px;flex:none;min-width:0;-webkit-app-region:no-drag}
 .p0-inline-controls button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 9px;border-radius:6px;cursor:pointer}
-.p0-mode-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base)}
-.p0-inline-controls .p0-mode-switch button{box-sizing:border-box;width:43px;height:26px;padding:3px 4px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
-.p0-mode-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 88%,#3f5ce8)!important;font-weight:600}
-.p0-inline-controls button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-inline-controls button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}
+/* One stable root-owned brand/switch, sharing the existing top header seat. */
+.p0-mode-anchor{position:absolute;left:64px;top:calc(var(--dsh-frame-chrome-top,0px) + 6px);z-index:20;-webkit-app-region:no-drag}
+.p0-brand-controls{display:flex;align-items:center;gap:16px;height:36px}
+.p0-workbench-brand{display:flex;align-items:center;gap:8px;white-space:nowrap}.p0-workbench-brand strong{font-size:15px;font-weight:650;letter-spacing:.02em}
+.p0-mode-switch{position:relative;display:grid;grid-template-columns:1fr 1fr;align-items:center;box-sizing:border-box;width:112px;height:32px;padding:3px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 85%,#647cf4);color:var(--dsw-alias-label-primary);font:12px var(--dsh-font-family-text,system-ui,sans-serif);cursor:pointer;-webkit-app-region:no-drag;box-shadow:inset 0 1px 3px #0001}
+.p0-mode-switch>span:not(.p0-mode-thumb){position:relative;z-index:1;text-align:center}.p0-mode-thumb{position:absolute;left:3px;top:3px;bottom:3px;width:calc(50% - 3px);border-radius:14px;background:var(--dsw-alias-bg-base);box-shadow:0 1px 4px #0003;transition:transform .16s ease}
+.p0-mode-switch[aria-checked=true] .p0-mode-thumb{transform:translateX(100%);background:color-mix(in srgb,var(--dsw-alias-bg-base) 80%,#647cf4)}
+.p0-mode-switch[aria-checked=false]>span:nth-child(2),.p0-mode-switch[aria-checked=true]>span:last-child{font-weight:700}
+.p0-mode-switch:hover{border-color:#647cf4}.p0-mode-switch:focus-visible,.p0-inline-controls button:focus-visible{outline:2px solid #647cf4;outline-offset:3px}
+@media(prefers-reduced-motion:reduce){.p0-mode-thumb{transition:none}}
 .p0-narrow-switch{display:none!important}.p0-shell[data-mode=workbench] .p0-native-controls{display:none}
-.p0-mode-anchor{position:absolute;right:12px;top:calc(var(--dsh-frame-chrome-top,0px) + 12px);z-index:20;-webkit-app-region:no-drag}
-/* Reserve an in-row seat; never add a new mode row or cover native controls. */
-.p0-shell [data-slot="conversation.header"]>header{box-sizing:border-box;padding-right:140px;container-type:inline-size}
-.p0-shell [data-slot="conversation.header"] :has(>[data-slot="conversation.session.header.corner"]){right:140px}
-@container(max-width:540px){.p0-shell .dshome-wb-switch{padding:1px;gap:1px}.p0-shell .dshome-wb-switch button{font-size:11px;padding:3px 4px;min-height:26px}}
-.p0-shell .wb-header{padding-right:124px}
-.p0-recovery-anchor{position:absolute;left:16px;top:calc(var(--dsh-frame-chrome-top,0px) + 12px);z-index:19}
-.p0-mode-switch{box-sizing:border-box;width:94px;height:32px}
-@container(max-width:540px){.p0-shell .wb-header{padding-right:116px}.p0-shell .wb-header-actions{gap:4px}}
+/* The native sidebar still owns navigation. Its redundant brand seat is hidden,
+   and its own toggle remains reachable at the left edge. No state is reparented. */
+.p0-native:not([data-dual-mode=workbench][data-dual-global=false]) [data-slot="sidebar"] [class$="_logoRow"]{position:relative}
+.p0-native:not([data-dual-mode=workbench][data-dual-global=false]) [data-slot="sidebar"] [class$="_logoRow"]>button:has([data-slot="sidebar.brand.name"]){visibility:hidden}
+.p0-native:not([data-dual-mode=workbench][data-dual-global=false]) [data-slot="sidebar"] button[class*="_toggle"]{position:fixed;left:12px;top:calc(var(--dsh-frame-chrome-top,0px) + 8px);z-index:21}
+.p0-native [data-slot="sidebar"] button[class*="_toggle"] [class$="_railMark"]{display:none}
+.p0-native [data-slot="sidebar"] button[class*="_toggle"] [class$="_panelIcon"]{display:inline}
+.p0-shell [data-slot="conversation.header"]>header{box-sizing:border-box;container-type:inline-size}
+.p0-shell[data-mode=original] [data-slot="conversation.header"]>header{padding-left:76px}
+.p0-shell .wb-header{padding-left:302px;padding-right:12px}
+.p0-recovery-anchor{position:absolute;left:64px;top:calc(var(--dsh-frame-chrome-top,0px) + 48px);z-index:19}
+.p0-native[data-dual-mode=original][data-sidebar-collapsed] [data-slot="conversation.header"]>header{padding-left:260px}
+@media(max-width:900px){.p0-shell [data-slot="conversation.header"]>header{padding-left:260px}}
+@media(max-width:420px){.p0-shell [data-slot="conversation.header"]>header,.p0-native[data-dual-mode=original][data-sidebar-collapsed] [data-slot="conversation.header"]>header{padding-left:230px}}
+@container(max-width:650px){.p0-shell .wb-header{padding-top:44px;padding-left:12px;min-height:80px}.p0-shell .wb-header-actions{margin-left:auto}}
+@media(max-width:420px){.p0-brand-controls{gap:10px}.p0-workbench-brand{gap:5px}.p0-workbench-brand strong{font-size:13px}.p0-mode-switch{width:104px}}
 
 .p0-inline-controls .wb-retained-drafts{font-size:11px}.p0-inline-controls .wb-retained-drafts summary{cursor:pointer;white-space:nowrap}.p0-inline-controls .wb-retained-drafts>section{color:var(--dsw-alias-label-primary);max-width:calc(100vw - 40px)}
 .wb-header:has(.p0-inline-controls) .wb-heading-mark,.wb-header:has(.p0-inline-controls) .wb-heading strong{display:none}
@@ -1006,7 +1029,7 @@ var css = layoutCSS + `
 @media(max-width:900px){.p0-narrow-switch{display:inline-flex!important}.p0-shell[data-mode=workbench][data-pane=chat] .p0-native-controls{display:inline-flex}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:52px minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}}
 
 .p0-navigation-rail{position:absolute;top:var(--dsh-frame-chrome-top,0px);bottom:0;left:0;width:52px;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:12px;background:var(--dsw-specific-sidebar-fill);border-right:1px solid var(--dsw-alias-border-l2);z-index:42;box-sizing:border-box}
-.p0-whale-logo{height:38px;display:grid;place-items:center}.p0-navigation-rail button{width:36px;height:36px;padding:6px;display:grid;place-items:center;background:transparent;color:inherit;border:0;border-radius:6px;cursor:pointer}.p0-navigation-rail button:hover,.p0-navigation-rail button[aria-expanded=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 85%,#647cf4)}
+.p0-navigation-rail button{width:36px;height:36px;padding:6px;display:grid;place-items:center;background:transparent;color:inherit;border:0;border-radius:6px;cursor:pointer}.p0-navigation-rail button:hover,.p0-navigation-rail button[aria-expanded=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 85%,#647cf4)}
 .p0-navigation-backdrop{position:absolute;inset:0;z-index:40;background:#0002;border:0;cursor:default}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>[data-whale-navigation]{position:absolute;left:52px;top:var(--dsh-frame-chrome-top,0px);bottom:0;width:min(300px,calc(100vw - 52px));z-index:41;box-shadow:8px 0 30px #0002;visibility:hidden;pointer-events:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-navigation=true]>[data-whale-navigation]{visibility:visible;pointer-events:auto}

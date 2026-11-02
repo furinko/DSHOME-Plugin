@@ -1,5 +1,9 @@
 # DSHOME-Plugin
 
+## Current local candidate: 常驻鲸鱼品牌与拨动开关
+
+操作区上方常驻 Logo 与“鲸鱼工作台”，旁边为聊天/工作台拨动开关；左侧仅保留工具入口。位置稳定，支持键盘，复用现有标题行并在窄窗避让。源码候选，未部署；见 [验证与限制](docs/BRAND-SWITCH-2026-11-02.md)。
+
 ## Current local candidate: 本机文件夹、格式预览与鲸鱼窄工具栏
 
 左侧保留鲸鱼 Logo，工作区/会话收进抽屉；模块栏合并、操作区可专注放大。本机文件与文件夹分开添加，支持常用格式本地预览。完整 Office 编辑尚未实现。独立候选，未部署；见 [能力、证据与限制](docs/LOCAL-FORMATS-NAVIGATION-2026-11-02.md)。

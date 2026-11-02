@@ -1,3 +1,4 @@
+import {setMode} from './interaction-helpers.mjs';
 import {navigate} from './interaction-helpers.mjs';
 import assert from 'node:assert/strict';
 export async function runScenario({ page, context, url, childURL, metrics, errors, iframeLoads }) {
@@ -32,7 +33,7 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   await input().press('Control+End'); await page.keyboard.insertText(' · P0 原生输入');
   const draftA = await input().textContent();
   await page.evaluate(() => { window.probeP0 = { input: document.querySelector('[data-lexical-editor=true]'), root: document.querySelector('.mP3x-q_frame'), shortcuts: window.testP0.shortcuts.size }; });
-  await page.getByRole('button',{name:'工作台', exact:true}).click(); await visibleScene().waitFor();
+  await setMode(page,'工作台'); await visibleScene().waitFor();
   ok('workbench-scene-is-not-sidebar', !await visibleScene().evaluate(node => !!node.closest('[data-slot=rightbar]')));
   await page.getByRole('textbox',{name:'工作区便笺'}).fill('这个工作区共用便笺：切会话、布局和模式都不丢。');
   await page.getByRole('textbox',{name:'网页地址'}).fill(childURL); await visibleScene().getByRole('button',{name:'打开',exact:true}).click();
@@ -97,7 +98,7 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   await edit.getByRole('button',{name:'移动面板',exact:true}).click();
   await edit.getByRole('button',{name:'应用布局'}).click();
   ok('split-tabs-preserve-web', await form().inputValue()==='未提交网页表单：A与B共用，不应刷新' && await visibleScene().locator('.p0-note').isVisible());
-  for (let i=0;i<3;i++) { await page.getByRole('button',{name:'原版',exact:true}).click(); ok('real-original-round-'+i, !await page.getByRole('region',{name:'主操作区'}).isVisible()); assert.equal(await input().textContent(),draftA); await page.getByRole('button',{name:'工作台',exact:true}).click(); }
+  for (let i=0;i<3;i++) { await setMode(page,'原版'); ok('real-original-round-'+i, !await page.getByRole('region',{name:'主操作区'}).isVisible()); assert.equal(await input().textContent(),draftA); await setMode(page,'工作台'); }
   ok('same-native-root-and-input', await page.evaluate(() => window.probeP0.root === document.querySelector('.mP3x-q_frame') && window.probeP0.input === document.querySelector('[data-lexical-editor=true]')));
   await navigate(page,'会话 B'); await page.waitForFunction(() => window.testP0.ctx.uiSession.current.getSnapshot().key === 'B');
   await input().pressSequentially('B 独立草稿'); const draftB = await input().textContent();
@@ -119,7 +120,7 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   ok('global-main-round-trip', await form().inputValue() === '未提交网页表单：A与B共用，不应刷新');
   await page.screenshot({path:'test-output/p0-workbench.png'});
   await page.setViewportSize({width:760,height:900});
-  await page.getByRole('button',{name:'聊天',exact:true}).click(); await input().waitFor();
+  await setMode(page,'聊天'); await input().waitFor();
   await page.getByRole('button',{name:'操作区',exact:true}).click(); await visibleScene().waitFor();
   ok('narrow-focus-boundary', await page.locator('.mP3x-q_centerCol').getAttribute('inert') !== null);
   await page.screenshot({path:'test-output/p0-narrow.png'});
