@@ -134,11 +134,13 @@ export async function runScenario({ page, context, url, childURL, metrics, error
   ok('theme-runtime-dark', dark.scheme === 'dark' && dark.attr, JSON.stringify(dark));
   await page.screenshot({path:'test-output/p0-workbench-dark.png'});
   ok('zero-tool-authority', metrics.spawn === 0, 'P0 supplies no file-save, terminal-input or AI-operation capability.');
-  await page.getByRole('group',{name:'侧栏工具',exact:true}).getByRole('button',{name:'侧栏工具',exact:true}).click();
+  assert.equal(await page.getByRole('group',{name:'侧栏工具',exact:true}).count(),0);
+  // Compatibility lifecycle only: the removed user-facing entry is not recreated.
+  await page.evaluate(()=>window.__dshomePluginWorkbench.setMode('workbench'));
   await page.locator('.dshome-v2:visible').waitFor();
   const legacyTools = await page.evaluate(() => { const b=q=>{const r=document.querySelector(q).getBoundingClientRect();return{x:r.x,right:r.right,width:r.width};};return{tools:b('.dshome-v2'),chat:b('.mP3x-q_centerCol'),mode:window.testP0.ctx.dualShellP0.getSnapshot().mode};});
   ok('existing-sidebar-tools-compatible',legacyTools.mode==='workbench' && legacyTools.tools.right<=legacyTools.chat.x+1 && legacyTools.tools.width>=300,JSON.stringify(legacyTools));
-  await page.getByRole('group',{name:'侧栏工具',exact:true}).getByRole('button',{name:'收起工具',exact:true}).click();
+  await page.evaluate(()=>window.__dshomePluginWorkbench.setMode('original'));
   assert.equal(await form().inputValue(),'未提交网页表单：A与B共用，不应刷新');
   const windowChrome = await (await import('./window-scenario.mjs')).runWindowScenario(page);
   assert.deepEqual(errors,[]);

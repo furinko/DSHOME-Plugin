@@ -59,10 +59,14 @@ export const modernCSS = `
 @container(max-width:540px){.wb-header{min-height:68px;padding:12px;gap:7px}.wb-heading-mark{display:none}.wb-heading strong{font-size:16px}.wb-project{max-width:130px}.wb-connection{display:none}.wb-compact-switch{padding:8px 12px}.wb-compact-switch>small{display:none}.wb-commandbar{padding:0 12px 11px;gap:6px}.wb-commandbar .wb-quick-trigger{order:3;flex-basis:100%;max-width:none}.wb-commandbar .wb-layout-caption{display:none}.wb-activity-rail{display:none}.wb-stage{padding:8px}.wb-layout-editor{display:flex;flex-direction:column;padding:9px}.wb-layout-editor>aside,.wb-layout-draft{flex-shrink:0}.wb-module-library{max-height:230px}.wb-status{padding:6px 10px}.wb-find input{flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){.dshome-v2 *{transition:none!important}}
 
-.wb-tab-item{display:inline-flex;align-items:center;flex:none;min-width:0;max-width:260px;border-right:1px solid var(--wb-line)}
-.wb-tab-item>[role=tab]{min-width:0;flex:1;border-right:0!important}
-.dshome-v2 .wb-tabs .wb-tab-close{flex:none;padding:2px;min-height:22px;min-width:22px;max-width:22px;width:22px;margin-right:4px;border:0;background:transparent;opacity:.55}
-.wb-tab-item:hover .wb-tab-close,.wb-tab-close:focus-visible{opacity:1!important}
-.wb-tab-item:has([aria-selected=true]){background:var(--wb-selected)}
+/* The wrapper owns the complete selected surface; its two buttons stay transparent. */
+.dshome-v2 .wb-tab-item{display:inline-flex;align-items:center;flex:none;min-width:0;max-width:260px;border:1px solid transparent;border-bottom:2px solid transparent;border-radius:7px 7px 0 0;background:transparent;color:var(--wb-quiet)}
+.dshome-v2 .wb-tab-item:hover{background:var(--wb-selected)}
+.dshome-v2 .wb-tab-item:has([aria-selected=true]){background:var(--wb-surface);border-color:var(--wb-line);border-bottom-color:var(--wb-accent);color:var(--wb-text)}
+.dshome-v2 .wb-tabs .wb-tab-item>[role=tab]{min-width:0;max-width:220px;flex:1;border:0;border-radius:0;background:transparent;color:inherit;padding:7px 9px;gap:6px;outline-offset:-3px}
+.dshome-v2 .wb-tabs .wb-tab-close{display:inline-flex;align-items:center;justify-content:center;flex:none;padding:0;min-height:24px;height:24px;min-width:24px;max-width:24px;width:24px;margin:0 4px 0 0;border:0;border-radius:4px;background:transparent;color:inherit;opacity:.65;outline-offset:-2px}
+.dshome-v2 .wb-tabs .wb-tab-close:hover,.dshome-v2 .wb-tabs .wb-tab-close:focus-visible{background:var(--wb-selected);opacity:1}
+body[data-ds-dark-theme] .dshome-v2 .wb-tabs .wb-tab-item>button{color:#a9b5c8}
+body[data-ds-dark-theme] .dshome-v2 .wb-tabs .wb-tab-item:has([aria-selected=true])>button{color:#e6edf7}
 .wb-layout-tools{max-height:40vh;overflow:auto}
 `;

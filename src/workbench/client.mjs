@@ -119,12 +119,6 @@ export function applyWorkbench(ctx, hostRequire) {
       referenceCurrent: controller => !disposed && !!scope && services.available(shelfOwners.get(shelf)) && referenceReady && scope === activeScope && generation === referenceGeneration && current() === sessionId && workspaces.get(sessionId) === controller,
       onOriginal: () => original(sessionId) });
   }
-  function Switch({ sessionId }) {
-    React.useSyncExternalStore(source.subscribe, source.getSnapshot);
-    return h('div', { className: 'dshome-wb-switch', role: 'group', 'aria-label': '侧栏工具' },
-      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) !== 'workbench', onClick: () => original(sessionId) }, '收起工具'),
-      h('button', { type: 'button', 'aria-pressed': modes.get(sessionId) === 'workbench', onClick: () => enter(sessionId), disabled: !!reason, title: reason }, '侧栏工具'));
-  }
   const beforeUnload = e => { if ([...shelves.values()].some(s => s.hasUnsaved())) { e.preventDefault(); e.returnValue = ''; } };
   window.addEventListener('beforeunload', beforeUnload); keep(() => window.removeEventListener('beforeunload', beforeUnload));
   function startBindings() {
@@ -147,10 +141,6 @@ export function applyWorkbench(ctx, hostRequire) {
       });
       yield seats.slots.inject('sidebar.right.pane.tab', () => seats.slots.register({ name: 'sidebar.right.pane.tab', key: ID }, Body));
       yield seats.slots.inject('sidebar.right.pane.tab.title', () => seats.slots.register({ name: 'sidebar.right.pane.tab.title', key: ID }, () => h('span', null, '工作台')));
-      yield seats.slots.inject('conversation.session.header.utilities', () => seats.slots.register({ name: 'conversation.session.header.utilities', id: ID, order: -50 }, Switch));
-      // Empty Sessions hide Header utilities. Use the actual in-flow Hero options
-       // list, not a floating control over a native composer or another panel.
-       yield seats.slots.inject('conversation.hero.options', () => seats.slots.register({ name: 'conversation.hero.options', id: ID, order: -50 }, Switch));
       yield seats.sidebarRight.mounted.subscribe(publish);
       uiReady = true; availability(); yield () => { uiReady = false; availability(); };
     }, 'dshome-workspace: stable native content seats');

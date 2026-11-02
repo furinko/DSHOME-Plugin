@@ -123,10 +123,12 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.setViewportSize({width:760,height:900}); await page.getByRole('button',{name:'显示右侧聊天',exact:true}).click(); await nativeInput().waitFor();
   await page.getByRole('button',{name:'显示操作区',exact:true}).click(); ok('narrow-focus-boundary',await page.locator('.mP3x-q_centerCol').getAttribute('inert')!==null);
   await page.setViewportSize({width:1920,height:1080}); await page.waitForFunction(()=>document.querySelector('.p0-native').dataset.dualViewport==='1920');
-  await page.getByRole('group',{name:'侧栏工具',exact:true}).getByRole('button',{name:'侧栏工具',exact:true}).click();
+  assert.equal(await page.getByRole('group',{name:'侧栏工具',exact:true}).count(),0);
+  // Compatibility lifecycle only: the removed user-facing entry is not recreated.
+  await page.evaluate(()=>window.__dshomePluginWorkbench.setMode('workbench'));
   await page.locator('[data-slot=rightbar] .dshome-v2').waitFor();
   const drawer=await page.evaluate(()=>{const a=document.querySelector('[data-slot=rightbar] .dshome-v2').getBoundingClientRect(),b=document.querySelector('.mP3x-q_centerCol').getBoundingClientRect();return a.width>=300&&a.right<=b.x+1;}); ok('legacy-sidebar-tools-coexist',drawer);
-  await page.getByRole('group',{name:'侧栏工具',exact:true}).getByRole('button',{name:'收起工具',exact:true}).click();
+  await page.evaluate(()=>window.__dshomePluginWorkbench.setMode('original'));
   await page.waitForFunction(()=>!window.testP0.ctx.get('sidebarRight').isExpanded());
   await page.locator('[data-slot=rightbar] .dshome-v2').waitFor({state:'hidden',timeout:5000}).catch(async error=>{throw Error(error.message+' '+JSON.stringify(await page.evaluate(()=>({frame:document.querySelector('.p0-native').dataset,column:[...document.querySelectorAll('.mP3x-q_rightbarCol')].map(n=>({visibility:getComputedStyle(n).visibility,html:n.outerHTML.slice(0,500)})),expanded:window.testP0.ctx.get('sidebarRight').isExpanded()}))));});ok('collapsed-native-drawer-no-longer-obscures-main-workspace',true);
   await page.evaluate(()=>window.testP0.ctx.theme.setTheme('dark')); await page.waitForFunction(()=>document.body.hasAttribute('data-ds-dark-theme')); ok('actual-theme-runtime-dark',true);

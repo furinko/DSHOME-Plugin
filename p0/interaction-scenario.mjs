@@ -34,7 +34,18 @@ export async function runInteractionScenario(page) {
   assert.equal(await note.inputValue(), '保留这份草稿');
   page.once('dialog', d => d.accept()); await close.click();
   assert.equal(await note.count(), 0);
-  await page.screenshot({path:'test-output/interaction-workbench.png'});
+  assert.equal(await page.getByRole('group', { name: '侧栏工具', exact: true }).count(), 0);
+  const tab = scene.locator('.wb-tab-item:visible').first();
+  const colors = await tab.evaluate(n => ({ outer: getComputedStyle(n).backgroundColor, tab: getComputedStyle(n.querySelector('[role=tab]')).backgroundColor, close: getComputedStyle(n.querySelector('.wb-tab-close')).backgroundColor, width: n.querySelector('.wb-tab-close').getBoundingClientRect().width }));
+  assert.equal(colors.tab, 'rgba(0, 0, 0, 0)'); assert.equal(colors.close, 'rgba(0, 0, 0, 0)'); assert.equal(colors.width, 24);
+  await page.screenshot({path:'test-output/tabs-workbench.png'});
+  await tab.screenshot({path:'test-output/tab-detail.png'});
+  await page.evaluate(()=>window.testP0.ctx.theme.setTheme('dark'));
+  await page.waitForFunction(()=>document.body.hasAttribute('data-ds-dark-theme'));
+  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.p0-full-scene:not([hidden]) .wb-tab-item [aria-selected=true]')).color==='rgb(230, 237, 247)');
+  assert.equal(await tab.locator('[role=tab]').evaluate(n=>getComputedStyle(n).color),'rgb(230, 237, 247)');
+  await tab.screenshot({path:'test-output/tab-detail-dark.png'});
+  await page.evaluate(()=>window.testP0.ctx.theme.setTheme('light'));
+  await page.waitForFunction(()=>!document.body.hasAttribute('data-ds-dark-theme'));
   return { layoutDisclosure:true, escapeRestoresFocus:true, outsideClickDismisses:true, directFileOpen:true, textHomeEnd:true, commandShortcut:true, tabCloseCancelPreservesDraft:true, confirmedClose:true };
 }
-
