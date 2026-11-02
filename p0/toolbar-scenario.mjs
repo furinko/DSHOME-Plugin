@@ -18,6 +18,8 @@ export async function runToolbarScenario({ page, context, url }) {
     await baseline.locator('[data-lexical-editor=true]').waitFor();
     await page.waitForFunction(() => document.querySelector('.p0-native').dataset.dualViewport==='1366');
     assert.deepEqual(await geometry(page),await geometry(baseline));
+    const nativeChrome=p=>p.evaluate(()=>{const toggle=[...document.querySelectorAll('button')].find(n=>/^(Open sidebar|Collapse sidebar|打开侧边栏|收起侧边栏)$/.test(n.getAttribute('aria-label')||'')); const r=toggle.getBoundingClientRect();return {toggle:{x:r.x,y:r.y,width:r.width,height:r.height},position:getComputedStyle(toggle).position,headerLeft:getComputedStyle(document.querySelector('[data-slot="conversation.header"]>header')).paddingLeft,brandVisible:!!document.querySelector('[data-slot="sidebar.brand.name"]')?.getBoundingClientRect().width};});
+    assert.deepEqual(await nativeChrome(page),await nativeChrome(baseline),'chat keeps native brand, toggle and header left padding');
     await baseline.evaluate(() => window.testP0.dispose());
   } finally { await baseline.close(); }
   assert.equal(await page.locator('.p0-toolbar').count(),0);
@@ -37,24 +39,24 @@ export async function runToolbarScenario({ page, context, url }) {
     let before;
     for (const mode of ['聊天','工作台','聊天','工作台']) {
       await click(mode);
-      await page.waitForTimeout(180);
-      assert.equal(await page.locator('.p0-workbench-brand').isVisible(),true);
+      await page.waitForTimeout(400);
+      assert.equal(await page.locator('.p0-workbench-brand').isVisible(),mode==='工作台');
       assert.equal(await page.locator('.p0-workbench-brand').innerText(),'鲸鱼工作台');
       assert.equal(await page.locator('.p0-navigation-rail .p0-whale-logo').count(),0);
-      assert.equal(await page.locator('[data-slot="sidebar"] button[class*="_toggle"] [class$="_railMark"]:visible').count(),0);
+
       if (mode==='聊天') {
         const toggle=page.getByRole('button',{name:/^(Open sidebar|Collapse sidebar|打开侧边栏|收起侧边栏)$/}).filter({visible:true});
         const r=await toggle.boundingBox(); assert.ok(r.x>=0 && r.x+r.width<=width,'native navigation remains on-screen');
-        assert.equal(await toggle.evaluate(n=>{const r=n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'native navigation hit target is reachable');
+        assert.equal(await toggle.evaluate(n=>{const r=n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'native navigation hit target is reachable '+width);
       }
       const box=await modes().boundingBox(); before ??= box;
-      assert.deepEqual(box,before,'mode position cannot move at '+width);
+      assert.deepEqual(box,before,'one fixed switch position across modes at '+width);
       assert.ok(box.x>=0 && box.x+box.width<=width);
       assert.equal(await modes().evaluate(n=>n===window.fixedModeNode),true);
       // The native collapsed rail does not mount its brand-name seat.
       if (await page.locator('[data-slot="sidebar.brand.name"] .dshome-glow-name').count()) assert.equal(await brand(),mode==='聊天'?'DSHOME':'鲸鱼工作台');
       const overlaps=await page.locator('[data-slot="conversation.header"] button:visible,.p0-full-scene:not([hidden]) .wb-header button:visible').evaluateAll((nodes,b)=>nodes.filter(n=>{const r=n.getBoundingClientRect();return r.width&&r.height&&r.x<b.x+b.width&&r.right>b.x&&r.y<b.y+b.height&&r.bottom>b.y;}).map(n=>n.textContent||n.getAttribute('aria-label')),box);
-      assert.deepEqual(overlaps,[],'mode switch must not cover native/workspace buttons');
+      assert.deepEqual(overlaps,[],'mode switch must not cover native/workspace buttons: '+width+' '+mode+' '+JSON.stringify(box));
       if (width===390 && mode==='聊天') await page.screenshot({ path:'test-output/brand-narrow-chat.png' });
       if (width===1366 && mode==='聊天') await page.screenshot({ path:'test-output/fixed-mode-chat.png' });
       if (width===1366 && mode==='工作台') await page.screenshot({ path:'test-output/fixed-mode-workbench.png' });
@@ -69,7 +71,7 @@ export async function runToolbarScenario({ page, context, url }) {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
     probes.push({ width,box:before });
   }
-  await page.setViewportSize({ width:1366,height:900 }); const globalBox=await modes().boundingBox();
+  await page.setViewportSize({ width:1366,height:900 }); await click('聊天'); const globalBox=await modes().boundingBox(); await click('工作台');
   await navigate(page,'其他主面板'); await page.getByRole('region',{name:'隔离全局页面'}).waitFor();
   await click('聊天'); await click('工作台');
   assert.deepEqual(await modes().boundingBox(),globalBox);
@@ -85,5 +87,14 @@ export async function runToolbarScenario({ page, context, url }) {
   await navigate(page,'会话 A');
   await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='A');
   await page.setViewportSize({ width:1920,height:1080 });
-  const interaction = await runInteractionScenario(page); return { interaction, noSeparateModeRow:true,originalFrameGeometryExact:true,oneStableModeNode:true,persistentWhaleBrand:true,keyboardSwitch:true,sidebarBrandFollowsMode:true,globalAndBlankSessionReachable:true,narrowPaneDoesNotMoveMode:true,probes };
+  await click('工作台');
+  const drawer=page.locator('[data-whale-navigation]');
+  await drawer.evaluate(n=>{const p=document.createElement('div');p.dataset.visibilityProbe='true';p.style.visibility='visible';p.textContent='工作区泄漏检测';n.append(p);});
+  assert.equal(await page.locator('[data-visibility-probe]').isVisible(),false,'explicitly visible descendants cannot leak through the closed drawer');
+  await page.getByRole('button',{name:'工作区与会话',exact:true}).click();
+  assert.equal(await page.locator('[data-visibility-probe]').isVisible(),true);
+  await page.getByRole('button',{name:'收起工作区导航',exact:true}).click();
+  assert.equal(await page.locator('[data-visibility-probe]').isVisible(),false);
+  await page.locator('[data-visibility-probe]').evaluate(n=>n.remove());
+  const interaction = await runInteractionScenario(page); return { interaction, noSeparateModeRow:true,originalFrameGeometryExact:true,oneStableModeNode:true,workbenchOnlyBrand:true,chatChromePreserved:true,closedDrawerDescendantsHidden:true,keyboardSwitch:true,sidebarBrandFollowsMode:true,globalAndBlankSessionReachable:true,narrowPaneDoesNotMoveMode:true,probes };
 }

@@ -32,7 +32,9 @@
       "noSeparateModeRow": true,
       "originalFrameGeometryExact": true,
       "oneStableModeNode": true,
-      "persistentWhaleBrand": true,
+      "workbenchOnlyBrand": true,
+      "chatChromePreserved": true,
+      "closedDrawerDescendantsHidden": true,
       "keyboardSwitch": true,
       "sidebarBrandFollowsMode": true,
       "globalAndBlankSessionReachable": true,
@@ -41,54 +43,54 @@
         {
           "width": 1920,
           "box": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 1814,
+            "y": 12,
+            "width": 94,
             "height": 32
           }
         },
         {
           "width": 1366,
           "box": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 1260,
+            "y": 12,
+            "width": 94,
             "height": 32
           }
         },
         {
           "width": 1040,
           "box": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 934,
+            "y": 12,
+            "width": 94,
             "height": 32
           }
         },
         {
           "width": 760,
           "box": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 654,
+            "y": 12,
+            "width": 94,
             "height": 32
           }
         },
         {
           "width": 520,
           "box": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 414,
+            "y": 12,
+            "width": 94,
             "height": 32
           }
         },
         {
           "width": 390,
           "box": {
-            "x": 171.3125,
-            "y": 8,
-            "width": 104,
+            "x": 284,
+            "y": 12,
+            "width": 94,
             "height": 32
           }
         }
@@ -100,7 +102,7 @@
         "DSHOME_EXPECTED_PROVIDER_FAILURE"
       ],
       "console": [
-        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:6464/product.js:5768:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:6464/product.js:5780:35)\n    at Content (http://127.0.0.1:6464/product.js:16283:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:6464/product.js:15824:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:6464/product.js:17686:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:6464/ui-layout.js:922:20)\n    at div\n    at AppFrame (http://127.0.0.1:6464/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:6464/ui-layout.js:908:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:6464/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:6464/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:6464/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:6464/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:6464/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:11745/product.js:5768:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:11745/product.js:5780:35)\n    at Content (http://127.0.0.1:11745/product.js:16283:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:11745/product.js:15824:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:11745/product.js:17686:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:11745/ui-layout.js:922:20)\n    at div\n    at AppFrame (http://127.0.0.1:11745/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:11745/ui-layout.js:908:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:11745/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:11745/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:11745/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:11745/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:11745/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
       ]
     },
     "checks": [
@@ -248,26 +250,26 @@
               "height": 900
             },
             "main": {
-              "x": 52,
+              "x": 53.65625,
               "y": 32,
               "right": 946,
               "bottom": 900,
-              "width": 894,
+              "width": 892.34375,
               "height": 868
             },
             "padding": "32px",
             "rows": 0,
             "switch": {
-              "x": 190.5,
-              "y": 40,
-              "right": 302.5,
-              "bottom": 72
+              "x": 1260,
+              "y": 44,
+              "right": 1354,
+              "bottom": 76
             },
             "toggle": {
               "x": 12,
-              "y": 40,
+              "y": 2,
               "right": 40,
-              "bottom": 68
+              "bottom": 30
             }
           },
           "drag": {
@@ -303,10 +305,10 @@
             "padding": "32px",
             "rows": 0,
             "switch": {
-              "x": 190.5,
-              "y": 40,
-              "right": 302.5,
-              "bottom": 72
+              "x": 1260,
+              "y": 44,
+              "right": 1354,
+              "bottom": 76
             },
             "toggle": {
               "x": 7.5,
@@ -348,16 +350,16 @@
             "padding": "40px",
             "rows": 0,
             "switch": {
-              "x": 190.5,
-              "y": 48,
-              "right": 302.5,
-              "bottom": 80
+              "x": 1260,
+              "y": 52,
+              "right": 1354,
+              "bottom": 84
             },
             "toggle": {
               "x": 12,
-              "y": 48,
+              "y": 6,
               "right": 40,
-              "bottom": 76
+              "bottom": 34
             }
           },
           "drag": {
@@ -393,10 +395,10 @@
             "padding": "40px",
             "rows": 0,
             "switch": {
-              "x": 190.5,
-              "y": 48,
-              "right": 302.5,
-              "bottom": 80
+              "x": 1260,
+              "y": 52,
+              "right": 1354,
+              "bottom": 84
             },
             "toggle": {
               "x": 7.5,
@@ -438,16 +440,16 @@
             "padding": "48px",
             "rows": 0,
             "switch": {
-              "x": 190.5,
-              "y": 56,
-              "right": 302.5,
-              "bottom": 88
+              "x": 1260,
+              "y": 60,
+              "right": 1354,
+              "bottom": 92
             },
             "toggle": {
               "x": 12,
-              "y": 56,
+              "y": 10,
               "right": 40,
-              "bottom": 84
+              "bottom": 38
             }
           },
           "drag": {
@@ -483,10 +485,10 @@
             "padding": "48px",
             "rows": 0,
             "switch": {
-              "x": 190.5,
-              "y": 56,
-              "right": 302.5,
-              "bottom": 88
+              "x": 1260,
+              "y": 60,
+              "right": 1354,
+              "bottom": 92
             },
             "toggle": {
               "x": 7.5,
@@ -509,14 +511,14 @@
           "fullscreen": true,
           "mode": "聊天",
           "control": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 1260,
+            "y": 12,
+            "width": 94,
             "height": 32
           },
           "toggle": {
             "x": 12,
-            "y": 8,
+            "y": 10,
             "width": 28,
             "height": 28
           }
@@ -525,9 +527,9 @@
           "fullscreen": true,
           "mode": "工作台",
           "control": {
-            "x": 190.5,
-            "y": 8,
-            "width": 112,
+            "x": 1260,
+            "y": 12,
+            "width": 94,
             "height": 32
           },
           "toggle": {
@@ -682,7 +684,7 @@
   ],
   "browserConsole": [
     "Failed to load resource: net::ERR_FAILED",
-    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:6464/product.js:5768:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:6464/product.js:5780:35)\n    at Content (http://127.0.0.1:6464/product.js:16283:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:6464/product.js:15824:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:6464/product.js:17686:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:6464/ui-layout.js:922:20)\n    at div\n    at AppFrame (http://127.0.0.1:6464/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:6464/ui-layout.js:908:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:6464/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:6464/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:6464/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:6464/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:6464/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:11745/product.js:5768:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:11745/product.js:5780:35)\n    at Content (http://127.0.0.1:11745/product.js:16283:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:11745/product.js:15824:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:11745/product.js:17686:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:11745/ui-layout.js:922:20)\n    at div\n    at AppFrame (http://127.0.0.1:11745/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:11745/ui-layout.js:908:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:11745/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:11745/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:11745/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:11745/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:11745/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
   ],
   "journals": [
     {
