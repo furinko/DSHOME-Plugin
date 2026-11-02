@@ -12,22 +12,30 @@ export function install(ctx) {
   ctx.effect(() => () => { store.dispose(); style.remove(); });
   ctx.reflect.provide('dualShellP0', store);
   ctx.inject(['dshomeDesktop'], scope => { store.setDesktop(scope.get('dshomeDesktop')); });
+  // Native in-flow seats, including blank sessions. Never adopt/reparent DOM.
+  for (const name of ['conversation.session.header.utilities', 'conversation.hero.options']) {
+    ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'dshome.shell-mode', order: -60 }, () => h(Controls, { store, native: true })));
+  }
   return store;
+}
+
+export function Controls({ store, native = false }) {
+  const view = useState(store);
+  return h('div', { className: 'p0-inline-controls' + (native ? ' p0-native-controls' : '') },
+    h('div', { className: 'p0-mode-switch', role: 'group', 'aria-label': '整窗模式', title: '只切换呈现，保留当前会话和工作现场' },
+      ...[['original', '原版'], ['workbench', '鲸鱼工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => store.setMode(mode) }, title))),
+    view.mode === 'workbench' && h('button', { className: 'p0-narrow-switch', type: 'button', onClick: () => store.setNarrowPane(view.narrowPane === 'chat' ? 'workspace' : 'chat') }, view.narrowPane === 'chat' ? '操作区' : '聊天'),
+    view.mode === 'workbench' && view.desktop?.RecoveryShelf && h(view.desktop.RecoveryShelf, { selectedKey: view.selected }));
 }
 
 export function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
-  return h('div', { className: 'p0-shell', 'data-p0-shell': true },
-    h('header', { className: 'p0-toolbar' },
-      h('strong', { className: 'p0-brand' }, h(Icon, { name: 'layout', size: 19 }), 'DSHOME'),
-      h('div', { className: 'p0-mode-switch', role: 'group', 'aria-label': '整窗模式' },
-        ...[['original', '原版'], ['workbench', '工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))),
-      view.mode === 'workbench' && view.desktop?.RecoveryShelf && h(view.desktop.RecoveryShelf,{selectedKey:view.selected}),
-      h('span', { className: 'p0-label' }, view.mode === 'workbench' ? '专注手头的事，让对话随时在旁' : '从一次对话开始'),
-      view.mode === 'workbench' && h('div', { className: 'p0-narrow-switch', role: 'group', 'aria-label': '窄窗区域' },
-        h('button', { onClick: () => props.dualShell.setNarrowPane('workspace'), 'aria-pressed': view.narrowPane === 'workspace' }, '操作区'),
-        h('button', { onClick: () => props.dualShell.setNarrowPane('chat'), 'aria-pressed': view.narrowPane === 'chat' }, '聊天'))),
-    h(NativeFrame, { ...props, dualView: view }));
+  const global = props.usePanelInfo(info => info.activePanelId !== null);
+  return h('div', { className: 'p0-shell', 'data-p0-shell': true, 'data-mode': view.mode, 'data-pane': view.narrowPane },
+    h(NativeFrame, { ...props, dualView: view }),
+    // Global pages have no conversation/header seat. A compact non-row fallback
+    // remains reachable without changing their native layout or root selection.
+    (global || view.mode === 'workbench' && (!view.selected || !view.desktop)) && h('div', { className: 'p0-global-controls' }, h(Controls, { store: props.dualShell })));
 }
 
 export function Desktop({ store, active, chatWidth, chatMax }) {
@@ -35,7 +43,7 @@ export function Desktop({ store, active, chatWidth, chatMax }) {
   return h('section', { className: 'p0-desktop', 'aria-label': '主操作区', 'aria-hidden': !active, inert: !active ? '' : undefined },
     h('div', { className: 'p0-scene-area' },
       view.scenes.map(scene => h('div', { key: scene.id, className: 'p0-full-scene', hidden: view.selected !== scene.key, inert: active && view.selected === scene.key ? undefined : '', 'data-scene': scene.id, 'data-workspace': scene.workspaceId },
-        view.desktop ? h(view.desktop.Body, { scene, active: active && view.selected === scene.key, onOriginal: () => store.setMode('original') }) : h('p', {role:'status'}, '真实工作区服务尚未装配；未显示模拟文件或终端。'))),
+        view.desktop ? h(view.desktop.Body, { scene, active: active && view.selected === scene.key, shellControls: h(Controls, { store }), onOriginal: () => store.setMode('original') }) : h('p', {role:'status'}, '真实工作区服务尚未装配；未显示模拟文件或终端。'))),
       !view.selected && h('p', { role: 'status' }, view.reason)),
     h('div', { className: 'p0-chat-separator', role: 'separator', tabIndex: 0, 'aria-label': '调整右侧聊天宽度', 'aria-orientation': 'vertical', 'aria-valuemin': 320, 'aria-valuemax': chatMax, 'aria-valuenow': chatWidth,
       onPointerDown(e) { if (e.button !== 0) return; drag.current = { x: e.clientX, width: chatWidth }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); },
@@ -71,18 +79,21 @@ function Scene({ scene, store, active }) {
 export const css = layoutCSS + `
 .p0-full-scene{height:100%;min-height:0}.p0-full-scene[hidden]{display:none}
 
-.p0-shell{height:100%;display:grid;grid-template-rows:52px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
-/* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
-html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}
-/* Moving the native titlebar reservation must also move its Electron drag surface. */
-html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell:before{content:"";position:absolute;inset:0 0 auto;height:var(--dsh-windows-titlebar-height,32px);background:var(--dsw-specific-sidebar-fill);-webkit-app-region:drag}
-html[data-windows-titlebar][data-fullscreen] .p0-toolbar{padding-left:104px}
-html[data-windows-titlebar] .p0-native{padding-top:0}
-html[data-windows-titlebar] .p0-native:before{display:none}
-.p0-toolbar{display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;-webkit-app-region:no-drag}
-.p0-brand{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.6px;font-weight:700;white-space:nowrap}.p0-brand .wb-icon{color:var(--dsw-alias-brand-primary,#3f5ce8)}
-.p0-toolbar button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 12px;border-radius:6px;cursor:pointer}
-.p0-toolbar [role=group]{display:flex;gap:3px}.p0-toolbar .p0-mode-switch{padding:3px;border-radius:9px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 94%,var(--dsw-alias-label-primary))}.p0-toolbar .p0-mode-switch button{min-width:66px;padding:5px 12px;border-color:transparent;background:transparent;border-radius:6px;font-size:12px;line-height:1.4}.p0-toolbar .p0-mode-switch [aria-pressed=true]{background:var(--dsw-alias-bg-base);border-color:var(--dsw-alias-border-l2);box-shadow:0 1px 3px #0b17300a;font-weight:600}.p0-toolbar button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-toolbar button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}.p0-label{font-size:11px;opacity:.6;margin-left:auto;white-space:nowrap}.p0-narrow-switch{display:none!important}.p0-narrow-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 84%,#3f5ce8)}
+.p0-shell{height:100%;position:relative;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
+/* Native AppFrame keeps its ONE titlebar reservation and Electron drag surface. */
+.p0-inline-controls{display:inline-flex;align-items:center;gap:6px;flex:none;min-width:0;-webkit-app-region:no-drag}
+.p0-inline-controls button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 9px;border-radius:6px;cursor:pointer}
+.p0-mode-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base)}
+.p0-inline-controls .p0-mode-switch button{padding:3px 7px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
+.p0-mode-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 88%,#3f5ce8)!important;font-weight:600}
+.p0-inline-controls button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-inline-controls button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}
+.p0-narrow-switch{display:none!important}.p0-shell[data-mode=workbench] .p0-native-controls{display:none}
+.p0-global-controls{position:absolute;right:16px;top:var(--dsh-frame-overlay-top,16px);z-index:20;max-width:calc(100% - 32px)}
+.p0-inline-controls .wb-retained-drafts{font-size:11px}.p0-inline-controls .wb-retained-drafts summary{cursor:pointer;white-space:nowrap}.p0-inline-controls .wb-retained-drafts>section{color:var(--dsw-alias-label-primary);max-width:calc(100vw - 40px)}
+.wb-header:has(.p0-inline-controls) .wb-heading-mark,.wb-header:has(.p0-inline-controls) .wb-heading strong{display:none}
+@container(max-width:850px){.wb-header:has(.p0-inline-controls){gap:7px}.wb-header:has(.p0-inline-controls) .wb-connection{display:none}.wb-header:has(.p0-inline-controls) .wb-project{max-width:120px}}
+@container(max-width:540px){.wb-header:has(.p0-inline-controls) .wb-heading{display:none}.wb-header:has(.p0-inline-controls) .wb-header-actions{margin-left:auto}.p0-inline-controls{gap:4px}}
+
 .p0-native[data-dual-mode=original]>.p0-desktop,.p0-native[data-dual-global=true]>.p0-desktop{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{grid-column:1;grid-row:1}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:3;grid-row:1;border-left:1px solid var(--dsw-alias-border-l2)}
@@ -95,6 +106,7 @@ html[data-windows-titlebar] .p0-native:before{display:none}
 .p0-layout-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.p0-layout-controls label{display:flex;align-items:center;gap:4px}
 .p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=x]{grid-template-columns:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
 .p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=y]{grid-template-columns:1fr;grid-template-rows:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
-@media(max-width:1100px){.p0-label{display:none}.p0-scene{padding:10px}.p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
-@media(max-width:900px){.p0-narrow-switch{display:flex!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:0 minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}.p0-toolbar{gap:8px;font-size:12px}}
+@media(max-width:1100px){.p0-scene{padding:10px}.p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
+@media(max-width:540px){.p0-shell .dshome-wb-switch{padding:1px;gap:1px}.p0-shell .dshome-wb-switch button{font-size:11px;padding:3px 4px;min-height:26px}}
+@media(max-width:900px){.p0-narrow-switch{display:inline-flex!important}.p0-shell[data-mode=workbench][data-pane=chat] .p0-native-controls{display:inline-flex}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:0 minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}}
 `;

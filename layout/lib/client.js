@@ -625,6 +625,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // extension.mjs
 var extension_exports = {};
 __export(extension_exports, {
+  Controls: () => Controls,
   Desktop: () => Desktop,
   Frame: () => Frame,
   css: () => css,
@@ -771,41 +772,6 @@ var layoutCSS = `
 
 // ../src/workbench/icons.mjs
 var import_react2 = __toESM(require("react"), 1);
-var paths = {
-  files: ["M3 7h7l2 2h9v11H3z", "M3 7V4h6l2 3"],
-  document: ["M6 3h8l4 4v14H6z", "M14 3v5h4", "M9 12h6M9 16h6"],
-  terminal: ["M4 5h16v14H4z", "m8 9 3 3-3 3M13 15h3"],
-  web: ["M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0", "M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18"],
-  note: ["M4 3h16v12l-6 6H4z", "M14 21v-6h6", "M8 8h8M8 11h5"],
-  search: ["M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0", "m15 15 6 6"],
-  layout: ["M3 4h18v16H3z", "M8 4v16M8 13h13"],
-  plus: ["M12 5v14M5 12h14"],
-  save: ["M5 3h13l3 3v15H3V3z", "M7 3v6h10V3M7 21v-7h10v7"],
-  more: ["M4 12h1M11 12h1M18 12h1"],
-  close: ["m6 6 12 12M6 18 18 6"],
-  minimize: ["M5 12h14"],
-  maximize: ["M9 3H3v6M15 3h6v6M21 15v6h-6M3 15v6h6"],
-  restore: ["M8 3v5H3M16 3v5h5M21 16h-5v5M3 16h5v5"],
-  download: ["M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"],
-  compare: ["M8 3H3v18h5M16 3h5v18h-5M9 8h6m-3-3 3 3-3 3M15 16H9m3-3-3 3 3 3"],
-  quote: ["M5 6h5v6H6c0 3 1 4 3 5M14 6h5v6h-4c0 3 1 4 3 5"],
-  refresh: ["M20 7v5h-5M4 17v-5h5", "M5 8a8 8 0 0 1 13-3l2 3M19 16a8 8 0 0 1-13 3l-2-3"],
-  check: ["m5 12 4 4L19 6"],
-  chevron: ["m9 5 7 7-7 7"],
-  arrow: ["m12 5-7 7m7-7 7 7M12 5v14"],
-  eye: ["M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12", "M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0"],
-  clock: ["M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0", "M12 7v5l3 2"],
-  command: ["M8 8H5a3 3 0 1 1 3-3v14a2 2 0 1 1-2-2h13a2 2 0 1 1-2 2V5a2 2 0 1 1 2 2H8v10"],
-  external: ["M14 3h7v7m0-7L10 14", "M10 3H3v18h18v-7"],
-  connection: ["M8 5h8v5H8zM5 15h14v5H5zM12 10v5"]
-};
-function Icon({ name, size = 18, className = "" }) {
-  return import_react2.default.createElement(
-    "svg",
-    { className: "wb-icon " + className, width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.65, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true, focusable: false },
-    (Object.hasOwn(paths, name) ? paths[name] : paths.document).map((d, index) => import_react2.default.createElement("path", { key: index, d }))
-  );
-}
 
 // extension.mjs
 var h2 = import_react3.default.createElement;
@@ -824,32 +790,35 @@ function install(ctx) {
   ctx.inject(["dshomeDesktop"], (scope) => {
     store.setDesktop(scope.get("dshomeDesktop"));
   });
+  for (const name of ["conversation.session.header.utilities", "conversation.hero.options"]) {
+    ctx.slots.inject(name, () => ctx.slots.register({ name, id: "dshome.shell-mode", order: -60 }, () => h2(Controls, { store, native: true })));
+  }
   return store;
+}
+function Controls({ store, native = false }) {
+  const view = useState(store);
+  return h2(
+    "div",
+    { className: "p0-inline-controls" + (native ? " p0-native-controls" : "") },
+    h2(
+      "div",
+      { className: "p0-mode-switch", role: "group", "aria-label": "\u6574\u7A97\u6A21\u5F0F", title: "\u53EA\u5207\u6362\u5448\u73B0\uFF0C\u4FDD\u7559\u5F53\u524D\u4F1A\u8BDD\u548C\u5DE5\u4F5C\u73B0\u573A" },
+      ...[["original", "\u539F\u7248"], ["workbench", "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => store.setMode(mode) }, title))
+    ),
+    view.mode === "workbench" && h2("button", { className: "p0-narrow-switch", type: "button", onClick: () => store.setNarrowPane(view.narrowPane === "chat" ? "workspace" : "chat") }, view.narrowPane === "chat" ? "\u64CD\u4F5C\u533A" : "\u804A\u5929"),
+    view.mode === "workbench" && view.desktop?.RecoveryShelf && h2(view.desktop.RecoveryShelf, { selectedKey: view.selected })
+  );
 }
 function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
+  const global = props.usePanelInfo((info) => info.activePanelId !== null);
   return h2(
     "div",
-    { className: "p0-shell", "data-p0-shell": true },
-    h2(
-      "header",
-      { className: "p0-toolbar" },
-      h2("strong", { className: "p0-brand" }, h2(Icon, { name: "layout", size: 19 }), "DSHOME"),
-      h2(
-        "div",
-        { className: "p0-mode-switch", role: "group", "aria-label": "\u6574\u7A97\u6A21\u5F0F" },
-        ...[["original", "\u539F\u7248"], ["workbench", "\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => props.dualShell.setMode(mode) }, title))
-      ),
-      view.mode === "workbench" && view.desktop?.RecoveryShelf && h2(view.desktop.RecoveryShelf, { selectedKey: view.selected }),
-      h2("span", { className: "p0-label" }, view.mode === "workbench" ? "\u4E13\u6CE8\u624B\u5934\u7684\u4E8B\uFF0C\u8BA9\u5BF9\u8BDD\u968F\u65F6\u5728\u65C1" : "\u4ECE\u4E00\u6B21\u5BF9\u8BDD\u5F00\u59CB"),
-      view.mode === "workbench" && h2(
-        "div",
-        { className: "p0-narrow-switch", role: "group", "aria-label": "\u7A84\u7A97\u533A\u57DF" },
-        h2("button", { onClick: () => props.dualShell.setNarrowPane("workspace"), "aria-pressed": view.narrowPane === "workspace" }, "\u64CD\u4F5C\u533A"),
-        h2("button", { onClick: () => props.dualShell.setNarrowPane("chat"), "aria-pressed": view.narrowPane === "chat" }, "\u804A\u5929")
-      )
-    ),
-    h2(NativeFrame, { ...props, dualView: view })
+    { className: "p0-shell", "data-p0-shell": true, "data-mode": view.mode, "data-pane": view.narrowPane },
+    h2(NativeFrame, { ...props, dualView: view }),
+    // Global pages have no conversation/header seat. A compact non-row fallback
+    // remains reachable without changing their native layout or root selection.
+    (global || view.mode === "workbench" && (!view.selected || !view.desktop)) && h2("div", { className: "p0-global-controls" }, h2(Controls, { store: props.dualShell }))
   );
 }
 function Desktop({ store, active, chatWidth, chatMax }) {
@@ -863,7 +832,7 @@ function Desktop({ store, active, chatWidth, chatMax }) {
       view.scenes.map((scene) => h2(
         "div",
         { key: scene.id, className: "p0-full-scene", hidden: view.selected !== scene.key, inert: active && view.selected === scene.key ? void 0 : "", "data-scene": scene.id, "data-workspace": scene.workspaceId },
-        view.desktop ? h2(view.desktop.Body, { scene, active: active && view.selected === scene.key, onOriginal: () => store.setMode("original") }) : h2("p", { role: "status" }, "\u771F\u5B9E\u5DE5\u4F5C\u533A\u670D\u52A1\u5C1A\u672A\u88C5\u914D\uFF1B\u672A\u663E\u793A\u6A21\u62DF\u6587\u4EF6\u6216\u7EC8\u7AEF\u3002")
+        view.desktop ? h2(view.desktop.Body, { scene, active: active && view.selected === scene.key, shellControls: h2(Controls, { store }), onOriginal: () => store.setMode("original") }) : h2("p", { role: "status" }, "\u771F\u5B9E\u5DE5\u4F5C\u533A\u670D\u52A1\u5C1A\u672A\u88C5\u914D\uFF1B\u672A\u663E\u793A\u6A21\u62DF\u6587\u4EF6\u6216\u7EC8\u7AEF\u3002")
       )),
       !view.selected && h2("p", { role: "status" }, view.reason)
     ),
@@ -906,18 +875,21 @@ function Desktop({ store, active, chatWidth, chatMax }) {
 var css = layoutCSS + `
 .p0-full-scene{height:100%;min-height:0}.p0-full-scene[hidden]{display:none}
 
-.p0-shell{height:100%;display:grid;grid-template-rows:52px minmax(0,1fr);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
-/* The wrapper owns the ONE titlebar reservation; native fixed window controls keep their coordinates. */
-html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell{position:relative;padding-top:var(--dsh-windows-titlebar-height,32px);box-sizing:border-box}
-/* Moving the native titlebar reservation must also move its Electron drag surface. */
-html[data-windows-titlebar]:not([data-fullscreen]) .p0-shell:before{content:"";position:absolute;inset:0 0 auto;height:var(--dsh-windows-titlebar-height,32px);background:var(--dsw-specific-sidebar-fill);-webkit-app-region:drag}
-html[data-windows-titlebar][data-fullscreen] .p0-toolbar{padding-left:104px}
-html[data-windows-titlebar] .p0-native{padding-top:0}
-html[data-windows-titlebar] .p0-native:before{display:none}
-.p0-toolbar{display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);min-width:0;-webkit-app-region:no-drag}
-.p0-brand{display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.6px;font-weight:700;white-space:nowrap}.p0-brand .wb-icon{color:var(--dsw-alias-brand-primary,#3f5ce8)}
-.p0-toolbar button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 12px;border-radius:6px;cursor:pointer}
-.p0-toolbar [role=group]{display:flex;gap:3px}.p0-toolbar .p0-mode-switch{padding:3px;border-radius:9px;background:color-mix(in srgb,var(--dsw-alias-bg-base) 94%,var(--dsw-alias-label-primary))}.p0-toolbar .p0-mode-switch button{min-width:66px;padding:5px 12px;border-color:transparent;background:transparent;border-radius:6px;font-size:12px;line-height:1.4}.p0-toolbar .p0-mode-switch [aria-pressed=true]{background:var(--dsw-alias-bg-base);border-color:var(--dsw-alias-border-l2);box-shadow:0 1px 3px #0b17300a;font-weight:600}.p0-toolbar button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-toolbar button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}.p0-label{font-size:11px;opacity:.6;margin-left:auto;white-space:nowrap}.p0-narrow-switch{display:none!important}.p0-narrow-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 84%,#3f5ce8)}
+.p0-shell{height:100%;position:relative;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
+/* Native AppFrame keeps its ONE titlebar reservation and Electron drag surface. */
+.p0-inline-controls{display:inline-flex;align-items:center;gap:6px;flex:none;min-width:0;-webkit-app-region:no-drag}
+.p0-inline-controls button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 9px;border-radius:6px;cursor:pointer}
+.p0-mode-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base)}
+.p0-inline-controls .p0-mode-switch button{padding:3px 7px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
+.p0-mode-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 88%,#3f5ce8)!important;font-weight:600}
+.p0-inline-controls button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-inline-controls button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}
+.p0-narrow-switch{display:none!important}.p0-shell[data-mode=workbench] .p0-native-controls{display:none}
+.p0-global-controls{position:absolute;right:16px;top:var(--dsh-frame-overlay-top,16px);z-index:20;max-width:calc(100% - 32px)}
+.p0-inline-controls .wb-retained-drafts{font-size:11px}.p0-inline-controls .wb-retained-drafts summary{cursor:pointer;white-space:nowrap}.p0-inline-controls .wb-retained-drafts>section{color:var(--dsw-alias-label-primary);max-width:calc(100vw - 40px)}
+.wb-header:has(.p0-inline-controls) .wb-heading-mark,.wb-header:has(.p0-inline-controls) .wb-heading strong{display:none}
+@container(max-width:850px){.wb-header:has(.p0-inline-controls){gap:7px}.wb-header:has(.p0-inline-controls) .wb-connection{display:none}.wb-header:has(.p0-inline-controls) .wb-project{max-width:120px}}
+@container(max-width:540px){.wb-header:has(.p0-inline-controls) .wb-heading{display:none}.wb-header:has(.p0-inline-controls) .wb-header-actions{margin-left:auto}.p0-inline-controls{gap:4px}}
+
 .p0-native[data-dual-mode=original]>.p0-desktop,.p0-native[data-dual-global=true]>.p0-desktop{display:none}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{grid-column:1;grid-row:1}
 .p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:3;grid-row:1;border-left:1px solid var(--dsw-alias-border-l2)}
@@ -930,8 +902,9 @@ html[data-windows-titlebar] .p0-native:before{display:none}
 .p0-layout-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.p0-layout-controls label{display:flex;align-items:center;gap:4px}
 .p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=x]{grid-template-columns:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
 .p0-scene[data-arrangement=split] .p0-tools[data-layout-axis=y]{grid-template-columns:1fr;grid-template-rows:minmax(0,calc(var(--p0-ratio) - 6px)) minmax(0,1fr)}
-@media(max-width:1100px){.p0-label{display:none}.p0-scene{padding:10px}.p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
-@media(max-width:900px){.p0-narrow-switch{display:flex!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:0 minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}.p0-toolbar{gap:8px;font-size:12px}}
+@media(max-width:1100px){.p0-scene{padding:10px}.p0-tools{grid-template-columns:1fr;grid-template-rows:1fr 1fr}}
+@media(max-width:540px){.p0-shell .dshome-wb-switch{padding:1px;gap:1px}.p0-shell .dshome-wb-switch button{font-size:11px;padding:3px 4px;min-height:26px}}
+@media(max-width:900px){.p0-narrow-switch{display:inline-flex!important}.p0-shell[data-mode=workbench][data-pane=chat] .p0-native-controls{display:inline-flex}.p0-native[data-dual-mode=workbench][data-dual-global=false]{grid-template-columns:0 minmax(0,1fr)!important}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_sidebarCol{visibility:hidden}.p0-native[data-dual-mode=workbench][data-dual-global=false]>.mP3x-q_centerCol{grid-column:2}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=workspace]>.mP3x-q_centerCol{visibility:hidden;pointer-events:none}.p0-native[data-dual-mode=workbench][data-dual-global=false][data-dual-narrow=chat]>.p0-desktop{visibility:hidden;pointer-events:none}.p0-chat-separator{display:none}}
 `;
 
 return module.exports; })();

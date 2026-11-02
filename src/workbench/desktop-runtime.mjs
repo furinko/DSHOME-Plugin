@@ -70,11 +70,11 @@ export function createDesktopRuntime({ ctx, services, getOwner, hostRequire, ref
            [...entry.controller.contents.values()].filter(item=>item.started).map(item=>h('button',{key:item.id,type:'button',onClick:()=>entry.closeRetainedTerminal(item.id).then(()=>setError(''),e=>setError(e.message)).finally(emit)},'确认关闭旧终端 '+item.id+' · '+item.ownerSessionId)))),
         error&&h('p',{role:'alert'},error)));
   }
-  function Body({ scene, active, onOriginal }) {
+  function Body({ scene, active, onOriginal, shellControls }) {
     React.useSyncExternalStore(source.subscribe, source.getSnapshot);
     const entry = entries.get(scene.key);
     React.useEffect(() => { if (active && !entry) ensure(scene).catch(() => {}); }, [active, scene.key, !!authority, !!getOwner()]);
-    if (!entry) return h('section', { className:'dshome-v2', 'data-desktop-workspace':scene.workspaceId }, h('p', {role:'status'},errors.get(scene.key) ?? '正在确认真实工作区并读取布局…'), h('button',{onClick:()=>ensure(scene).catch(()=>{})},'重试连接工作区'));
+    if (!entry) return h('section', { className:'dshome-v2', 'data-desktop-workspace':scene.workspaceId }, h('header', { className: 'wb-header' }, shellControls), h('p', {role:'status'},errors.get(scene.key) ?? '正在确认真实工作区并读取布局…'), h('button',{onClick:()=>ensure(scene).catch(()=>{})},'重试连接工作区'));
     const sessionId = entry.controller.sessionId, seat = inputs(), referenceEpoch = referenceRevision(), available = entry.available();
     const isCurrent = () => active && !disposed && referenceReady() && referenceRevision() === referenceEpoch && entry.available() && authority?.getSnapshot().sessionId === sessionId && inputs() === seat;
     return h('div',{className:'wb-desktop-entry',style:{height:'100%',display:'flex',flexDirection:'column',minHeight:0}},
@@ -83,7 +83,7 @@ export function createDesktopRuntime({ ctx, services, getOwner, hostRequire, ref
         onRefreshServices && h('button', { type: 'button', onClick: () => Promise.resolve(onRefreshServices()).catch(error => entry.controller.notify(error.message)) }, '重新接入文件接口'),
         h('button', { type: 'button', disabled: !services.available(getOwner()), onClick: () => { try { ctx.get('dualShellP0').newScene(scene.key); } catch (error) { entry.controller.notify(error.message); } } }, '新建操作现场'),
         h('small', null, '新现场不会导入旧权限或重放命令；旧草稿可在顶部“保留现场”导出。')),
-      h('div',{style:{flex:1,minHeight:0}},h(Workspace, { controller:entry.controller, workspaceFiles:entry.workspaceFiles, adaptive:true, active, projectTitle:scene.title, moduleRegistry:modules,
+      h('div',{style:{flex:1,minHeight:0}},h(Workspace, { controller:entry.controller, workspaceFiles:entry.workspaceFiles, adaptive:true, active, shellControls, projectTitle:scene.title, moduleRegistry:modules,
       servicesAvailable:available, terminalAvailable:entry.terminalAvailable,
       inputActions:seat, referenceReady:referenceReady() && !!seat, referenceCurrent:isCurrent, onOriginal, onCloseWorkspace: () => close(scene) })));
   }

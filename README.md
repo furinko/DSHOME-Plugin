@@ -1,6 +1,12 @@
 # DSHOME-Plugin
 
-## Current candidate: whole-window modular workbench
+## Current local candidate: 鲸鱼工作台 inline mode switch
+
+The original/workbench mode switch now shares the existing native conversation utilities (Hero options for blank sessions) or the workspace header. The separate 52px shell toolbar is removed, and the product-facing workbench title is **鲸鱼工作台**. Global pages retain a compact fallback, without a new layout row. Mode IDs and persisted layout keys are unchanged.
+
+This 2026-11-02 candidate is **source-only, not loaded**. Focused SDK/Chromium geometry and switching checks pass; broad Windows regressions still include symlink and PTY-cleanup failures. Previous Linux acceptance below does **not** accept this change. See [scope, evidence and remaining limits](docs/WHALE-TOOLBAR-2026-11-02.md).
+
+## Previous baseline: whole-window modular workbench
 
 Candidate `0.4.0-preview.1` redesigns DSHOME as a lighter modern workspace: new chrome and panel hierarchy, filename tabs, quick file/command palette, editor line numbers, and an adaptive single-module view for narrow windows. Source, isolated SDK/Chromium interactions and read-only independent review are complete. This redesign was **loaded and accepted for the listed Linux production workflows on 2026-10-31**, without restarting or upgrading DSH. See [production acceptance and the existing-page refresh limitation](docs/PRODUCTION-MODERN-2026-10-31.md) and the [redesign record](docs/UI-UX-REDESIGN-2026-10-31.md).
 

@@ -139,14 +139,14 @@ export function applyWorkbench(ctx, hostRequire) {
   // not unregister the tab kind, unmount React content, or dispose terminal holds.
   keep(ctx.inject(['sidebarRight', 'sidebarRightTabs'], seats => {
     seats.effect(function* () {
-      yield seats.sidebarRightTabs.register({ id: ID, kind: KIND, multiple: false, title: () => '工作台', keepMounted: true });
+      yield seats.sidebarRightTabs.register({ id: ID, kind: KIND, multiple: false, title: () => '鲸鱼工作台', keepMounted: true });
       yield seats.sidebarRight.registerCloseHandler(KIND, sessionId => {
         const cleanup = shelves.get(sessionId)?.closeAllNow();
         if (cleanup) { const pending = cleanup.catch(error => console.error('DSHOME project cleanup', error)).finally(() => retiring.delete(pending)); retiring.add(pending); }
         shelves.delete(sessionId); workspaces.delete(sessionId); modes.delete(sessionId); publish();
       });
       yield seats.slots.inject('sidebar.right.pane.tab', () => seats.slots.register({ name: 'sidebar.right.pane.tab', key: ID }, Body));
-      yield seats.slots.inject('sidebar.right.pane.tab.title', () => seats.slots.register({ name: 'sidebar.right.pane.tab.title', key: ID }, () => h('span', null, '工作台')));
+      yield seats.slots.inject('sidebar.right.pane.tab.title', () => seats.slots.register({ name: 'sidebar.right.pane.tab.title', key: ID }, () => h('span', null, '鲸鱼工作台')));
       yield seats.slots.inject('conversation.session.header.utilities', () => seats.slots.register({ name: 'conversation.session.header.utilities', id: ID, order: -50 }, Switch));
       // Empty Sessions hide Header utilities. Use the actual in-flow Hero options
        // list, not a floating control over a native composer or another panel.

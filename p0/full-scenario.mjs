@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 export async function runScenario({page,context,url,childURL,metrics,errors,browserConsole,iframeLoads,readHostSource,writeHostSource,setHostRoot,readSecondarySource}) {
+  const toolbar = await (await import('./toolbar-scenario.mjs')).runToolbarScenario({ page, context, url });
   const checks=[]; const ok=(id,value)=>{assert.ok(value,id);checks.push({id,passed:true});};
   const scene=()=>page.locator('.p0-full-scene:not([hidden])');
   const nativeInput=()=>page.locator('[contenteditable=true][data-lexical-editor=true]:visible');
@@ -7,12 +8,12 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const baseline=await context.newPage();
   try {
     await baseline.goto(url+'/baseline'); await baseline.locator('[data-lexical-editor=true]').waitFor();
-    const tree=p=>p.evaluate(()=>{const node=document.querySelector('.mP3x-q_frame').cloneNode(true);node.querySelector('.p0-desktop')?.remove();return [...node.querySelectorAll('*')].map(n=>[n.tagName,n.className,n.getAttribute('role'),n.getAttribute('data-slot')]);});
+    const tree=p=>p.evaluate(()=>{const node=document.querySelector('.mP3x-q_frame').cloneNode(true);node.querySelector('.p0-desktop')?.remove();node.querySelectorAll('.p0-inline-controls').forEach(n=>n.remove());/* Native scrollbar hover state is transient, not a layout change. */node.querySelectorAll('.wtg9ga_quietBars').forEach(n=>n.classList.remove('wtg9ga_quietBars'));return [...node.querySelectorAll('*')].map(n=>[n.tagName,n.className,n.getAttribute('role'),n.getAttribute('data-slot')]);});
     assert.deepEqual(await tree(page),await tree(baseline)); ok('real-original-native-tree',true);
     await baseline.evaluate(()=>window.testP0.dispose());
   } finally {await baseline.close();}
   await nativeInput().press('Control+End'); await page.keyboard.insertText(' · 完整工作台草稿'); const chatDraft=await nativeInput().textContent();
-  await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await page.getByRole('button',{name:'鲸鱼工作台',exact:true}).click();
   await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).waitFor();
   const original=await readHostSource();
   await scene().getByRole('button',{name:'打开文件 a.md',exact:true}).click();
@@ -29,7 +30,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   for(let i=0;i<3;i++) {await scene().getByLabel('布局预设',{exact:true}).selectOption('review');await scene().getByLabel('布局预设',{exact:true}).selectOption('development');}
   assert.equal(await editor().inputValue(),draft); assert.equal(await form().inputValue(),'整窗网页未提交状态');
   await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'取消',exact:true}).click();
-  await page.getByRole('button',{name:'原版',exact:true}).click(); await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await page.getByRole('button',{name:'原版',exact:true}).click(); await page.getByRole('button',{name:'鲸鱼工作台',exact:true}).click();
   ok('stable-content-and-chat',await page.evaluate(()=>window.fullProbe.editor===document.querySelector('textarea.wb-editor')&&window.fullProbe.frame===document.querySelector('iframe[data-wb-iframe]')&&window.fullProbe.input===document.querySelector('[data-lexical-editor=true]')));
   await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
   assert.equal(await editor().inputValue(),draft); await scene().getByRole('button',{name:'保存文件',exact:true}).click();
@@ -105,7 +106,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.screenshot({path:'test-output/full-desktop.png'});
   ok('iframe-not-reloaded',iframeLoads()===1);
   page.once('dialog',dialog=>dialog.accept());
-  await page.reload(); await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await page.reload(); await page.getByRole('button',{name:'鲸鱼工作台',exact:true}).click();
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>Object.values(e.controller.model.getSnapshot().panels).filter(p=>p.kind==='web').length===2));
   const afterReload=await page.evaluate(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].find(e=>e.available()).controller.exportLayout());
   assert.deepEqual(JSON.parse(afterReload),JSON.parse(beforeReload)); assert.equal(metrics.spawn,1); ok('layout-restores-without-command-replay',true);
@@ -134,7 +135,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 便笺',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
   const note=()=>scene().locator('textarea.wb-note'); await note().fill('独立便笺 🐋\n不会写入布局');
   await note().evaluate(n=>{window.noteProbe=n;});
-  await page.getByRole('button',{name:'原版',exact:true}).click(); await page.getByRole('button',{name:'工作台',exact:true}).click();
+  await page.getByRole('button',{name:'原版',exact:true}).click(); await page.getByRole('button',{name:'鲸鱼工作台',exact:true}).click();
   await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
   assert.equal(await note().inputValue(),'独立便笺 🐋\n不会写入布局'); assert.ok(await note().evaluate(n=>n===window.noteProbe));
   const noteId=await note().evaluate(n=>n.closest('[data-wb-content]').dataset.wbContent);
@@ -165,13 +166,13 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const scopeRaces=await (await import('./shared-scope-scenario.mjs')).runSharedScopeScenario({page,readHostSource});
   const layoutRecovery=await (await import('./layout-recovery-scenario.mjs')).runDesktopLayoutRecovery({page,url,readHostSource});
   await page.evaluate(()=>window.testP0.workspaces.replaceBaseline({...window.testP0.baseline,items:[]}));
-  await page.locator('.wb-retained-drafts summary').click();
+  await page.locator('.wb-retained-drafts:visible summary').click();
   const retainedDownload=page.waitForEvent('download');await page.getByRole('region',{name:'保留现场草稿',exact:true}).locator('div').filter({hasText:'W1 ·'}).first().getByRole('button',{name:/导出草稿包/}).click();
   const retainedJSON=JSON.parse(await readFile(await (await retainedDownload).path(),'utf8'));assert.equal(retainedJSON.format,'dshome-retained-drafts-v1');assert.ok(retainedJSON.contents.find(c=>c.kind==='document').text.endsWith('layout-only-draft'));
   await page.evaluate(()=>window.testP0.workspaces.replaceBaseline(window.testP0.baseline));
   ok('withdrawn-scene-drafts-explicitly-exportable-without-host-authority',true);
   const reconnect=await (await import('./reconnect-scenario.mjs')).runDesktopReconnect({page,readHostSource,metrics});
-  if(await page.locator('.wb-retained-drafts:not([open]) summary').count())await page.locator('.wb-retained-drafts summary').click();
+  if(await page.locator('.wb-retained-drafts:visible:not([open]) summary').count())await page.locator('.wb-retained-drafts:visible summary').click();
   const retainedRow=()=>page.getByRole('region',{name:'保留现场草稿',exact:true}).locator('div').filter({hasText:'W1 ·'}).first();
   const dismissed=page.waitForEvent('dialog');const cancelRelease=retainedRow().getByRole('button',{name:/释放旧现场/}).click();await (await dismissed).dismiss();await cancelRelease;
   assert.equal(await page.evaluate(()=>window.disconnectedScene.runtime.entries.has(window.disconnectedScene.key)),true);
@@ -183,5 +184,5 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const ux=await (await import('./ux-scenario.mjs')).runUXScenario({page,metrics,readHostSource});
   const modern=await (await import('./modern-scenario.mjs')).runModernScenario({page,metrics,iframeLoads,readSecondarySource});
   assert.deepEqual(errors,providerFaultDiagnostics.errors);
-  return {providerFaultDiagnostics,checks,windowChrome,scopeRaces,layoutRecovery,layoutInteractions,terminalClose,reconnect,multiDocument,multiTerminal,ux,modern,notVerified:['running profile GUI after upgrade','OS-level IME and non-Linux platforms','production authentication and idle expiry'],real:['public SDK','guarded filesystem save','native composer','actual PTY'],fixtures:['workspace catalog','navigation','host journal','authorization answers']};
+  return {toolbar,providerFaultDiagnostics,checks,windowChrome,scopeRaces,layoutRecovery,layoutInteractions,terminalClose,reconnect,multiDocument,multiTerminal,ux,modern,notVerified:['running profile GUI after upgrade','OS-level IME and non-Linux platforms','production authentication and idle expiry'],real:['public SDK','guarded filesystem save','native composer','actual PTY'],fixtures:['workspace catalog','navigation','host journal','authorization answers']};
 }

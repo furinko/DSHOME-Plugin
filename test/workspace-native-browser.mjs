@@ -161,7 +161,7 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   assets.set('/', { type: 'text/html', body: '<!doctype html><meta charset="utf-8"><title>实际原生侧栏/PTY隔离验证 · 非运行GUI</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/runtime.css"><style>html,body,#app{height:100%;margin:0}#app>[data-slot=root]{height:100%}.fixture-frame{height:100%;display:grid;grid-template-columns:464px minmax(0,1fr);gap:12px;padding:12px;box-sizing:border-box;background:#edf2f8;font:14px Arial}#fixture-chat{display:flex;flex-direction:column;background:white;padding:16px;border-radius:10px}#fixture-chat>p{flex:1}#fixture-composer{height:130px}#native-region,#native-region>[data-slot=rightbar]{height:100%;min-height:0;min-width:0}#native-region{position:relative}' + (nativeShellMode ? '' : '.dshome-v2{min-height:400px}') + '</style><div id="app"></div><script src="/runtime.js"></script>' + sdkAssets.map(([name]) => '<script src="/' + name + '.js"></script>').join('') + (nativeHmrMode ? '<script src="/loader.js"></script>' : '') + '<script src="/product.js"></script><script>startNativeFixture(' + JSON.stringify({ references, composer, history, nativeShell: nativeShellMode, nativeChrome: nativeChromeMode, nativeHmr: nativeHmrMode, dualP0 }) + ').catch(e=>{window.fixtureBootError=e.message;console.error(e)})</script>' });
   if (dualP0) {
     assets.set('/ui-layout-base.js', {type:'text/javascript', body: await readFile('p0/vendor/ui-layout.rc3.js','utf8')});
-    const baselineHtml = assets.get('/').body.replace('/ui-layout.js', '/ui-layout-base.js').replace('<div id="app"></div>', '<header style="height:44px;box-sizing:border-box;padding:12px;background:#edf2f8">未改动的安装版原版布局对照 · 隔离数据</header><div id="app" style="height:calc(100% - 44px)"></div>');
+    const baselineHtml = assets.get('/').body.replace('/ui-layout.js', '/ui-layout-base.js');
     assets.set('/baseline', {type:'text/html',body:baselineHtml});
   }
   const childURL = await listen(child), url = await listen(server);
@@ -189,6 +189,12 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   if (layoutRecovery) await page.addInitScript(({ origin, projectId, raw }) => { if (location.origin === origin && location.pathname === '/') localStorage.setItem('dshome.workspace.v1:' + encodeURIComponent(projectId), raw); }, { origin: new URL(url).origin, projectId: recoveryProjectId, raw: recoveryOriginal });
   await page.goto(url); await page.waitForFunction(() => window.testP0 || window.testNative || window.fixtureBootError);
   assert.equal(await page.evaluate(() => window.fixtureBootError), undefined);
+  if (dualP0 && process.env.WORKBENCH_TOOLBAR_ONLY === '1') {
+    const evidence = await (await import('../p0/toolbar-scenario.mjs')).runToolbarScenario({ page, context, url });
+    evidence.windowChrome = await (await import('../p0/window-scenario.mjs')).runWindowScenario(page);
+    await page.evaluate(() => window.testP0.dispose()); assert.deepEqual(errors, []); assert.equal(metrics.spawn, 0); assert.equal(metrics.activeRetains, 0);
+    await writeFile('test-output/toolbar-result.json', JSON.stringify({ evidence, metrics, errors, browserConsole }, null, 2)); complete = true; return;
+  }
   if (dualP0) {
     const evidence = await (await import('../p0/full-scenario.mjs')).runScenario({page, context, url, childURL, metrics, errors, browserConsole, iframeLoads:()=>iframeLoads, readHostSource:()=>readFile(join(root,'a.md'),'utf8'), writeHostSource:text=>writeFile(join(root,'a.md'),text), readSecondarySource:()=>readFile(join(root,'b.md'),'utf8'), setHostRoot:changed=>{host.sessions.get('A').header.cwd=changed?join(root,'..'):root;}});
     await page.evaluate(() => window.testP0.dispose());

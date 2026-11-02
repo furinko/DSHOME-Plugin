@@ -34,7 +34,7 @@ function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json;charset=utf-8' }));
   const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, onCloseWorkspace, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId, moduleRegistry, adaptive = false }) {
+export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, onCloseWorkspace, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId, moduleRegistry, adaptive = false, shellControls }) {
   const state = useSource(c), layout = useSource(c.model), ref = React.useRef(null), room = useRoom(ref);
   const [selection, select] = React.useState(null), [menu, setMenu] = React.useState(false), [tools, setTools] = React.useState(false), [palette, setPalette] = React.useState(null);
   const importRef = React.useRef(null), sectionRef = React.useRef(null);
@@ -104,8 +104,9 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
       if (layout.editing && (event.ctrlKey || event.metaKey) && event.key === 'Enter') { action(applyLayout); event.preventDefault(); }
       if (event.key === 'Escape') { if (menu || tools) { setMenu(false); setTools(false); event.stopPropagation(); } else if (layout.editing) { c.model.cancelEdit(); event.preventDefault(); } }
     } },
-    h('header', { className: 'wb-header', role: 'toolbar', 'aria-label': '工作台工具栏' },
-      h('div', { className: 'wb-heading' }, h('span', { className: 'wb-heading-mark' }, icon('layout', 21)), h('div', null, h('strong', null, layout.editing ? '布置你的工作台' : '工作台'), h('span', { className: 'wb-project', title: projectTitle }, projectTitle))),
+    h('header', { className: 'wb-header', role: 'toolbar', 'aria-label': '鲸鱼工作台工具栏' },
+      shellControls,
+      h('div', { className: 'wb-heading' }, h('span', { className: 'wb-heading-mark' }, icon('layout', 21)), h('div', null, h('strong', null, layout.editing ? '布置鲸鱼工作台' : '鲸鱼工作台'), h('span', { className: 'wb-project', title: projectTitle }, projectTitle))),
       h('span', { className: 'wb-connection', 'data-ready': servicesAvailable }, servicesAvailable ? '已连接' : '连接暂停'),
       h('div', { className: 'wb-header-actions' }, layout.editing ? h(React.Fragment, null,
         button('取消', () => c.model.cancelEdit()), button(labelled('check', '应用布局'), () => action(applyLayout), { className: 'wb-primary', 'aria-label': '应用布局' })) : h(React.Fragment, null,
