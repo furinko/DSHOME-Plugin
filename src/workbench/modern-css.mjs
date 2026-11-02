@@ -69,4 +69,8 @@ export const modernCSS = `
 body[data-ds-dark-theme] .dshome-v2 .wb-tabs .wb-tab-item>button{color:#a9b5c8}
 body[data-ds-dark-theme] .dshome-v2 .wb-tabs .wb-tab-item:has([aria-selected=true])>button{color:#e6edf7}
 .wb-layout-tools{max-height:40vh;overflow:auto}
+
+.wb-panel-header[draggable=true],.wb-tabs [draggable=true]{cursor:grab}
+.wb-dock-preview{position:absolute;inset:40px 5px 5px;z-index:8;pointer-events:none;display:grid;place-items:center;border:2px solid var(--wb-accent);background:color-mix(in srgb,var(--wb-accent) 18%,transparent);color:var(--wb-text);font-weight:600;border-radius:8px}
+.wb-dock-preview[data-edge=left]{right:50%}.wb-dock-preview[data-edge=right]{left:50%}.wb-dock-preview[data-edge=top]{bottom:50%}.wb-dock-preview[data-edge=bottom]{top:50%}
 `;

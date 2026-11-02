@@ -1,3 +1,4 @@
+import {runDragFiles} from './drag-files-scenario.mjs';
 import assert from 'node:assert/strict';
 export async function runInteractionScenario(page) {
   await page.getByRole('group', { name: '整窗模式', exact: true }).getByRole('button', { name: '工作台', exact: true }).click();
@@ -47,5 +48,5 @@ export async function runInteractionScenario(page) {
   await tab.screenshot({path:'test-output/tab-detail-dark.png'});
   await page.evaluate(()=>window.testP0.ctx.theme.setTheme('light'));
   await page.waitForFunction(()=>!document.body.hasAttribute('data-ds-dark-theme'));
-  return { layoutDisclosure:true, escapeRestoresFocus:true, outsideClickDismisses:true, directFileOpen:true, textHomeEnd:true, commandShortcut:true, tabCloseCancelPreservesDraft:true, confirmedClose:true };
+  const dragFiles=await runDragFiles(page); return { dragFiles, layoutDisclosure:true, escapeRestoresFocus:true, outsideClickDismisses:true, directFileOpen:true, textHomeEnd:true, commandShortcut:true, tabCloseCancelPreservesDraft:true, confirmedClose:true };
 }

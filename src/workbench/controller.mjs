@@ -1,3 +1,4 @@
+import { createLocalFileTransport } from './local-file.mjs';
 import { createWorkspaceModel, createLayoutPersistence } from './model.mjs';
 import { createDocument } from './document.mjs';
 import { createLayoutRecovery } from './layout-recovery.mjs';
@@ -48,6 +49,19 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     const work = openingDocuments.catch(() => {}).then(() => openOneDocument(path, signal));
     openingDocuments = work; return work;
   }
+  function openLocalFile(file, handle) {
+    const work = openingDocuments.catch(() => {}).then(async () => {
+      live(); if (model.getSnapshot().editing) throw Error('请先退出布局编辑');
+      for (const item of contents.values()) if (handle && item.localHandle && await handle.isSameEntry(item.localHandle)) { live(); model.activate(item.id); publish({focusedPanelId:item.id,focusRevision:revision+1}); return item.document; }
+      const local = createLocalFileTransport({file,handle});
+      const doc = createDocument({path:file.name,transport:local}); await doc.load(); live();
+      if (model.getSnapshot().editing) throw Error('请先退出布局编辑');
+      const existing = [...contents.values()].find(i=>i.kind==='document');
+      const id = model.addPanel('document',{targetPaneId:existing?paneOf(existing.id):undefined});
+      const item=content(id); item.document=doc; item.localHandle=handle; item.localFile=true; item.localWritable=!!handle?.createWritable;
+      item.offDocument=doc.subscribe(()=>publish()); model.activate(id); publish({focusedPanelId:id,focusRevision:revision+1}); return doc;
+    }); openingDocuments=work; return work;
+  }
   async function readForOpen(path, signal) {
     signal?.throwIfAborted();
     if (!signal) return transport.read(path);
@@ -61,7 +75,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     live();
     signal?.throwIfAborted();
     if (model.getSnapshot().editing) throw Error('请先应用或取消布局草稿');
-    let item = [...contents.values()].find(item => item.document && (item.document.getSnapshot().path === path || item.openedPaths?.has(path)));
+    let item = [...contents.values()].find(item => !item.localFile && item.document && (item.document.getSnapshot().path === path || item.openedPaths?.has(path)));
     let file;
     if (!item) {
       // Only the host receipt establishes identity (including symlinks and root
@@ -69,6 +83,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
       file = await readForOpen(path, signal); live(); signal?.throwIfAborted();
       if (model.getSnapshot().editing) throw Error('请先应用或取消布局草稿');
       if (typeof file?.absolutePath === 'string' && typeof file?.version === 'string') item = [...contents.values()].find(candidate => {
+        if (candidate.localFile) return false;
         const state = candidate.document?.getSnapshot();
         return state?.version !== null && state?.path === file.absolutePath && state.projectId === file.projectId;
       });
@@ -170,7 +185,7 @@ export function createWorkspaceController({ sessionId, getSessionId = () => sess
     for (const item of contents.values()) { if (item.started) terminals.close(item.ownerSessionId, item.id, item.contentId, item.view?.id); item.offDocument?.(); }
     releaseResources(); contents.clear(); return true;
   }
-  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, editNote, navigate, startTerminal, closePanel, importLayout, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
+  return Object.freeze({ model, contents, get sessionId() { return getSessionId(); }, projectId, content, openDocument, openLocalFile, editNote, navigate, startTerminal, closePanel, importLayout, ...layoutRecovery, hasUnsaved, closeWorkspace, releaseResources, retryTerminalClose: id => terminalCleanup?.retry(id),
     getSnapshot: () => snapshot, subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     notify: text => publish({ notice: text }), updateContent(id, change) { Object.assign(content(id), change); publish(); },
     exportLayout: () => JSON.stringify(model.serialize(), null, 2), exportStoredLayout: () => storage.getItem(persistence.key),

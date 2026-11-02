@@ -3,6 +3,24 @@ import assert from 'node:assert/strict';
 import { createWorkspaceController } from '../src/workbench/controller.mjs';
 const storage = () => { const map = new Map(); return { map, getItem: k => map.get(k) ?? null, setItem: (k,v) => map.set(k,v) }; };
 const locks = { request: async (_name, _options, run) => run() }; // Explicit unit double, not a browser Web Locks proof.
+
+test('local files never alias workspace names or invoke Host transport', async () => {
+  const {c}=setup();
+  const local=await c.openLocalFile(new File(['local'], 'a.md'));
+  const host=await c.openDocument('a.md');
+  assert.notEqual(local,host);assert.equal(local.getSnapshot().text,'local');assert.equal(host.getSnapshot().text,'body\n');
+  const another=await c.openLocalFile(new File(['another directory'], 'a.md'));
+  assert.notEqual(local,another);assert.equal(another.getSnapshot().text,'another directory');
+  c.releaseResources();
+});
+
+test('late local file open cannot attach to a disposed workspace', async () => {
+  const {c}=setup();let resume;
+  const gate=new Promise(resolve=>resume=resolve);
+  const pending=c.openLocalFile({name:'late.txt',size:4,arrayBuffer:async()=>{await gate;return new TextEncoder().encode('late').buffer;}});
+  await new Promise(resolve=>setImmediate(resolve));c.releaseResources();resume();
+  await assert.rejects(pending,/关闭/);
+});
 test('layout import preserves live content and rejects another project or mismatched module kind', async () => {
   const { c, calls } = setup(); const doc = await c.openDocument('a.md'); await doc.load(); doc.edit('unsaved');
   const original = c.model.serialize(), other = structuredClone(original); other.projectId = 'other';

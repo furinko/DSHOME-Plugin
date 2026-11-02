@@ -10,7 +10,7 @@ export function CommandPalette({ controller, openDocument, mode: initialMode, co
     node.showModal(); input.current.focus();
     return () => { request.current?.abort(); node.close(); if (restoreFocus.current && previous?.isConnected && !previous.closest('[inert],[hidden]')) previous.focus({ preventScroll: true }); };
   }, []);
-  const documents = [...controller.contents.values()].filter(i => i.document?.getSnapshot().version != null);
+  const documents = [...controller.contents.values()].filter(i => !i.localFile && i.document?.getSnapshot().version != null);
   const recent = documents.map(item => { const state = item.document.getSnapshot(); return { id: item.id, icon: 'document', title: fileName(state.path), detail: state.path, dirty: state.dirty || state.uncertain, uncertain: state.uncertain, run: signal => openDocument(state.path, { signal }) }; });
   const needle = query.trim().toLocaleLowerCase();
   const rows = (mode === 'files' ? recent : commands).filter(row => !needle || (row.title + ' ' + (row.detail ?? '')).toLocaleLowerCase().includes(needle));
