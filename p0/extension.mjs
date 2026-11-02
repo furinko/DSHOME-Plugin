@@ -12,30 +12,35 @@ export function install(ctx) {
   ctx.effect(() => () => { store.dispose(); style.remove(); });
   ctx.reflect.provide('dualShellP0', store);
   ctx.inject(['dshomeDesktop'], scope => { store.setDesktop(scope.get('dshomeDesktop')); });
-  // Native in-flow seats, including blank sessions. Never adopt/reparent DOM.
+  // Only narrow-pane actions use native seats. The mode switch has ONE stable
+  // root parent, independent of session, page, mode or responsive pane.
   for (const name of ['conversation.session.header.utilities', 'conversation.hero.options']) {
-    ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'dshome.shell-mode', order: -60 }, () => h(Controls, { store, native: true })));
+    ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'dshome.shell-actions', order: -60 }, () => h(SceneActions, { store, native: true })));
   }
   return store;
 }
 
-export function Controls({ store, native = false }) {
+export function Controls({ store }) {
   const view = useState(store);
-  return h('div', { className: 'p0-inline-controls' + (native ? ' p0-native-controls' : '') },
+  return h('div', { className: 'p0-inline-controls' },
     h('div', { className: 'p0-mode-switch', role: 'group', 'aria-label': '整窗模式', title: '只切换呈现，保留当前会话和工作现场' },
-      ...[['original', '原版'], ['workbench', '鲸鱼工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => store.setMode(mode) }, title))),
-    view.mode === 'workbench' && h('button', { className: 'p0-narrow-switch', type: 'button', onClick: () => store.setNarrowPane(view.narrowPane === 'chat' ? 'workspace' : 'chat') }, view.narrowPane === 'chat' ? '操作区' : '聊天'),
-    view.mode === 'workbench' && view.desktop?.RecoveryShelf && h(view.desktop.RecoveryShelf, { selectedKey: view.selected }));
+      ...[['original', '聊天'], ['workbench', '工作台']].map(([mode, title]) => h('button', { key: mode, type: 'button', 'aria-pressed': view.mode === mode, onClick: () => store.setMode(mode) }, title))));
+}
+
+export function SceneActions({ store, native = false }) {
+  const view = useState(store);
+  if (view.mode !== 'workbench') return null;
+  return h('div', { className: 'p0-inline-controls p0-scene-actions' + (native ? ' p0-native-controls' : '') },
+    h('button', { className: 'p0-narrow-switch', type: 'button', 'aria-label': view.narrowPane === 'chat' ? '显示操作区' : '显示右侧聊天', onClick: () => store.setNarrowPane(view.narrowPane === 'chat' ? 'workspace' : 'chat') }, view.narrowPane === 'chat' ? '操作区' : '右侧聊天'),
+    view.desktop?.RecoveryShelf && h(view.desktop.RecoveryShelf, { selectedKey: view.selected }));
 }
 
 export function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
-  const global = props.usePanelInfo(info => info.activePanelId !== null);
   return h('div', { className: 'p0-shell', 'data-p0-shell': true, 'data-mode': view.mode, 'data-pane': view.narrowPane },
     h(NativeFrame, { ...props, dualView: view }),
-    // Global pages have no conversation/header seat. A compact non-row fallback
-    // remains reachable without changing their native layout or root selection.
-    (global || view.mode === 'workbench' && (!view.selected || !view.desktop)) && h('div', { className: 'p0-global-controls' }, h(Controls, { store: props.dualShell })));
+    h('div', { className: 'p0-mode-anchor' }, h(Controls, { store: props.dualShell })),
+    view.mode === 'workbench' && (!view.selected || !view.desktop) && h('div', { className: 'p0-recovery-anchor' }, h(SceneActions, { store: props.dualShell })));
 }
 
 export function Desktop({ store, active, chatWidth, chatMax }) {
@@ -43,7 +48,7 @@ export function Desktop({ store, active, chatWidth, chatMax }) {
   return h('section', { className: 'p0-desktop', 'aria-label': '主操作区', 'aria-hidden': !active, inert: !active ? '' : undefined },
     h('div', { className: 'p0-scene-area' },
       view.scenes.map(scene => h('div', { key: scene.id, className: 'p0-full-scene', hidden: view.selected !== scene.key, inert: active && view.selected === scene.key ? undefined : '', 'data-scene': scene.id, 'data-workspace': scene.workspaceId },
-        view.desktop ? h(view.desktop.Body, { scene, active: active && view.selected === scene.key, shellControls: h(Controls, { store }), onOriginal: () => store.setMode('original') }) : h('p', {role:'status'}, '真实工作区服务尚未装配；未显示模拟文件或终端。'))),
+        view.desktop ? h(view.desktop.Body, { scene, active: active && view.selected === scene.key, shellControls: h(SceneActions, { store }), onOriginal: () => store.setMode('original') }) : h('p', {role:'status'}, '真实工作区服务尚未装配；未显示模拟文件或终端。'))),
       !view.selected && h('p', { role: 'status' }, view.reason)),
     h('div', { className: 'p0-chat-separator', role: 'separator', tabIndex: 0, 'aria-label': '调整右侧聊天宽度', 'aria-orientation': 'vertical', 'aria-valuemin': 320, 'aria-valuemax': chatMax, 'aria-valuenow': chatWidth,
       onPointerDown(e) { if (e.button !== 0) return; drag.current = { x: e.clientX, width: chatWidth }; e.currentTarget.setPointerCapture(e.pointerId); e.preventDefault(); },
@@ -81,14 +86,25 @@ export const css = layoutCSS + `
 
 .p0-shell{height:100%;position:relative;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
 /* Native AppFrame keeps its ONE titlebar reservation and Electron drag surface. */
+.p0-shell [data-slot="sidebar.brand.name"] .dshome-glow-name{white-space:nowrap}
+.p0-shell[data-mode=workbench] [data-slot="sidebar.brand.name"] .dshome-brand-version{display:none}
 .p0-inline-controls{display:inline-flex;align-items:center;gap:6px;flex:none;min-width:0;-webkit-app-region:no-drag}
 .p0-inline-controls button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 9px;border-radius:6px;cursor:pointer}
 .p0-mode-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base)}
-.p0-inline-controls .p0-mode-switch button{padding:3px 7px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
+.p0-inline-controls .p0-mode-switch button{box-sizing:border-box;width:43px;height:26px;padding:3px 4px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
 .p0-mode-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 88%,#3f5ce8)!important;font-weight:600}
 .p0-inline-controls button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-inline-controls button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}
 .p0-narrow-switch{display:none!important}.p0-shell[data-mode=workbench] .p0-native-controls{display:none}
-.p0-global-controls{position:absolute;right:16px;top:var(--dsh-frame-overlay-top,16px);z-index:20;max-width:calc(100% - 32px)}
+.p0-mode-anchor{position:absolute;right:12px;top:calc(var(--dsh-frame-chrome-top,0px) + 12px);z-index:20;-webkit-app-region:no-drag}
+/* Reserve an in-row seat; never add a new mode row or cover native controls. */
+.p0-shell [data-slot="conversation.header"]>header{box-sizing:border-box;padding-right:140px;container-type:inline-size}
+.p0-shell [data-slot="conversation.header"] :has(>[data-slot="conversation.session.header.corner"]){right:140px}
+@container(max-width:540px){.p0-shell .dshome-wb-switch{padding:1px;gap:1px}.p0-shell .dshome-wb-switch button{font-size:11px;padding:3px 4px;min-height:26px}}
+.p0-shell .wb-header{padding-right:124px}
+.p0-recovery-anchor{position:absolute;left:16px;top:calc(var(--dsh-frame-chrome-top,0px) + 12px);z-index:19}
+.p0-mode-switch{box-sizing:border-box;width:94px;height:32px}
+@container(max-width:540px){.p0-shell .wb-header{padding-right:116px}.p0-shell .wb-header-actions{gap:4px}}
+
 .p0-inline-controls .wb-retained-drafts{font-size:11px}.p0-inline-controls .wb-retained-drafts summary{cursor:pointer;white-space:nowrap}.p0-inline-controls .wb-retained-drafts>section{color:var(--dsw-alias-label-primary);max-width:calc(100vw - 40px)}
 .wb-header:has(.p0-inline-controls) .wb-heading-mark,.wb-header:has(.p0-inline-controls) .wb-heading strong{display:none}
 @container(max-width:850px){.wb-header:has(.p0-inline-controls){gap:7px}.wb-header:has(.p0-inline-controls) .wb-connection{display:none}.wb-header:has(.p0-inline-controls) .wb-project{max-width:120px}}

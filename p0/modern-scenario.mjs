@@ -41,7 +41,7 @@ export async function runModernScenario({ page, metrics, iframeLoads, readSecond
   assert.equal(await editor().inputValue(), draft);
   await editor().press('Control+Home'); for (let index = 0; index < 8; index++) await editor().press('Shift+ArrowRight');
   await scene().getByRole('button', { name: '引用选区到对话', exact: true }).click();
-  const reference = await page.evaluate(() => { const c = window.testP0.ctx.get('dshomeDesktop').entries.get(window.testP0.ctx.get('dualShellP0').getSnapshot().selected).controller; return { uri: [...c.contents.values()].find(i => i.document?.getSnapshot().path.endsWith('/b.md')).lastReference?.uri, sessionId: c.sessionId, web: Object.values(c.model.getSnapshot().panels).find(p => p.kind === 'web')?.id }; });
+  const reference = await page.evaluate(() => { const c = window.testP0.ctx.get('dshomeDesktop').entries.get(window.testP0.ctx.get('dualShellP0').getSnapshot().selected).controller; return { uri: [...c.contents.values()].find(i => i.document?.getSnapshot().path.replaceAll('\\', '/').endsWith('/b.md')).lastReference?.uri, sessionId: c.sessionId, web: Object.values(c.model.getSnapshot().panels).find(p => p.kind === 'web')?.id }; });
   assert.ok(reference.uri); assert.ok(reference.web); await moduleSelect.selectOption(reference.web);
   await page.evaluate(reference => window.__dshomePluginWorkbench.returnReference(reference.uri, { sessionId: reference.sessionId }), reference);
   await editor().waitFor(); assert.equal(await editor().inputValue(), draft);

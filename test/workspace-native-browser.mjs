@@ -192,6 +192,7 @@ test(dualP0 ? 'P0 single-root original/workbench and native-workspace scene pres
   if (dualP0 && process.env.WORKBENCH_TOOLBAR_ONLY === '1') {
     const evidence = await (await import('../p0/toolbar-scenario.mjs')).runToolbarScenario({ page, context, url });
     evidence.windowChrome = await (await import('../p0/window-scenario.mjs')).runWindowScenario(page);
+    evidence.retainedContent = await (await import('../p0/fixed-mode-content-scenario.mjs')).runFixedModeContentScenario({ page, childURL, readHostSource:()=>readFile(join(root,'a.md'),'utf8'), iframeLoads:()=>iframeLoads, metrics });
     await page.evaluate(() => window.testP0.dispose()); assert.deepEqual(errors, []); assert.equal(metrics.spawn, 0); assert.equal(metrics.activeRetains, 0);
     await writeFile('test-output/toolbar-result.json', JSON.stringify({ evidence, metrics, errors, browserConsole }, null, 2)); complete = true; return;
   }

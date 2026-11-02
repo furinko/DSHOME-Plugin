@@ -6,7 +6,7 @@ export async function runWindowScenario(page) {
   await page.setViewportSize({width:1366,height:900});
   for (const height of [32,40,48]) {
     await page.evaluate(height => { const html=document.documentElement;html.dataset.platform='win32';html.setAttribute('data-windows-titlebar','');html.style.setProperty('--dsh-windows-titlebar-height',height+'px'); },height);
-    for(const mode of ['原版','鲸鱼工作台']) {
+    for(const mode of ['聊天','工作台']) {
       await modes().getByRole('button',{name:mode,exact:true}).click();
       const geometry=await page.evaluate(() => { const box=q=>{const b=document.querySelector(q).getBoundingClientRect();return{x:b.x,y:b.y,right:b.right,bottom:b.bottom,width:b.width,height:b.height};};return{frame:box('.mP3x-q_frame'),main:box('.mP3x-q_centerCol'),padding:getComputedStyle(document.querySelector('.p0-native')).paddingTop,rows:document.querySelectorAll('.p0-toolbar').length};});
       geometry.switch=await modes().evaluate(n=>{const b=n.getBoundingClientRect();return{x:b.x,y:b.y,right:b.right,bottom:b.bottom};});
@@ -20,7 +20,7 @@ export async function runWindowScenario(page) {
   }
   await page.screenshot({path:'test-output/dual-windows-titlebar.png'});
   await page.evaluate(()=>document.documentElement.setAttribute('data-fullscreen',''));
-  for(const mode of ['原版','鲸鱼工作台']) {
+  for(const mode of ['聊天','工作台']) {
     await modes().getByRole('button',{name:mode,exact:true}).click();
     const control=await modes().boundingBox(), toggle=await sidebarToggle.boundingBox();
     assert.ok(control.x>=toggle.x+toggle.width || control.y>=toggle.y+toggle.height,'native toggle and mode control must not overlap');

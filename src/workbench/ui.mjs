@@ -104,9 +104,9 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
       if (layout.editing && (event.ctrlKey || event.metaKey) && event.key === 'Enter') { action(applyLayout); event.preventDefault(); }
       if (event.key === 'Escape') { if (menu || tools) { setMenu(false); setTools(false); event.stopPropagation(); } else if (layout.editing) { c.model.cancelEdit(); event.preventDefault(); } }
     } },
-    h('header', { className: 'wb-header', role: 'toolbar', 'aria-label': '鲸鱼工作台工具栏' },
+    h('header', { className: 'wb-header', role: 'toolbar', 'aria-label': '工作台工具栏' },
       shellControls,
-      h('div', { className: 'wb-heading' }, h('span', { className: 'wb-heading-mark' }, icon('layout', 21)), h('div', null, h('strong', null, layout.editing ? '布置鲸鱼工作台' : '鲸鱼工作台'), h('span', { className: 'wb-project', title: projectTitle }, projectTitle))),
+      h('div', { className: 'wb-heading' }, h('span', { className: 'wb-heading-mark' }, icon('layout', 21)), h('div', null, h('strong', null, layout.editing ? '布置工作台' : '工作台'), h('span', { className: 'wb-project', title: projectTitle }, projectTitle))),
       h('span', { className: 'wb-connection', 'data-ready': servicesAvailable }, servicesAvailable ? '已连接' : '连接暂停'),
       h('div', { className: 'wb-header-actions' }, layout.editing ? h(React.Fragment, null,
         button('取消', () => c.model.cancelEdit()), button(labelled('check', '应用布局'), () => action(applyLayout), { className: 'wb-primary', 'aria-label': '应用布局' })) : h(React.Fragment, null,

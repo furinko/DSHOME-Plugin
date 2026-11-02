@@ -1,12 +1,76 @@
 {
   "evidence": {
+    "toolbar": {
+      "noSeparateModeRow": true,
+      "originalFrameGeometryExact": true,
+      "oneStableModeNode": true,
+      "brandFollowsMode": true,
+      "globalAndBlankSessionReachable": true,
+      "narrowPaneDoesNotMoveMode": true,
+      "probes": [
+        {
+          "width": 1920,
+          "box": {
+            "x": 1814,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          }
+        },
+        {
+          "width": 1366,
+          "box": {
+            "x": 1260,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          }
+        },
+        {
+          "width": 1040,
+          "box": {
+            "x": 934,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          }
+        },
+        {
+          "width": 760,
+          "box": {
+            "x": 654,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          }
+        },
+        {
+          "width": 520,
+          "box": {
+            "x": 414,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          }
+        },
+        {
+          "width": 390,
+          "box": {
+            "x": 284,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          }
+        }
+      ]
+    },
     "providerFaultDiagnostics": {
       "errors": [
         "DSHOME_EXPECTED_PROVIDER_FAILURE",
         "DSHOME_EXPECTED_PROVIDER_FAILURE"
       ],
       "console": [
-        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:8231/product.js:5309:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:8231/product.js:5321:35)\n    at Content (http://127.0.0.1:8231/product.js:15198:22)\n    at div\n    at article\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:8231/product.js:15092:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:8231/product.js:16517:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:8231/ui-layout.js:806:20)\n    at div\n    at AppFrame (http://127.0.0.1:8231/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:8231/ui-layout.js:780:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:8231/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:8231/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:8231/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:8231/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:8231/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+        "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:10001/product.js:5378:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:10001/product.js:5390:35)\n    at Content (http://127.0.0.1:10001/product.js:15671:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:10001/product.js:15402:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:10001/product.js:17061:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:10001/ui-layout.js:831:20)\n    at div\n    at AppFrame (http://127.0.0.1:10001/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:10001/ui-layout.js:821:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:10001/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:10001/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:10001/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:10001/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:10001/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
       ]
     },
     "checks": [
@@ -55,11 +119,19 @@
         "passed": true
       },
       {
+        "id": "terminal-readline-shortcuts-retained-with-shift-p-command-access",
+        "passed": true
+      },
+      {
         "id": "actual-PTY-start-and-output",
         "passed": true
       },
       {
         "id": "terminal-owner-not-silently-transferred",
+        "passed": true
+      },
+      {
+        "id": "terminal-owner-feedback-distinct-from-service-pause",
         "passed": true
       },
       {
@@ -135,323 +207,308 @@
       "probes": [
         {
           "height": 32,
-          "mode": "原版",
+          "mode": "聊天",
           "geometry": {
-            "toolbar": {
+            "frame": {
               "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 900
+            },
+            "main": {
+              "x": 280,
               "y": 32,
-              "right": 1366,
-              "bottom": 76,
-              "width": 1366,
-              "height": 44
-            },
-            "toggle": {
-              "x": 12,
-              "y": 2,
-              "right": 40,
-              "bottom": 30,
-              "width": 28,
-              "height": 28
-            },
-            "frame": {
-              "x": 0,
-              "y": 76,
-              "right": 1366,
-              "bottom": 900,
-              "width": 1366,
-              "height": 824
-            },
-            "main": {
-              "x": 280,
-              "y": 76,
               "right": 946,
               "bottom": 900,
               "width": 666,
-              "height": 824
+              "height": 868
             },
-            "windowHeight": 900,
-            "padding": "0px"
-          },
-          "drag": {
-            "region": "drag",
-            "content": "\"\"",
-            "display": "block",
-            "height": 32,
-            "top": 0,
-            "toolbarRegion": "no-drag",
-            "hit": "p0-shell"
-          }
-        },
-        {
-          "height": 32,
-          "mode": "工作台",
-          "geometry": {
-            "toolbar": {
-              "x": 0,
-              "y": 32,
-              "right": 1366,
-              "bottom": 76,
-              "width": 1366,
-              "height": 44
-            },
-            "toggle": {
-              "x": 12,
-              "y": 2,
-              "right": 40,
-              "bottom": 30,
-              "width": 28,
-              "height": 28
-            },
-            "frame": {
-              "x": 0,
-              "y": 76,
-              "right": 1366,
-              "bottom": 900,
-              "width": 1366,
-              "height": 824
-            },
-            "main": {
-              "x": 946,
-              "y": 76,
-              "right": 1366,
-              "bottom": 900,
-              "width": 420,
-              "height": 824
-            },
-            "windowHeight": 900,
-            "padding": "0px"
-          },
-          "drag": {
-            "region": "drag",
-            "content": "\"\"",
-            "display": "block",
-            "height": 32,
-            "top": 0,
-            "toolbarRegion": "no-drag",
-            "hit": "p0-shell"
-          }
-        },
-        {
-          "height": 40,
-          "mode": "原版",
-          "geometry": {
-            "toolbar": {
-              "x": 0,
-              "y": 40,
-              "right": 1366,
-              "bottom": 84,
-              "width": 1366,
-              "height": 44
-            },
-            "toggle": {
-              "x": 12,
-              "y": 6,
-              "right": 40,
-              "bottom": 34,
-              "width": 28,
-              "height": 28
-            },
-            "frame": {
-              "x": 0,
-              "y": 84,
-              "right": 1366,
-              "bottom": 900,
-              "width": 1366,
-              "height": 816
-            },
-            "main": {
-              "x": 280,
-              "y": 84,
-              "right": 946,
-              "bottom": 900,
-              "width": 666,
-              "height": 816
-            },
-            "windowHeight": 900,
-            "padding": "0px"
-          },
-          "drag": {
-            "region": "drag",
-            "content": "\"\"",
-            "display": "block",
-            "height": 40,
-            "top": 0,
-            "toolbarRegion": "no-drag",
-            "hit": "p0-shell"
-          }
-        },
-        {
-          "height": 40,
-          "mode": "工作台",
-          "geometry": {
-            "toolbar": {
-              "x": 0,
-              "y": 40,
-              "right": 1366,
-              "bottom": 84,
-              "width": 1366,
-              "height": 44
-            },
-            "toggle": {
-              "x": 12,
-              "y": 6,
-              "right": 40,
-              "bottom": 34,
-              "width": 28,
-              "height": 28
-            },
-            "frame": {
-              "x": 0,
-              "y": 84,
-              "right": 1366,
-              "bottom": 900,
-              "width": 1366,
-              "height": 816
-            },
-            "main": {
-              "x": 946,
-              "y": 84,
-              "right": 1366,
-              "bottom": 900,
-              "width": 420,
-              "height": 816
-            },
-            "windowHeight": 900,
-            "padding": "0px"
-          },
-          "drag": {
-            "region": "drag",
-            "content": "\"\"",
-            "display": "block",
-            "height": 40,
-            "top": 0,
-            "toolbarRegion": "no-drag",
-            "hit": "p0-shell"
-          }
-        },
-        {
-          "height": 48,
-          "mode": "原版",
-          "geometry": {
-            "toolbar": {
-              "x": 0,
-              "y": 48,
-              "right": 1366,
-              "bottom": 92,
-              "width": 1366,
-              "height": 44
-            },
-            "toggle": {
-              "x": 12,
-              "y": 10,
-              "right": 40,
-              "bottom": 38,
-              "width": 28,
-              "height": 28
-            },
-            "frame": {
-              "x": 0,
-              "y": 92,
-              "right": 1366,
-              "bottom": 900,
-              "width": 1366,
-              "height": 808
-            },
-            "main": {
-              "x": 280,
-              "y": 92,
-              "right": 946,
-              "bottom": 900,
-              "width": 666,
-              "height": 808
-            },
-            "windowHeight": 900,
-            "padding": "0px"
-          },
-          "drag": {
-            "region": "drag",
-            "content": "\"\"",
-            "display": "block",
-            "height": 48,
-            "top": 0,
-            "toolbarRegion": "no-drag",
-            "hit": "p0-shell"
-          }
-        },
-        {
-          "height": 48,
-          "mode": "工作台",
-          "geometry": {
-            "toolbar": {
-              "x": 0,
-              "y": 48,
-              "right": 1366,
-              "bottom": 92,
-              "width": 1366,
-              "height": 44
-            },
-            "toggle": {
-              "x": 12,
-              "y": 10,
-              "right": 40,
-              "bottom": 38,
-              "width": 28,
-              "height": 28
-            },
-            "frame": {
-              "x": 0,
-              "y": 92,
-              "right": 1366,
-              "bottom": 900,
-              "width": 1366,
-              "height": 808
-            },
-            "main": {
-              "x": 946,
-              "y": 92,
-              "right": 1366,
-              "bottom": 900,
-              "width": 420,
-              "height": 808
-            },
-            "windowHeight": 900,
-            "padding": "0px"
-          },
-          "drag": {
-            "region": "drag",
-            "content": "\"\"",
-            "display": "block",
-            "height": 48,
-            "top": 0,
-            "toolbarRegion": "no-drag",
-            "hit": "p0-shell"
-          }
-        },
-        {
-          "fullscreen": true,
-          "geometry": {
-            "brand": {
-              "x": 104,
-              "y": 13.5,
-              "right": 165.453125,
-              "bottom": 29.5
+            "padding": "32px",
+            "rows": 0,
+            "switch": {
+              "x": 1260,
+              "y": 44,
+              "right": 1354,
+              "bottom": 76
             },
             "toggle": {
               "x": 12,
               "y": 2,
               "right": 40,
               "bottom": 30
-            },
-            "toolbar": {
+            }
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 32,
+            "top": 0,
+            "switchRegion": "no-drag",
+            "hit": "mP3x-q_frame p0-native"
+          }
+        },
+        {
+          "height": 32,
+          "mode": "工作台",
+          "geometry": {
+            "frame": {
               "x": 0,
               "y": 0,
               "right": 1366,
-              "bottom": 44
+              "bottom": 900,
+              "width": 1366,
+              "height": 900
+            },
+            "main": {
+              "x": 946,
+              "y": 32,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 868
+            },
+            "padding": "32px",
+            "rows": 0,
+            "switch": {
+              "x": 1260,
+              "y": 44,
+              "right": 1354,
+              "bottom": 76
+            },
+            "toggle": {
+              "x": 12,
+              "y": 2,
+              "right": 40,
+              "bottom": 30
             }
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 32,
+            "top": 0,
+            "switchRegion": "no-drag",
+            "hit": "mP3x-q_frame p0-native"
+          }
+        },
+        {
+          "height": 40,
+          "mode": "聊天",
+          "geometry": {
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 900
+            },
+            "main": {
+              "x": 280,
+              "y": 40,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1086,
+              "height": 860
+            },
+            "padding": "40px",
+            "rows": 0,
+            "switch": {
+              "x": 1260,
+              "y": 52,
+              "right": 1354,
+              "bottom": 84
+            },
+            "toggle": {
+              "x": 12,
+              "y": 6,
+              "right": 40,
+              "bottom": 34
+            }
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 40,
+            "top": 0,
+            "switchRegion": "no-drag",
+            "hit": "mP3x-q_frame p0-native"
+          }
+        },
+        {
+          "height": 40,
+          "mode": "工作台",
+          "geometry": {
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 900
+            },
+            "main": {
+              "x": 946,
+              "y": 40,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 860
+            },
+            "padding": "40px",
+            "rows": 0,
+            "switch": {
+              "x": 1260,
+              "y": 52,
+              "right": 1354,
+              "bottom": 84
+            },
+            "toggle": {
+              "x": 12,
+              "y": 6,
+              "right": 40,
+              "bottom": 34
+            }
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 40,
+            "top": 0,
+            "switchRegion": "no-drag",
+            "hit": "mP3x-q_frame p0-native"
+          }
+        },
+        {
+          "height": 48,
+          "mode": "聊天",
+          "geometry": {
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 900
+            },
+            "main": {
+              "x": 280,
+              "y": 48,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1086,
+              "height": 852
+            },
+            "padding": "48px",
+            "rows": 0,
+            "switch": {
+              "x": 1260,
+              "y": 60,
+              "right": 1354,
+              "bottom": 92
+            },
+            "toggle": {
+              "x": 12,
+              "y": 10,
+              "right": 40,
+              "bottom": 38
+            }
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 48,
+            "top": 0,
+            "switchRegion": "no-drag",
+            "hit": "mP3x-q_frame p0-native"
+          }
+        },
+        {
+          "height": 48,
+          "mode": "工作台",
+          "geometry": {
+            "frame": {
+              "x": 0,
+              "y": 0,
+              "right": 1366,
+              "bottom": 900,
+              "width": 1366,
+              "height": 900
+            },
+            "main": {
+              "x": 946,
+              "y": 48,
+              "right": 1366,
+              "bottom": 900,
+              "width": 420,
+              "height": 852
+            },
+            "padding": "48px",
+            "rows": 0,
+            "switch": {
+              "x": 1260,
+              "y": 60,
+              "right": 1354,
+              "bottom": 92
+            },
+            "toggle": {
+              "x": 12,
+              "y": 10,
+              "right": 40,
+              "bottom": 38
+            }
+          },
+          "drag": {
+            "region": "drag",
+            "content": "\"\"",
+            "display": "block",
+            "height": 48,
+            "top": 0,
+            "switchRegion": "no-drag",
+            "hit": "mP3x-q_frame p0-native"
+          }
+        },
+        {
+          "fullscreen": true,
+          "mode": "聊天",
+          "control": {
+            "x": 1260,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          },
+          "toggle": {
+            "x": 12,
+            "y": 10,
+            "width": 28,
+            "height": 28
+          }
+        },
+        {
+          "fullscreen": true,
+          "mode": "工作台",
+          "control": {
+            "x": 1260,
+            "y": 12,
+            "width": 94,
+            "height": 32
+          },
+          "toggle": {
+            "x": 12,
+            "y": 10,
+            "width": 28,
+            "height": 28
           }
         }
       ],
-      "boundary": "Actual rc.3 sidebar/frame CSS under explicit Windows attributes; not Electron OS hit-testing or native window-button acceptance."
+      "boundary": "Installed SDK sidebar CSS and bundled layout under explicit Windows attributes; not Electron OS hit-testing or native window-button acceptance."
     },
     "scopeRaces": {
       "withdrawnMembershipRefusesWrite": true,
@@ -529,10 +586,44 @@
       "closeBRetainsA": true,
       "eachOwnerClosesOwnProcess": true
     },
+    "ux": {
+      "keyboardSave": true,
+      "literalFindAndEscape": true,
+      "draftExportByteExact": true,
+      "customPresetAndLayoutImport": true,
+      "importKeepsEditorIdentity": true,
+      "realQuotaFailureKeepsPriorLayoutAndContent": true,
+      "keyboardLayoutCancel": true,
+      "noProcessReplay": true
+    },
+    "modern": {
+      "filenameTabsAndDirtyStatus": true,
+      "quickOpenRealPathsAndRecents": true,
+      "failureRetainsDraftAndDisk": true,
+      "modalKeyboardAndFocusReturn": true,
+      "virtualGutterScrollAlignment": true,
+      "compactFileOpenReturnsToEditor": true,
+      "compactReferenceReturnRevealsSelection": true,
+      "compactRetainsAllContentNodes": 2,
+      "responsiveViewDoesNotChangeLayout": true,
+      "commandNavigationDoesNotSpawnOrReload": true,
+      "narrow": {
+        "panel": {
+          "left": 289,
+          "right": 856,
+          "width": 567
+        },
+        "work": {
+          "left": 280,
+          "right": 871
+        },
+        "editorWidth": 518
+      }
+    },
     "notVerified": [
-      "production GUI",
-      "independent review",
-      "full remaining interaction matrix"
+      "running profile GUI after upgrade",
+      "OS-level IME and non-Linux platforms",
+      "production authentication and idle expiry"
     ],
     "real": [
       "public SDK",
@@ -553,7 +644,7 @@
     "close": 5,
     "closed": 5,
     "activeRetains": 0,
-    "upgrades": 4
+    "upgrades": 5
   },
   "errors": [
     "DSHOME_EXPECTED_PROVIDER_FAILURE",
@@ -561,17 +652,17 @@
   ],
   "browserConsole": [
     "Failed to load resource: net::ERR_FAILED",
-    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:8231/product.js:5309:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:8231/product.js:5321:35)\n    at Content (http://127.0.0.1:8231/product.js:15198:22)\n    at div\n    at article\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:8231/product.js:15092:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:8231/product.js:16517:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:8231/ui-layout.js:806:20)\n    at div\n    at AppFrame (http://127.0.0.1:8231/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:8231/ui-layout.js:780:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:8231/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:8231/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:8231/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:8231/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:8231/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
+    "The above error occurred in the <render> component:\n\n    at render (eval at evaluate (:290:30), <anonymous>:1:153)\n    at ProviderBoundary (http://127.0.0.1:10001/product.js:5378:26)\n    at div\n    at div\n    at ModuleView (http://127.0.0.1:10001/product.js:5390:35)\n    at Content (http://127.0.0.1:10001/product.js:15671:22)\n    at div\n    at article\n    at div\n    at div\n    at div\n    at section\n    at Workspace (http://127.0.0.1:10001/product.js:15402:36)\n    at div\n    at div\n    at Body (http://127.0.0.1:10001/product.js:17061:21)\n    at div\n    at div\n    at section\n    at Desktop (http://127.0.0.1:10001/ui-layout.js:831:20)\n    at div\n    at AppFrame (http://127.0.0.1:10001/ui-layout.js:209:23)\n    at div\n    at Frame (http://127.0.0.1:10001/ui-layout.js:821:18)\n    at DualFrame\n    at RootEntry (http://127.0.0.1:10001/renderer.js:882:24)\n    at SlotErrorBoundary (http://127.0.0.1:10001/renderer.js:631:27)\n    at div\n    at RootOutlet (http://127.0.0.1:10001/renderer.js:1233:25)\n    at ScopeProvider (http://127.0.0.1:10001/renderer.js:304:28)\n    at RootStandardProvider (http://127.0.0.1:10001/renderer.js:296:35)\n\nReact will try to recreate this component tree from scratch using the error boundary you provided, ProviderBoundary."
   ],
   "journals": [
     {
-      "follows": 4,
+      "follows": 5,
       "activeFollowers": 0,
       "prompts": 0,
       "appended": 1
     },
     {
-      "follows": 7,
+      "follows": 8,
       "activeFollowers": 0,
       "prompts": 0,
       "appended": 0

@@ -310,7 +310,23 @@ window.__ModuleLoader__.load({
         });
       }
 
+      // Follow the live shell service, including late arrival and withdrawal.
+      // Product identity/notifications remain DSHOME; only the visible brand changes.
+      var brandMode = 'original', brandListeners = new Set();
+      function publishBrand(mode) {
+        if (brandMode === mode) return;
+        brandMode = mode; brandListeners.forEach(function (notify) { notify(); });
+      }
+      function subscribeBrand(notify) { brandListeners.add(notify); return function () { brandListeners.delete(notify); }; }
+      function readBrand() { return brandMode; }
+      if (typeof ctx.inject === 'function') ctx.inject(['dualShellP0'], function (scope) {
+        var shell = scope.get('dualShellP0');
+        function refreshBrand() { publishBrand(shell.getSnapshot().mode); }
+        refreshBrand(); var off = shell.subscribe(refreshBrand);
+        scope.effect(function () { return function () { off(); publishBrand('original'); }; });
+      });
       function Name() {
+        var mode = typeof react.useSyncExternalStore === 'function' ? react.useSyncExternalStore(subscribeBrand, readBrand) : brandMode;
         var kids = [
           jsx('span', {
             // The sweep target. The inline `color` stays as the no-glow fallback;
@@ -321,11 +337,12 @@ window.__ModuleLoader__.load({
               color: 'var(--dsw-alias-brand-primary, ' + BRAND_LIGHT + ')',
               fontWeight: 600,
             },
-            children: BRAND_NAME,
+            children: mode === 'workbench' ? '鲸鱼工作台' : BRAND_NAME,
           }, 'n'),
         ];
         if (VERSION) {
           kids.push(jsx('span', {
+            className: 'dshome-brand-version',
             style: {
               height: 16,
               lineHeight: '16px',

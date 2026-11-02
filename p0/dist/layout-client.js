@@ -628,6 +628,7 @@ __export(extension_exports, {
   Controls: () => Controls,
   Desktop: () => Desktop,
   Frame: () => Frame,
+  SceneActions: () => SceneActions,
   css: () => css,
   install: () => install
 });
@@ -791,34 +792,40 @@ function install(ctx) {
     store.setDesktop(scope.get("dshomeDesktop"));
   });
   for (const name of ["conversation.session.header.utilities", "conversation.hero.options"]) {
-    ctx.slots.inject(name, () => ctx.slots.register({ name, id: "dshome.shell-mode", order: -60 }, () => h2(Controls, { store, native: true })));
+    ctx.slots.inject(name, () => ctx.slots.register({ name, id: "dshome.shell-actions", order: -60 }, () => h2(SceneActions, { store, native: true })));
   }
   return store;
 }
-function Controls({ store, native = false }) {
+function Controls({ store }) {
   const view = useState(store);
   return h2(
     "div",
-    { className: "p0-inline-controls" + (native ? " p0-native-controls" : "") },
+    { className: "p0-inline-controls" },
     h2(
       "div",
       { className: "p0-mode-switch", role: "group", "aria-label": "\u6574\u7A97\u6A21\u5F0F", title: "\u53EA\u5207\u6362\u5448\u73B0\uFF0C\u4FDD\u7559\u5F53\u524D\u4F1A\u8BDD\u548C\u5DE5\u4F5C\u73B0\u573A" },
-      ...[["original", "\u539F\u7248"], ["workbench", "\u9CB8\u9C7C\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => store.setMode(mode) }, title))
-    ),
-    view.mode === "workbench" && h2("button", { className: "p0-narrow-switch", type: "button", onClick: () => store.setNarrowPane(view.narrowPane === "chat" ? "workspace" : "chat") }, view.narrowPane === "chat" ? "\u64CD\u4F5C\u533A" : "\u804A\u5929"),
-    view.mode === "workbench" && view.desktop?.RecoveryShelf && h2(view.desktop.RecoveryShelf, { selectedKey: view.selected })
+      ...[["original", "\u804A\u5929"], ["workbench", "\u5DE5\u4F5C\u53F0"]].map(([mode, title]) => h2("button", { key: mode, type: "button", "aria-pressed": view.mode === mode, onClick: () => store.setMode(mode) }, title))
+    )
+  );
+}
+function SceneActions({ store, native = false }) {
+  const view = useState(store);
+  if (view.mode !== "workbench") return null;
+  return h2(
+    "div",
+    { className: "p0-inline-controls p0-scene-actions" + (native ? " p0-native-controls" : "") },
+    h2("button", { className: "p0-narrow-switch", type: "button", "aria-label": view.narrowPane === "chat" ? "\u663E\u793A\u64CD\u4F5C\u533A" : "\u663E\u793A\u53F3\u4FA7\u804A\u5929", onClick: () => store.setNarrowPane(view.narrowPane === "chat" ? "workspace" : "chat") }, view.narrowPane === "chat" ? "\u64CD\u4F5C\u533A" : "\u53F3\u4FA7\u804A\u5929"),
+    view.desktop?.RecoveryShelf && h2(view.desktop.RecoveryShelf, { selectedKey: view.selected })
   );
 }
 function Frame({ NativeFrame, ...props }) {
   const view = useState(props.dualShell);
-  const global = props.usePanelInfo((info) => info.activePanelId !== null);
   return h2(
     "div",
     { className: "p0-shell", "data-p0-shell": true, "data-mode": view.mode, "data-pane": view.narrowPane },
     h2(NativeFrame, { ...props, dualView: view }),
-    // Global pages have no conversation/header seat. A compact non-row fallback
-    // remains reachable without changing their native layout or root selection.
-    (global || view.mode === "workbench" && (!view.selected || !view.desktop)) && h2("div", { className: "p0-global-controls" }, h2(Controls, { store: props.dualShell }))
+    h2("div", { className: "p0-mode-anchor" }, h2(Controls, { store: props.dualShell })),
+    view.mode === "workbench" && (!view.selected || !view.desktop) && h2("div", { className: "p0-recovery-anchor" }, h2(SceneActions, { store: props.dualShell }))
   );
 }
 function Desktop({ store, active, chatWidth, chatMax }) {
@@ -832,7 +839,7 @@ function Desktop({ store, active, chatWidth, chatMax }) {
       view.scenes.map((scene) => h2(
         "div",
         { key: scene.id, className: "p0-full-scene", hidden: view.selected !== scene.key, inert: active && view.selected === scene.key ? void 0 : "", "data-scene": scene.id, "data-workspace": scene.workspaceId },
-        view.desktop ? h2(view.desktop.Body, { scene, active: active && view.selected === scene.key, shellControls: h2(Controls, { store }), onOriginal: () => store.setMode("original") }) : h2("p", { role: "status" }, "\u771F\u5B9E\u5DE5\u4F5C\u533A\u670D\u52A1\u5C1A\u672A\u88C5\u914D\uFF1B\u672A\u663E\u793A\u6A21\u62DF\u6587\u4EF6\u6216\u7EC8\u7AEF\u3002")
+        view.desktop ? h2(view.desktop.Body, { scene, active: active && view.selected === scene.key, shellControls: h2(SceneActions, { store }), onOriginal: () => store.setMode("original") }) : h2("p", { role: "status" }, "\u771F\u5B9E\u5DE5\u4F5C\u533A\u670D\u52A1\u5C1A\u672A\u88C5\u914D\uFF1B\u672A\u663E\u793A\u6A21\u62DF\u6587\u4EF6\u6216\u7EC8\u7AEF\u3002")
       )),
       !view.selected && h2("p", { role: "status" }, view.reason)
     ),
@@ -877,14 +884,25 @@ var css = layoutCSS + `
 
 .p0-shell{height:100%;position:relative;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);font:13px var(--dsh-font-family-text,system-ui,sans-serif)}
 /* Native AppFrame keeps its ONE titlebar reservation and Electron drag surface. */
+.p0-shell [data-slot="sidebar.brand.name"] .dshome-glow-name{white-space:nowrap}
+.p0-shell[data-mode=workbench] [data-slot="sidebar.brand.name"] .dshome-brand-version{display:none}
 .p0-inline-controls{display:inline-flex;align-items:center;gap:6px;flex:none;min-width:0;-webkit-app-region:no-drag}
 .p0-inline-controls button,.p0-desktop button,.p0-desktop select{font:inherit;color:inherit;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);padding:5px 9px;border-radius:6px;cursor:pointer}
 .p0-mode-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-base)}
-.p0-inline-controls .p0-mode-switch button{padding:3px 7px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
+.p0-inline-controls .p0-mode-switch button{box-sizing:border-box;width:43px;height:26px;padding:3px 4px;border-color:transparent;background:transparent;font-size:12px;line-height:1.4;white-space:nowrap}
 .p0-mode-switch [aria-pressed=true]{background:color-mix(in srgb,var(--dsw-alias-bg-base) 88%,#3f5ce8)!important;font-weight:600}
 .p0-inline-controls button:hover{background:color-mix(in srgb,var(--dsw-alias-bg-base) 89%,#3f5ce8)}.p0-inline-controls button:focus-visible{outline:2px solid #647cf4;outline-offset:2px}
 .p0-narrow-switch{display:none!important}.p0-shell[data-mode=workbench] .p0-native-controls{display:none}
-.p0-global-controls{position:absolute;right:16px;top:var(--dsh-frame-overlay-top,16px);z-index:20;max-width:calc(100% - 32px)}
+.p0-mode-anchor{position:absolute;right:12px;top:calc(var(--dsh-frame-chrome-top,0px) + 12px);z-index:20;-webkit-app-region:no-drag}
+/* Reserve an in-row seat; never add a new mode row or cover native controls. */
+.p0-shell [data-slot="conversation.header"]>header{box-sizing:border-box;padding-right:140px;container-type:inline-size}
+.p0-shell [data-slot="conversation.header"] :has(>[data-slot="conversation.session.header.corner"]){right:140px}
+@container(max-width:540px){.p0-shell .dshome-wb-switch{padding:1px;gap:1px}.p0-shell .dshome-wb-switch button{font-size:11px;padding:3px 4px;min-height:26px}}
+.p0-shell .wb-header{padding-right:124px}
+.p0-recovery-anchor{position:absolute;left:16px;top:calc(var(--dsh-frame-chrome-top,0px) + 12px);z-index:19}
+.p0-mode-switch{box-sizing:border-box;width:94px;height:32px}
+@container(max-width:540px){.p0-shell .wb-header{padding-right:116px}.p0-shell .wb-header-actions{gap:4px}}
+
 .p0-inline-controls .wb-retained-drafts{font-size:11px}.p0-inline-controls .wb-retained-drafts summary{cursor:pointer;white-space:nowrap}.p0-inline-controls .wb-retained-drafts>section{color:var(--dsw-alias-label-primary);max-width:calc(100vw - 40px)}
 .wb-header:has(.p0-inline-controls) .wb-heading-mark,.wb-header:has(.p0-inline-controls) .wb-heading strong{display:none}
 @container(max-width:850px){.wb-header:has(.p0-inline-controls){gap:7px}.wb-header:has(.p0-inline-controls) .wb-connection{display:none}.wb-header:has(.p0-inline-controls) .wb-project{max-width:120px}}

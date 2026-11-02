@@ -1,6 +1,12 @@
 # DSHOME-Plugin
 
-## Current local candidate: 鲸鱼工作台 inline mode switch
+## Current local candidate: fixed Chat / Workbench switch and mode-aware brand
+
+The **聊天 / 工作台** buttons now share one root-owned, top-right position and one stable DOM node across modes, sessions, narrow panes and global pages. No dedicated mode row is added. The sidebar brand reads **DSHOME** in Chat and **鲸鱼工作台** in Workbench, reverting when switched back; internal mode IDs and storage keys are unchanged.
+
+This refinement is **source-only, not loaded**. Actual SDK/Chromium tests cover matching coordinates, no control overlap, conditional branding and retained document/web/chat drafts. See [evidence and limits](docs/FIXED-MODE-BRAND-2026-11-02.md). Earlier acceptance and source-stage notes below do not accept this refinement.
+
+## Previous source-stage record: inline mode switch
 
 The original/workbench mode switch now shares the existing native conversation utilities (Hero options for blank sessions) or the workspace header. The separate 52px shell toolbar is removed, and the product-facing workbench title is **鲸鱼工作台**. Global pages retain a compact fallback, without a new layout row. Mode IDs and persisted layout keys are unchanged.
 
