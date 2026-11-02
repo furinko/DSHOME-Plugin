@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+export async function runInteractionScenario(page) {
+  await page.getByRole('group', { name: '整窗模式', exact: true }).getByRole('button', { name: '工作台', exact: true }).click();
+  const scene = page.locator('.p0-full-scene:not([hidden])');
+  const layout = scene.getByRole('button', { name: '布局选项', exact: true });
+  assert.equal(await scene.getByRole('button', { name: '保存布局', exact: true }).count(), 0);
+  await layout.click();
+  await scene.getByRole('button', { name: '保存布局', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await layout.getAttribute('aria-expanded'), 'false');
+  assert.equal(await layout.evaluate(n => document.activeElement === n), true);
+  await layout.click();
+  await scene.locator('.wb-heading').click();
+  assert.equal(await layout.getAttribute('aria-expanded'), 'false');
+  const open = scene.getByRole('button', { name: '快速打开文件', exact: true });
+  await open.click();
+  const dialog = scene.getByRole('dialog', { name: '快速打开文件', exact: true });
+  const input = dialog.getByRole('combobox');
+  await input.fill('example.md'); await input.press('Home');
+  assert.equal(await input.evaluate(n => n.selectionStart), 0);
+  await input.press('End'); assert.equal(await input.evaluate(n => n.selectionStart), 10);
+  await input.press('Escape');
+  assert.equal(await open.evaluate(n => document.activeElement === n), true);
+  await open.press('Control+Shift+p');
+  await scene.getByRole('dialog', { name: '命令面板', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await scene.getByRole('button', { name: '新建内容', exact: true }).click();
+  await scene.getByRole('button', { name: '新建便笺', exact: true }).click();
+  const note = scene.locator('.wb-note:visible');
+  await note.fill('保留这份草稿');
+  const panel = note.locator('xpath=ancestor::article');
+  const close = panel.locator('.wb-tab-item:has([role=tab][aria-selected=true])').getByRole('button', {name:/关闭标签/});
+  page.once('dialog', d => d.dismiss()); await close.click();
+  assert.equal(await note.inputValue(), '保留这份草稿');
+  page.once('dialog', d => d.accept()); await close.click();
+  assert.equal(await note.count(), 0);
+  await page.screenshot({path:'test-output/interaction-workbench.png'});
+  return { layoutDisclosure:true, escapeRestoresFocus:true, outsideClickDismisses:true, directFileOpen:true, textHomeEnd:true, commandShortcut:true, tabCloseCancelPreservesDraft:true, confirmedClose:true };
+}
+

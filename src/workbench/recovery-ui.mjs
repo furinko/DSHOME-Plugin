@@ -23,13 +23,13 @@ export function DocumentRecovery({ doc, state: s, notify, hideActions = false })
       button('导出草稿', () => run(() => downloadDraft(s.path, s.text)))),
     comparison && h('section', { className: 'wb-document-recovery', role: 'region', 'aria-label': '文档比较与恢复', style: { padding: 8, flex: '0 1 320px', minHeight: 180, maxHeight: '65%', display: 'flex', flexDirection: 'column', gap: 5, overflow: 'auto' } },
       h('strong', null, '文档比较与恢复'),
-      h('small', null, '采用操作只改变本地基线，不写磁盘；保存仍检查此快照的版本。快照不证明旧在途写入已停止。'),
+      h('small', null, '先选择要保留的内容，再点击保存写入文件。这里的选择不会立即覆盖磁盘；尚未确认的保存仍需核对。'),
       stale && h('p', { role: 'alert' }, '比较之后草稿已变化，请刷新比较再决定。'),
       h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3,minmax(180px,1fr))', gap: 6, flex: 1, minHeight: 80, overflow: 'auto' } },
-        h(TextPane, { title: '旧保存基线', text: s.baseText }), h(TextPane, { title: '磁盘快照', text: comparison.disk.text }), h(TextPane, { title: '当前草稿', text: s.text })),
+        h(TextPane, { title: '上次读取的内容', text: s.baseText }), h(TextPane, { title: '磁盘上的内容', text: comparison.disk.text }), h(TextPane, { title: '当前草稿', text: s.text })),
       h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-        button('保留草稿，采用磁盘新基线', () => run(() => doc.resolveComparison(comparison.token, 'keep-draft')), { disabled: !!stale || s.comparing }),
-        button('放弃草稿，使用磁盘快照', () => { if (window.confirm('这将放弃当前未保存草稿，改用刚才显示的磁盘快照；不会写盘。确定吗？')) run(() => doc.resolveComparison(comparison.token, 'use-disk')); }, { disabled: !!stale || s.comparing }),
+        button('保留我的修改', () => run(() => doc.resolveComparison(comparison.token, 'keep-draft')), { disabled: !!stale || s.comparing }),
+        button('使用磁盘版本', () => { if (window.confirm('这将放弃当前未保存草稿，改用刚才显示的磁盘上的内容；不会写盘。确定吗？')) run(() => doc.resolveComparison(comparison.token, 'use-disk')); }, { disabled: !!stale || s.comparing }),
         button('刷新比较', () => run(() => doc.compareDisk()), { disabled: s.comparing || s.phase === 'saving' }),
         button('关闭比较', () => doc.dismissComparison(comparison.token)))));
 }

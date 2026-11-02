@@ -44,13 +44,13 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
   React.useEffect(() => { if (!active) setPalette(null); }, [active]);
   React.useLayoutEffect(() => {
     if (layout.editing) sectionRef.current?.querySelector('.wb-layout-editor button:not(:disabled)')?.focus();
-    else if (wasEditing.current) sectionRef.current?.querySelector('[data-wb-edit-layout]')?.focus();
+    else if (wasEditing.current) sectionRef.current?.querySelector('[data-wb-layout-trigger]')?.focus();
     wasEditing.current = !!layout.editing;
   }, [!!layout.editing]);
   React.useEffect(() => {
     if (!menu && !tools) return;
-    const close = event => { if (!sectionRef.current?.contains(event.target)) { setMenu(false); setTools(false); } };
-    document.addEventListener('pointerdown', close); return () => document.removeEventListener('pointerdown', close);
+    const close = event => { if (!event.target.closest?.('.wb-add,.wb-layout-tools,[aria-label="新建内容"],[data-wb-layout-trigger]')) { setMenu(false); setTools(false); } };
+    document.addEventListener('click', close); return () => document.removeEventListener('click', close);
   }, [menu, tools]);
   const splitGeometry = c.model.geometry(Math.max(0, room.width - 24), Math.max(0, room.height - 24));
   function action(fn) { try { Promise.resolve(fn()).catch(e => c.notify(errorText(e))); } catch (e) { c.notify(errorText(e)); } }
@@ -90,7 +90,7 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
     { id: 'recover-layout', icon: 'refresh', title: '检查布局存储', detail: '查看备份与冲突恢复', run: () => c.inspectLayout() },
     { id: 'layout-tools', icon: 'layout', title: '布局导入与预设管理', detail: '导入 / 导出布局、命名预设', run: () => setTools(true) },
     { id: 'export-layout', icon: 'download', title: '导出布局', run: () => download('dshome-layout.json', c.exportLayout()) },
-    { id: 'original', icon: 'external', title: '返回原版', detail: '工作台内容仍保留', run: onOriginal },
+    { id: 'original', icon: 'external', title: '返回聊天', detail: '工作台内容仍保留', run: onOriginal },
   ];
   const documents = [...c.contents.values()].filter(i => i.document), dirty = documents.filter(i => i.document.getSnapshot().dirty || i.document.getSnapshot().uncertain).length;
   return h('section', { ref: sectionRef, className: 'dshome-v2', 'data-compact': compact, 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId,
@@ -102,7 +102,7 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
         event.preventDefault(); event.stopPropagation(); setPalette(event.key.toLowerCase() === 'p' && !event.shiftKey ? 'files' : 'commands');
       }
       if (layout.editing && (event.ctrlKey || event.metaKey) && event.key === 'Enter') { action(applyLayout); event.preventDefault(); }
-      if (event.key === 'Escape') { if (menu || tools) { setMenu(false); setTools(false); event.stopPropagation(); } else if (layout.editing) { c.model.cancelEdit(); event.preventDefault(); } }
+      if (event.key === 'Escape') { if (menu || tools) { setMenu(false); setTools(false); sectionRef.current?.querySelector(tools ? '[data-wb-layout-trigger]' : '[aria-label="新建内容"]')?.focus(); event.preventDefault(); event.stopPropagation(); } else if (layout.editing) { c.model.cancelEdit(); event.preventDefault(); } }
     } },
     h('header', { className: 'wb-header', role: 'toolbar', 'aria-label': '工作台工具栏' },
       shellControls,
@@ -110,17 +110,17 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
       h('span', { className: 'wb-connection', 'data-ready': servicesAvailable }, servicesAvailable ? '已连接' : '连接暂停'),
       h('div', { className: 'wb-header-actions' }, layout.editing ? h(React.Fragment, null,
         button('取消', () => c.model.cancelEdit()), button(labelled('check', '应用布局'), () => action(applyLayout), { className: 'wb-primary', 'aria-label': '应用布局' })) : h(React.Fragment, null,
-        button(labelled('save', state.savingLayout ? '正在保存…' : '保存布局'), () => action(() => c.saveLayout()), { disabled: state.savingLayout, 'aria-label': '保存布局' }),
-        button(icon('more'), () => { setTools(!tools); setMenu(false); }, { className: 'wb-icon-button', 'aria-expanded': tools, 'aria-label': '更多布局操作', title: '布局文件与预设' }),
-        onCloseWorkspace && button(icon('close'), onCloseWorkspace, { 'aria-label': '关闭操作现场', title: '关闭现场；未保存内容会先确认', className: 'wb-icon-button' })))),
+        button(labelled('layout', '布局'), () => { setTools(!tools); setMenu(false); }, { 'data-wb-layout-trigger': true, 'aria-expanded': tools, 'aria-label': '布局选项', title: '调整、保存和恢复布局' }),
+        onCloseWorkspace && button(icon('close'), onCloseWorkspace, { 'aria-label': '关闭工作区内容', title: '关闭此工作区内容；未保存内容与终端会先确认', className: 'wb-icon-button' })))),
     !layout.editing && h('div', { className: 'wb-commandbar' },
-      h('select', { 'aria-label': '布局预设', value: layout.selectedPreset, onChange: e => action(() => c.model.selectPreset(e.target.value)) }, h('option', { value: 'custom', disabled: true }, '自定义布局'), Object.keys(layout.presets).map(name => h('option', { key: name, value: name }, name === 'development' ? '开发布局' : name === 'review' ? '审阅布局' : name))),
-      button(h(React.Fragment, null, icon('search', 16), h('span', null, '打开文件或查找操作'), h('kbd', null, 'Ctrl K')), () => setPalette('commands'), { className: 'wb-quick-trigger', 'aria-label': '打开命令面板', title: 'Ctrl/⌘+K · Ctrl/⌘+P 快速打开文件' }),
-      button(labelled('layout', '编辑布局'), () => { setMenu(false); setTools(false); c.model.beginEdit(); }, { 'data-wb-edit-layout': true, 'aria-label': '编辑布局' }),
-      button(labelled('plus', '添加模块'), () => { setMenu(!menu); setTools(false); }, { 'aria-expanded': menu, 'aria-label': '＋ 添加模块' }),
-      button(icon('refresh', 16), () => action(() => c.inspectLayout()), { className: 'wb-icon-button', 'aria-label': '检查布局存储', title: '恢复布局与备份', disabled: state.savingLayout }),
-      button(icon('external', 16), onOriginal, { className: 'wb-icon-button', 'aria-label': '返回原版', title: '返回原版，保留工作台现场' })),
+      button(h(React.Fragment, null, icon('search', 16), h('span', null, '打开文件'), h('kbd', null, 'Ctrl P')), () => setPalette('files'), { className: 'wb-quick-trigger', 'aria-label': '快速打开文件', title: 'Ctrl/⌘+P 打开文件' }),
+      button(labelled('plus', '新建'), () => { setMenu(!menu); setTools(false); }, { 'aria-expanded': menu, 'aria-label': '新建内容' }),
+      button(labelled('command', '搜索操作'), () => setPalette('commands'), { 'aria-label': '打开命令面板', title: 'Ctrl/⌘+Shift+P 搜索操作' })),
     tools && !layout.editing && h('div', { className: 'wb-layout-tools', 'aria-label': '布局文件与预设' },
+      h('select', { 'aria-label': '布局预设', value: layout.selectedPreset, onChange: e => action(() => c.model.selectPreset(e.target.value)) }, h('option', { value: 'custom', disabled: true }, '自定义布局'), Object.keys(layout.presets).map(name => h('option', { key: name, value: name }, name === 'development' ? '开发布局' : name === 'review' ? '审阅布局' : name))),
+      button(labelled('layout', '编辑布局'), () => { setMenu(false); setTools(false); c.model.beginEdit(); }, { 'data-wb-edit-layout': true, 'aria-label': '编辑布局' }),
+      button(state.savingLayout ? '正在保存…' : '保存布局', () => action(() => c.saveLayout()), { disabled: state.savingLayout }),
+      button('恢复布局与备份', () => action(() => c.inspectLayout()), { disabled: state.savingLayout }),
       button('导入布局文件', () => importRef.current?.click()), button('导出布局', () => download('dshome-layout.json', c.exportLayout())),
       h('form', { onSubmit: event => { event.preventDefault(); const name = new FormData(event.currentTarget).get('preset'); action(() => { if (Object.hasOwn(layout.presets, name) && !window.confirm('覆盖同名布局预设？不会关闭现有内容。')) return; c.model.savePreset(name); c.notify('预设已记录；点击保存布局后可在下次打开时使用。'); }); } },
         h('input', { name: 'preset', 'aria-label': '新布局预设名称', placeholder: '预设名称（英文字母开头）', pattern: '[A-Za-z](?:[A-Za-z0-9_]|-){0,95}', maxLength: 96, required: true }), h('button', { type: 'submit' }, '保存为预设'))),
@@ -128,7 +128,7 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
       const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
       action(async () => { if (file.size > 262144) throw Error('布局文件超过 256 KB'); const text = await file.text(); if (window.confirm('导入此项目的布局？现有内容会保留，未出现在布局中的模块将收起；不会保存文件或执行命令。')) c.importLayout(text); });
     } }),
-    menu && !layout.editing && h('nav', { className: 'wb-add', 'aria-label': '添加内容模块' }, h('span', null, '添加到当前工作台'), c.model.modules().map(definition => button(labelled(definition.kind, definition.label), () => action(() => { showPanel(c.model.addPanel(definition.kind)); setMenu(false); }), { key: definition.kind }))),
+    menu && !layout.editing && h('nav', { className: 'wb-add', 'aria-label': '新建内容' }, h('span', null, '选择要打开的内容'), c.model.modules().map(definition => button(labelled(definition.kind, ({ document: '打开文件', files: '文件浏览器', terminal: '新建终端', web: '打开网页', note: '新建便笺' })[definition.kind] ?? definition.label), () => action(() => { if (definition.kind === 'document') setPalette('files'); else showPanel(c.model.addPanel(definition.kind)); setMenu(false); }), { key: definition.kind }))),
     h(LayoutRecovery, { c, state, download }),
     state.terminalCleanup && (state.terminalCleanup.requests.length > 0 || state.terminalCleanup.overflow > 0) && h('section', { className: 'wb-terminal-cleanup', 'aria-label': '终端关闭任务', style: { padding: 8, maxHeight: 180, overflow: 'auto' } },
       state.terminalCleanup.requests.map(item => h('div', { key: item.id, 'data-close-terminal': item.id, role: item.phase === 'failed' ? 'alert' : 'status' },
@@ -153,8 +153,8 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
               button(icon('minimize', 15), () => action(() => c.model.collapse(panel.id)), { 'aria-label': '收起 ' + panel.id, title: '收起 ' + panel.title }),
               button(icon(layout.layout.maximized === panel.id ? 'restore' : 'maximize', 15), () => action(() => c.model.maximize(panel.id)), { 'aria-label': layout.layout.maximized === panel.id ? '还原' : '放大', title: layout.layout.maximized === panel.id ? '还原模块' : '放大模块' }),
               button(icon('close', 15), () => action(() => c.closePanel(panel.id)), { 'aria-label': '关闭 ' + panel.id, title: '关闭 ' + panel.title })),
-            h('nav', { className: 'wb-tabs', role: 'tablist', 'aria-label': panel.title + ' 标签' }, tabs.map((p, index) => button(h(React.Fragment, null, icon(p.kind, 14), h('span', null, panelCaption(p, c.content(p.id))), (c.content(p.id).document?.getSnapshot().dirty || c.content(p.id).document?.getSnapshot().uncertain) && h('span', { className: 'wb-dirty-dot', 'data-uncertain': c.content(p.id).document?.getSnapshot().uncertain, 'aria-label': c.content(p.id).document?.getSnapshot().uncertain ? '保存结果待核对' : '未保存' })), () => showPanel(p.id), { key: p.id, role: 'tab', tabIndex: p.id === panel.id ? 0 : -1, 'aria-selected': p.id === panel.id,
-              onKeyDown: event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length; showPanel(tabs[next].id); requestAnimationFrame(() => sectionRef.current?.querySelector('[data-wb-content="' + tabs[next].id + '"] [role=tab][aria-selected=true]')?.focus()); } }))),
+            h('nav', { className: 'wb-tabs', role: 'tablist', 'aria-label': panel.title + ' 标签' }, tabs.map((p, index) => h('span', { key: p.id, className: 'wb-tab-item', role: 'presentation' }, button(h(React.Fragment, null, icon(p.kind, 14), h('span', null, panelCaption(p, c.content(p.id))), (c.content(p.id).document?.getSnapshot().dirty || c.content(p.id).document?.getSnapshot().uncertain) && h('span', { className: 'wb-dirty-dot', 'data-uncertain': c.content(p.id).document?.getSnapshot().uncertain, 'aria-label': c.content(p.id).document?.getSnapshot().uncertain ? '保存结果待核对' : '未保存' })), () => showPanel(p.id), { key: p.id, role: 'tab', tabIndex: p.id === panel.id ? 0 : -1, 'aria-selected': p.id === panel.id,
+              onKeyDown: event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length; showPanel(tabs[next].id); requestAnimationFrame(() => sectionRef.current?.querySelector('[data-wb-content="' + tabs[next].id + '"] [role=tab][aria-selected=true]')?.focus()); } }), button(icon('close', 12), () => action(() => c.closePanel(p.id)), { className: 'wb-tab-close', 'aria-label': '关闭标签 ' + panelCaption(p, c.content(p.id)), title: '关闭 ' + panelCaption(p, c.content(p.id)), tabIndex: p.id === panel.id ? 0 : -1 })))),
             h('div', { className: 'wb-panel-body' }, h(Content, { item, c, openDocument, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, moduleRegistry, showing: showing && !collapsed })));
         }),
         geometry.handles.map(handle => h(SplitHandle, { key: handle.nodeId, handle, c }))),

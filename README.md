@@ -1,5 +1,10 @@
 # DSHOME-Plugin
 
+## Current local candidate: 日常交互优化
+
+打开文件、搜索操作和新建内容直接可达；布局管理集中到一个入口，标签带独立关闭按钮，焦点与冲突措辞整理。独立候选，未装载。范围、证据与限制见 [交互优化记录](docs/INTERACTION-2026-11-02.md)。
+
+
 ## Current local candidate: fixed Chat / Workbench switch and mode-aware brand
 
 The **聊天 / 工作台** buttons now share one root-owned, top-right position and one stable DOM node across modes, sessions, narrow panes and global pages. No dedicated mode row is added. The sidebar brand reads **DSHOME** in Chat and **鲸鱼工作台** in Workbench, reverting when switched back; internal mode IDs and storage keys are unchanged.

@@ -58,4 +58,11 @@ export const modernCSS = `
 @container(max-width:850px){.wb-header{padding:14px 15px 10px;gap:9px}.wb-header-actions .wb-label{display:none}.wb-commandbar{padding:0 15px 12px;flex-wrap:wrap}.wb-quick-trigger{max-width:none!important}.wb-activity-rail{width:46px;padding:12px 5px}.wb-activity-rail button{width:34px!important}.wb-stage{padding:9px}.wb-status-metrics{display:none}.wb-layout-editor{grid-template-columns:145px minmax(220px,1fr)}.wb-module-properties{grid-column:1/-1;max-height:220px}.wb-layout-draft{min-height:330px}}
 @container(max-width:540px){.wb-header{min-height:68px;padding:12px;gap:7px}.wb-heading-mark{display:none}.wb-heading strong{font-size:16px}.wb-project{max-width:130px}.wb-connection{display:none}.wb-compact-switch{padding:8px 12px}.wb-compact-switch>small{display:none}.wb-commandbar{padding:0 12px 11px;gap:6px}.wb-commandbar .wb-quick-trigger{order:3;flex-basis:100%;max-width:none}.wb-commandbar .wb-layout-caption{display:none}.wb-activity-rail{display:none}.wb-stage{padding:8px}.wb-layout-editor{display:flex;flex-direction:column;padding:9px}.wb-layout-editor>aside,.wb-layout-draft{flex-shrink:0}.wb-module-library{max-height:230px}.wb-status{padding:6px 10px}.wb-find input{flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){.dshome-v2 *{transition:none!important}}
+
+.wb-tab-item{display:inline-flex;align-items:center;flex:none;min-width:0;max-width:260px;border-right:1px solid var(--wb-line)}
+.wb-tab-item>[role=tab]{min-width:0;flex:1;border-right:0!important}
+.dshome-v2 .wb-tabs .wb-tab-close{flex:none;padding:2px;min-height:22px;min-width:22px;max-width:22px;width:22px;margin-right:4px;border:0;background:transparent;opacity:.55}
+.wb-tab-item:hover .wb-tab-close,.wb-tab-close:focus-visible{opacity:1!important}
+.wb-tab-item:has([aria-selected=true]){background:var(--wb-selected)}
+.wb-layout-tools{max-height:40vh;overflow:auto}
 `;

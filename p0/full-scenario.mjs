@@ -1,3 +1,4 @@
+import { ensureLayout } from './interaction-helpers.mjs';
 import assert from 'node:assert/strict';
 export async function runScenario({page,context,url,childURL,metrics,errors,browserConsole,iframeLoads,readHostSource,writeHostSource,setHostRoot,readSecondarySource}) {
   const toolbar = await (await import('./toolbar-scenario.mjs')).runToolbarScenario({ page, context, url });
@@ -25,11 +26,11 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   page.once('dialog',dialog=>dialog.dismiss()); await scene().getByRole('button',{name:'关闭 WEB-01',exact:true}).click();
   assert.equal(await form().inputValue(),'整窗网页未提交状态'); ok('web-close-cancel-keeps-form',true);
   await page.evaluate(()=>{window.fullProbe={editor:document.querySelector('textarea.wb-editor'),frame:document.querySelector('iframe[data-wb-iframe]'),input:document.querySelector('[data-lexical-editor=true]')};});
-  await scene().getByRole('button',{name:'保存布局',exact:true}).click();
+  await ensureLayout(scene()); await scene().getByRole('button',{name:'保存布局',exact:true}).click();
   assert.equal(await readHostSource(),original); ok('layout-save-does-not-save-document',true);
-  for(let i=0;i<3;i++) {await scene().getByLabel('布局预设',{exact:true}).selectOption('review');await scene().getByLabel('布局预设',{exact:true}).selectOption('development');}
+  for(let i=0;i<3;i++) {await ensureLayout(scene()); await scene().getByLabel('布局预设',{exact:true}).selectOption('review');await ensureLayout(scene()); await scene().getByLabel('布局预设',{exact:true}).selectOption('development');}
   assert.equal(await editor().inputValue(),draft); assert.equal(await form().inputValue(),'整窗网页未提交状态');
-  await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'取消',exact:true}).click();
+  await ensureLayout(scene()); await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'取消',exact:true}).click();
   await page.getByRole('button',{name:'聊天',exact:true}).click(); await page.getByRole('button',{name:'工作台',exact:true}).click();
   ok('stable-content-and-chat',await page.evaluate(()=>window.fullProbe.editor===document.querySelector('textarea.wb-editor')&&window.fullProbe.frame===document.querySelector('iframe[data-wb-iframe]')&&window.fullProbe.input===document.querySelector('[data-lexical-editor=true]')));
   await page.getByRole('button',{name:'会话 B',exact:true}).click(); await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='B');
@@ -57,7 +58,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>e.controller.contents.get('DOC-01')?.document?.getSnapshot().error?.code==='FS_STALE_VERSION'));
   assert.equal(await readHostSource(),external); assert.equal(await editor().inputValue(),conflictDraft);
   await scene().getByRole('button',{name:'比较磁盘',exact:true}).click(); await scene().getByRole('region',{name:'文档比较与恢复'}).waitFor();
-  await scene().getByRole('button',{name:'保留草稿，采用磁盘新基线',exact:true}).click(); assert.equal(await readHostSource(),external);
+  await scene().getByRole('button',{name:'保留我的修改',exact:true}).click(); assert.equal(await readHostSource(),external);
   await scene().getByRole('button',{name:'保存文件',exact:true}).click();
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>e.controller.contents.get('DOC-01')?.document?.getSnapshot().dirty===false));
   assert.ok((await readHostSource()).includes('本地冲突草稿')); ok('real-version-conflict-and-explicit-recovery',true);
@@ -91,7 +92,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const terminalClose=await (await import('./terminal-close-scenario.mjs')).runDesktopTerminalClose({page,metrics});
   await page.waitForFunction(()=>![...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>e.controller.contents.get('TERM-01')?.started));
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].every(e=>e.controller.getSnapshot().terminalCleanup?.requests.length===0));
-  await scene().getByRole('button',{name:'编辑布局',exact:true}).click();
+  await ensureLayout(scene()); await scene().getByRole('button',{name:'编辑布局',exact:true}).click();
   await scene().getByRole('button',{name:'＋ 网页',exact:true}).click();
   const addedWeb=await page.evaluate(()=>{const e=[...window.testP0.ctx.get('dshomeDesktop').entries.values()].find(e=>e.available());return Object.values(e.controller.model.getSnapshot().editing.panels).find(p=>p.kind==='web'&&p.id!=='WEB-01');});
   const dragSource=scene().locator('.wb-module-library').getByRole('button',{name:addedWeb.title+' · '+addedWeb.id,exact:true});
@@ -100,7 +101,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const merged=await page.evaluate(id=>{const e=[...window.testP0.ctx.get('dshomeDesktop').entries.values()].find(e=>e.available());const walk=n=>n.type==='pane'?[n]:[...walk(n.first),...walk(n.second)];return walk(e.controller.model.getSnapshot().editing.layout.root).some(p=>p.tabs.includes(id)&&p.tabs.includes('DOC-01'));},addedWeb.id);
   ok('real-pointer-drag-merges-panel-tabs',merged);
   await scene().getByRole('button',{name:'应用布局',exact:true}).click();
-  await scene().getByRole('button',{name:'保存布局',exact:true}).click();
+  await ensureLayout(scene()); await scene().getByRole('button',{name:'保存布局',exact:true}).click();
   await page.waitForFunction(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].some(e=>Object.values(e.controller.model.getSnapshot().panels).filter(p=>p.kind==='web').length===2&&!e.controller.getSnapshot().savingLayout));
   const beforeReload=await page.evaluate(()=>{const e=[...window.testP0.ctx.get('dshomeDesktop').entries.values()].find(e=>e.available()); return e.controller.exportLayout();});
   await page.screenshot({path:'test-output/full-desktop.png'});
@@ -111,7 +112,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   const afterReload=await page.evaluate(()=>[...window.testP0.ctx.get('dshomeDesktop').entries.values()].find(e=>e.available()).controller.exportLayout());
   assert.deepEqual(JSON.parse(afterReload),JSON.parse(beforeReload)); assert.equal(metrics.spawn,1); ok('layout-restores-without-command-replay',true);
   const updateGuard=await page.evaluate(()=>window.__dshomePluginWorkbench.checkReload()); assert.equal(updateGuard.allowed,false); assert.equal(updateGuard.projects,1); ok('desktop-retained-project-blocks-config-update',true);
-  await scene().getByRole('button',{name:'关闭操作现场',exact:true}).click(); await page.waitForFunction(()=>window.__dshomePluginWorkbench.checkReload().allowed);
+  await scene().getByRole('button',{name:'关闭工作区内容',exact:true}).click(); await page.waitForFunction(()=>window.__dshomePluginWorkbench.checkReload().allowed);
   await page.evaluate(uri=>window.__dshomePluginWorkbench.returnReference(uri,{sessionId:'A'}),savedReference); await editor().waitFor();
   assert.ok((await editor().inputValue()).includes('本地冲突草稿')); ok('reference-reopens-explicitly-closed-workspace',true);
   for(const width of [1920,1366,1040]) {
@@ -132,7 +133,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.screenshot({path:'test-output/full-desktop-dark.png'});
   const windowChrome=await (await import('./window-scenario.mjs')).runWindowScenario(page);
   await page.setViewportSize({width:1920,height:1080});
-  await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 便笺',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
+  await ensureLayout(scene()); await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 便笺',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
   const note=()=>scene().locator('textarea.wb-note'); await note().fill('独立便笺 🐋\n不会写入布局');
   await note().evaluate(n=>{window.noteProbe=n;});
   await page.getByRole('button',{name:'聊天',exact:true}).click(); await page.getByRole('button',{name:'工作台',exact:true}).click();
@@ -147,7 +148,7 @@ export async function runScenario({page,context,url,childURL,metrics,errors,brow
   await page.getByRole('button',{name:'会话 A',exact:true}).click(); ok('note-shares-stable-instance-with-explicit-export-and-close-protection',true);
   await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='A');
   await page.evaluate(()=>{window.registerDemo=()=>window.testP0.ctx.get('dshomeDesktop').registerModule({kind:'demo-tool',label:'扩展示例',render:props=>{window.moduleProps=props;return 'DEMO:'+JSON.stringify(props.state);}});window.removeDemo=window.registerDemo();});
-  await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 扩展示例',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
+  await ensureLayout(scene()); await scene().getByRole('button',{name:'编辑布局',exact:true}).click(); await scene().getByRole('button',{name:'＋ 扩展示例',exact:true}).click(); await scene().getByRole('button',{name:'应用布局',exact:true}).click();
   await scene().getByText('DEMO:null',{exact:true}).waitFor(); await page.evaluate(()=>window.moduleProps.setState({text:'retained extension draft'})); await scene().getByText('DEMO:{"text":"retained extension draft"}',{exact:true}).waitFor();
   await page.evaluate(()=>{window.staleModuleWrite=window.moduleProps.setState;window.removeDemo();}); await scene().getByText('模块提供者不可用，实例与托管内容状态仍保留。',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>{try{window.staleModuleWrite({text:'wrong'});return false;}catch{return true;}}),true);

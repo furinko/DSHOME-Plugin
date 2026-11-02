@@ -1,3 +1,4 @@
+import { runInteractionScenario } from './interaction-scenario.mjs';
 import assert from 'node:assert/strict';
 
 // Actual SDK + root-owned mode control, never the running GUI.
@@ -66,5 +67,5 @@ export async function runToolbarScenario({ page, context, url }) {
   await page.getByRole('button',{name:'会话 A',exact:true}).click();
   await page.waitForFunction(()=>window.testP0.ctx.get('uiSession').current.getSnapshot()?.key==='A');
   await page.setViewportSize({ width:1920,height:1080 });
-  return { noSeparateModeRow:true,originalFrameGeometryExact:true,oneStableModeNode:true,brandFollowsMode:true,globalAndBlankSessionReachable:true,narrowPaneDoesNotMoveMode:true,probes };
+  const interaction = await runInteractionScenario(page); return { interaction, noSeparateModeRow:true,originalFrameGeometryExact:true,oneStableModeNode:true,brandFollowsMode:true,globalAndBlankSessionReachable:true,narrowPaneDoesNotMoveMode:true,probes };
 }
