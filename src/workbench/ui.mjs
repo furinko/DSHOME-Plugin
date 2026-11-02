@@ -37,7 +37,7 @@ function download(name, text) {
 export function Workspace({ controller: c, workspaceFiles, inputActions, onOriginal, onCloseWorkspace, referenceReady = true, referenceCurrent = () => true, active = true, servicesAvailable = true, terminalAvailable = () => servicesAvailable, projectTitle = c.projectId, moduleRegistry, adaptive = false, shellControls }) {
   const state = useSource(c), layout = useSource(c.model), ref = React.useRef(null), room = useRoom(ref);
   const [selection, select] = React.useState(null), [menu, setMenu] = React.useState(false), [tools, setTools] = React.useState(false), [palette, setPalette] = React.useState(null);
-  const localInput = React.useRef(null), liveDrag = React.useRef(null), [dockHint, setDockHint] = React.useState(null);
+  const localInput = React.useRef(null), liveDrag = React.useRef(null), suppressClick = React.useRef(false), [dockHint, setDockHint] = React.useState(null), [dragging, setDragging] = React.useState(false), [fileHover, setFileHover] = React.useState(false);
   const importRef = React.useRef(null), sectionRef = React.useRef(null);
   const [focusedPanel, focusPanel] = React.useState('DOC-01');
   React.useLayoutEffect(() => { if (state.focusedPanelId) focusPanel(state.focusedPanelId); }, [state.focusRevision]);
@@ -89,16 +89,72 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
     try { const handles = await window.showOpenFilePicker({multiple:true}); for (const handle of handles) await c.openLocalFile(await handle.getFile(), handle); }
     catch(e) { if(e.name!=='AbortError') c.notify(errorText(e)); }
   }
-  function startDock(e,id) {
-    if(e.target.closest?.('button') && e.currentTarget !== e.target.closest('button')) { e.preventDefault(); return; }
-    if(layout.editing || !active) {e.preventDefault();return;}
-    liveDrag.current={id,token:crypto.randomUUID(),revision:c.model.getSnapshot().revision};
-    e.dataTransfer.setData(LAYOUT_DRAG_TYPE,liveDrag.current.token);e.dataTransfer.effectAllowed='move';
+  function cancelDock() { liveDrag.current?.cleanup?.(); liveDrag.current = null; setDockHint(null); setDragging(false); setTimeout(()=>{suppressClick.current=false;},0); }
+  React.useEffect(() => { cancelDock(); }, [active, !!layout.editing, compact]);
+  React.useEffect(() => () => liveDrag.current?.cleanup?.(), []);
+  function startDock(e, id) {
+    if (e.button !== 0 || layout.editing || !active || compact || layout.layout.maximized) return;
+    if (e.target.closest('button') && e.currentTarget !== e.target.closest('button')) return;
+    const handle = e.currentTarget, pointerId = e.pointerId;
+    handle.setPointerCapture?.(pointerId);
+    const origin = { x:e.clientX, y:e.clientY }, revision = c.model.getSnapshot().revision;
+    const sourcePane = geometry.rectangles[id]?.paneId;
+    const sourceCount = Object.values(geometry.rectangles).filter(r => r.paneId === sourcePane).length;
+    let moved = false, target = null;
+    const move = event => {
+      if (event.pointerId !== e.pointerId) return;
+      if (!moved && Math.hypot(event.clientX-origin.x,event.clientY-origin.y) < 8) return;
+      if (!moved) { moved = true; suppressClick.current = true; setDragging(true);  }
+      event.preventDefault(); target = null;
+      for (const node of sectionRef.current.querySelectorAll('article.wb-panel[aria-hidden="false"]')) {
+        const r = node.getBoundingClientRect();
+        if(event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) continue;
+        const paneId = node.dataset.wbPane;
+        const edge = dropEdge(event.clientX-r.left,event.clientY-r.top,r.width,r.height);
+        if (paneId === sourcePane && (sourceCount === 1 || edge === 'tab')) break;
+        target = { paneId, edge }; break;
+      }
+      setDockHint(target);
+      setDragging({ x:event.clientX, y:event.clientY, title:panelCaption(layout.panels[id],c.content(id)) });
+    };
+    const end = event => {
+      if(event.pointerId !== e.pointerId) return;
+      const destination = target; cancelDock();
+      if (moved) { event.preventDefault(); setTimeout(()=>{suppressClick.current=false;},0); }
+      if (destination && event.type === 'pointerup') action(() => {
+        if(c.model.getSnapshot().revision !== revision) throw Error('布局已变化，请重新拖动');
+        c.model.dock(id,destination.paneId,destination.edge);
+      });
+    };
+    const abort = () => { cancelDock(); setTimeout(()=>{suppressClick.current=false;},0); };
+    const key = event => { if(event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); abort(); } };
+    window.addEventListener('pointermove',move,{passive:false}); window.addEventListener('pointerup',end); window.addEventListener('pointercancel',end); window.addEventListener('keydown',key,true); window.addEventListener('blur',abort);
+    liveDrag.current = { cleanup() { if(handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId); window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',end); window.removeEventListener('pointercancel',end); window.removeEventListener('keydown',key,true); window.removeEventListener('blur',abort); } };
   }
-  function cancelDock(){liveDrag.current=null;setDockHint(null);}
-  React.useEffect(()=>{if(!active)cancelDock();},[active]);
-  function overDock(e,paneId){if(!liveDrag.current||!paneId)return;e.preventDefault();e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setDockHint({paneId,edge:dropEdge(e.clientX-r.left,e.clientY-r.top,r.width,r.height)});}
-  function dropDock(e,paneId){if(!liveDrag.current)return;e.preventDefault();e.stopPropagation();const drag=liveDrag.current;cancelDock();action(()=>{if(!active||layout.editing||c.model.getSnapshot().revision!==drag.revision||e.dataTransfer.getData(LAYOUT_DRAG_TYPE)!==drag.token)throw Error('布局已变化，请重新拖动');const r=e.currentTarget.getBoundingClientRect();c.model.dock(drag.id,paneId,dropEdge(e.clientX-r.left,e.clientY-r.top,r.width,r.height));});}
+  // SDK attachments listen on document in bubble phase. Claim all file events
+  // inside this workspace before those listeners; leave chat drops untouched.
+  React.useEffect(() => {
+    if(!active) return;
+    let claimed = false;
+    const reset = () => { claimed=false; setFileHover(false); };
+    const route = event => {
+      if(!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+      const root=sectionRef.current;
+      if(!root?.contains(event.target)) { reset(); return; }
+      event.preventDefault(); event.stopPropagation();
+      if(event.type==='dragleave') { if(!root.contains(event.relatedTarget)) reset(); return; }
+      if(!claimed) { window.dispatchEvent(new Event('dragend')); claimed=true; }
+      setFileHover(event.type!=='drop');
+      event.dataTransfer.dropEffect=layout.editing?'none':'copy';
+      if(event.type!=='drop') return;
+      reset(); if(layout.editing) return;
+      const selected=[...event.dataTransfer.items].filter(i=>i.kind==='file').map(i=>({file:i.getAsFile(),directory:i.webkitGetAsEntry?.()?.isDirectory,handle:i.getAsFileSystemHandle?.()}));
+      action(async()=>{for(const item of selected){try {const handle=await item.handle;if(item.directory||handle?.kind==='directory'){c.notify('请拖入文件，暂不支持整个文件夹。');continue;}if(item.file)await c.openLocalFile(item.file,handle);}catch(error){c.notify(errorText(error));}}});
+    };
+    const types=['dragenter','dragover','dragleave','drop'];
+    types.forEach(type=>document.addEventListener(type,route,true)); window.addEventListener('dragend',reset);
+    return ()=>{types.forEach(type=>document.removeEventListener(type,route,true));window.removeEventListener('dragend',reset);setFileHover(false);};
+  }, [active, !!layout.editing, c]);
   const commands = [
     ...c.model.modules().map(def => ({ id: 'show-' + def.kind, icon: def.kind, title: '显示' + def.label + '模块', detail: def.kind === 'terminal' ? '仅打开模块，不启动进程' : '回到已有内容；不存在时添加模块', run: () => showModule(def.kind) })),
     { id: 'edit-layout', icon: 'layout', title: '编辑布局', detail: '重新组合模块、标签与分区', run: () => c.model.beginEdit() },
@@ -109,7 +165,7 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
     { id: 'original', icon: 'external', title: '返回聊天', detail: '工作台内容仍保留', run: onOriginal },
   ];
   const documents = [...c.contents.values()].filter(i => i.document), dirty = documents.filter(i => i.document.getSnapshot().dirty || i.document.getSnapshot().uncertain).length;
-  return h('section', { ref: sectionRef, onDragOver: e => { if(Array.from(e.dataTransfer.types).includes('Files')) {e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect='copy';} }, onDrop: e => {if(!Array.from(e.dataTransfer.types).includes('Files'))return;e.preventDefault();e.stopPropagation();if(!active||layout.editing)return;const selected=[...e.dataTransfer.items].filter(i=>i.kind==='file').map(i=>({file:i.getAsFile(),handle:i.getAsFileSystemHandle?.()}));action(async()=>{for(const item of selected){const handle=await item.handle;if(handle?.kind==='directory'){c.notify('请拖入文件，暂不支持整个文件夹。');continue;}if(item.file)await c.openLocalFile(item.file,handle);}});}, className: 'dshome-v2', 'data-compact': compact, 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId,
+  return h('section', { ref: sectionRef, onClickCapture:e=>{if(suppressClick.current){e.preventDefault();e.stopPropagation();}}, className: 'dshome-v2', 'data-compact': compact, 'data-workspace-project': c.projectId, 'data-workspace-session': c.sessionId,
     onKeyDown: event => {
       if (event.nativeEvent.isComposing || palette) return;
       if ((event.ctrlKey || event.metaKey) && ['p','k'].includes(event.key.toLowerCase()) && !layout.editing) {
@@ -130,7 +186,6 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
         onCloseWorkspace && button(icon('close'), onCloseWorkspace, { 'aria-label': '关闭工作区内容', title: '关闭此工作区内容；未保存内容与终端会先确认', className: 'wb-icon-button' })))),
     !layout.editing && h('div', { className: 'wb-commandbar' },
       button(h(React.Fragment, null, icon('search', 16), h('span', null, '打开文件'), h('kbd', null, 'Ctrl P')), () => setPalette('files'), { className: 'wb-quick-trigger', 'aria-label': '快速打开文件', title: 'Ctrl/⌘+P 打开文件' }),
-      button(labelled('files', '本机文件'), () => action(pickLocal), { 'aria-label':'打开本机文件', title:'选择任意目录中的文本文件；不会自动发送给AI' }),
       button(labelled('plus', '新建'), () => { setMenu(!menu); setTools(false); }, { 'aria-expanded': menu, 'aria-label': '新建内容' }),
       button(labelled('command', '搜索操作'), () => setPalette('commands'), { 'aria-label': '打开命令面板', title: 'Ctrl/⌘+Shift+P 搜索操作' })),
     tools && !layout.editing && h('div', { className: 'wb-layout-tools', 'aria-label': '布局文件与预设' },
@@ -166,20 +221,22 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
           const showing = !!rect?.visible && !layout.editing && active;
           const style = { left: rect?.x ?? 0, top: rect?.y ?? 0, width: rect?.width ?? 1, height: rect?.height ?? 1, visibility: showing ? 'visible' : 'hidden', pointerEvents: showing ? 'auto' : 'none' };
           const tabs = serializedPanels.filter(p => geometry.rectangles[p.id]?.paneId === rect?.paneId);
-          return h('article', { key: panel.id, className: 'wb-panel', style, 'data-wb-content': panel.id, onDragOver:e=>overDock(e,rect?.paneId), onDrop:e=>dropDock(e,rect?.paneId), 'aria-hidden': !showing, inert: !showing ? '' : undefined },
-            h('header', { className: 'wb-panel-header', draggable: !layout.editing, onDragStart:e=>startDock(e,panel.id),onDragEnd:cancelDock,title:'拖动到其他面板：边缘分屏，中央合并标签' }, icon(panel.kind, 16), h('strong', { title: panel.title + ' · ' + panel.id }, panel.kind === 'document' ? '文档' : panel.title),
+          return h('article', { key: panel.id, className: 'wb-panel', style, 'data-wb-content': panel.id, 'data-wb-pane':rect?.paneId, 'aria-hidden': !showing, inert: !showing ? '' : undefined },
+            h('header', { className: 'wb-panel-header', 'data-dock-handle':true, onPointerDown:e=>startDock(e,panel.id),title:'按住标题拖动：边缘分屏，中央合并标签；Esc 取消' }, icon(panel.kind, 16), h('strong', { title: panel.title + ' · ' + panel.id }, panel.kind === 'document' ? '文档' : panel.title),
               button(icon('minimize', 15), () => action(() => c.model.collapse(panel.id)), { 'aria-label': '收起 ' + panel.id, title: '收起 ' + panel.title }),
               button(icon(layout.layout.maximized === panel.id ? 'restore' : 'maximize', 15), () => action(() => c.model.maximize(panel.id)), { 'aria-label': layout.layout.maximized === panel.id ? '还原' : '放大', title: layout.layout.maximized === panel.id ? '还原模块' : '放大模块' }),
               button(icon('close', 15), () => action(() => c.closePanel(panel.id)), { 'aria-label': '关闭 ' + panel.id, title: '关闭 ' + panel.title })),
-            h('nav', { className: 'wb-tabs', role: 'tablist', 'aria-label': panel.title + ' 标签' }, tabs.map((p, index) => h('span', { key: p.id, className: 'wb-tab-item', role: 'presentation' }, button(h(React.Fragment, null, icon(p.kind, 14), h('span', null, panelCaption(p, c.content(p.id))), (c.content(p.id).document?.getSnapshot().dirty || c.content(p.id).document?.getSnapshot().uncertain) && h('span', { className: 'wb-dirty-dot', 'data-uncertain': c.content(p.id).document?.getSnapshot().uncertain, 'aria-label': c.content(p.id).document?.getSnapshot().uncertain ? '保存结果待核对' : '未保存' })), () => showPanel(p.id), { key: p.id, role: 'tab', draggable:!layout.editing,onDragStart:e=>startDock(e,p.id),onDragEnd:cancelDock, title: c.content(p.id).document?.getSnapshot().path ?? panelCaption(p, c.content(p.id)), tabIndex: p.id === panel.id ? 0 : -1, 'aria-selected': p.id === panel.id,
+            h('nav', { className: 'wb-tabs', role: 'tablist', 'aria-label': panel.title + ' 标签' }, tabs.map((p, index) => h('span', { key: p.id, className: 'wb-tab-item', role: 'presentation' }, button(h(React.Fragment, null, icon(p.kind, 14), h('span', null, panelCaption(p, c.content(p.id))), (c.content(p.id).document?.getSnapshot().dirty || c.content(p.id).document?.getSnapshot().uncertain) && h('span', { className: 'wb-dirty-dot', 'data-uncertain': c.content(p.id).document?.getSnapshot().uncertain, 'aria-label': c.content(p.id).document?.getSnapshot().uncertain ? '保存结果待核对' : '未保存' })), () => showPanel(p.id), { key: p.id, role: 'tab', 'data-dock-handle':true,onPointerDown:e=>startDock(e,p.id), title: c.content(p.id).document?.getSnapshot().path ?? panelCaption(p, c.content(p.id)), tabIndex: p.id === panel.id ? 0 : -1, 'aria-selected': p.id === panel.id,
               onKeyDown: event => { if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return; event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length; showPanel(tabs[next].id); requestAnimationFrame(() => sectionRef.current?.querySelector('[data-wb-content="' + tabs[next].id + '"] [role=tab][aria-selected=true]')?.focus()); } }), button(icon('close', 12), () => action(() => c.closePanel(p.id)), { className: 'wb-tab-close', 'aria-label': '关闭标签 ' + panelCaption(p, c.content(p.id)), title: '关闭 ' + panelCaption(p, c.content(p.id)), tabIndex: p.id === panel.id ? 0 : -1 })))),
             dockHint && dockHint.paneId===rect?.paneId && h('div',{className:'wb-dock-preview','data-edge':dockHint.edge},dockHint.edge==='tab'?'合并为标签':({left:'向左分屏',right:'向右分屏',top:'向上分屏',bottom:'向下分屏'})[dockHint.edge]),
-            h('div', { className: 'wb-panel-body' }, h(Content, { item, c, openDocument, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, moduleRegistry, showing: showing && !collapsed })));
+            h('div', { className: 'wb-panel-body' }, h(Content, { item, c, openDocument, pickLocal, showPanel, workspaceFiles, inputActions, referenceReady, referenceCurrent, servicesAvailable, terminalAvailable, moduleRegistry, showing: showing && !collapsed })));
         }),
         geometry.handles.map(handle => h(SplitHandle, { key: handle.nodeId, handle, c }))),
       layout.editing && h(LayoutEditor, { c, room, selected: selection, select }),
       !geometry.fits && !layout.editing && h('span', { className: 'wb-size-hint', role: 'status' }, '操作区可滚动，或放大当前模块以专注处理。'))),
     !layout.editing && layout.layout.collapsed.length > 0 && h('nav', { className: 'wb-collapsed', 'aria-label': '已收起内容' }, layout.layout.collapsed.map(item => button('展开 ' + layout.panels[item.panelId].title + ' · ' + item.panelId, () => showPanel(item.panelId), { key: item.panelId }))),
+    dragging && h('div',{className:'wb-drag-glass'},h('div',{className:'wb-drag-label',style:{left:Math.min(dragging.x+14,window.innerWidth-190),top:Math.min(dragging.y+14,window.innerHeight-50)}},dragging.title),h('span',null,dockHint?'松开完成停靠 · Esc 取消':'拖到其他模块，边缘分屏、中央合并 · Esc 取消')),
+    fileHover && h('div',{className:'wb-file-drop-hint',role:'status'},layout.editing?'请先完成布局编辑':'松开以打开本机文件 · 不会添加到聊天附件'),
     h('footer', { className: 'wb-status', role: 'status' }, icon(state.notice ? 'connection' : 'check', 14), h('span', { className: 'wb-status-message', title: state.notice }, state.notice || '就绪 · 内容随工作区保留'),
       h('span', { className: 'wb-status-metrics' }, documents.length + ' 份文档' + (dirty ? ' · ' + dirty + ' 份待保存' : '')),
       button(icon('download', 14), () => download('dshome-layout.json', c.exportLayout()), { 'aria-label': '导出布局', title: '导出布局' }),
@@ -188,8 +245,8 @@ export function Workspace({ controller: c, workspaceFiles, inputActions, onOrigi
     palette && active && h(CommandPalette, { key: palette, controller: c, openDocument, mode: palette, commands, onClose: () => { setPalette(null); requestAnimationFrame(() => { if (c.model.getSnapshot().editing) sectionRef.current?.querySelector('.wb-layout-editor button')?.focus(); }); } }));
 }
 
-function Content({ item, c, openDocument, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable, terminalAvailable, moduleRegistry }) {
-  if (item.kind === 'files') return h(FileTree, { item, c, openDocument, workspaceFiles });
+function Content({ item, c, openDocument, pickLocal, showPanel, workspaceFiles, inputActions, referenceReady, referenceCurrent, showing, servicesAvailable, terminalAvailable, moduleRegistry }) {
+  if (item.kind === 'files') return h(FileTree, { item, c, openDocument, pickLocal, showPanel, workspaceFiles });
   if (item.kind === 'document') return item.document ? h(DocumentEditor, { doc: item.document, localFile: item.localFile, c, inputActions, referenceReady: referenceReady && !item.localFile, referenceCurrent, showing, servicesAvailable: item.localFile ? item.localWritable : servicesAvailable }) : h('div', { className: 'wb-empty' }, h('span', { className: 'wb-empty-mark' }, icon('document', 25)), h('strong', null, '从一个文件开始'), h('p', null, '从左侧文件树选择文件，或输入工作区内的路径。修改后使用保存文件，布局保存不会写入正文。'), h(OpenFile, { c, openDocument }));
   if (item.kind === 'terminal') return h(TerminalPanel, { item, c, showing, servicesAvailable: servicesAvailable && terminalAvailable(item), blockedReason: servicesAvailable === false ? '工作区接口暂停' : item.ownerSessionId && item.ownerSessionId !== c.sessionId ? '属于会话 ' + item.ownerSessionId + '，请返回该会话输入' : '原终端连接已变化，请新建终端' });
   if (item.kind === 'web') return h(WebPanel, { item, c });
@@ -204,10 +261,15 @@ function OpenFile({ c, openDocument }) {
   return h('form', { onSubmit: e => { e.preventDefault(); openDocument(path).catch(e => c.notify(errorText(e))); } },
     h('input', { 'aria-label': '文档路径', value: path, placeholder: 'docs/example.md', onChange: e => setPath(e.target.value) }), h('button', { type: 'submit', disabled: !path.trim() }, '打开文档'));
 }
-function FileTree({ item, c, openDocument, workspaceFiles }) {
+function FileTree({ item, c, openDocument, pickLocal, showPanel, workspaceFiles }) {
   const [filter, setFilter] = React.useState(''), [hidden, showHidden] = React.useState(false), [refresh, setRefresh] = React.useState(0);
   return h('div', { className: 'wb-files' }, h('div', { className: 'wb-file-tools' }, h('input', { 'aria-label': '筛选已列出的文件', placeholder: '筛选已展开的文件', value: filter, onChange: e => setFilter(e.target.value) }),
     filter && button(icon('close', 15), () => setFilter(''), { 'aria-label': '清空文件筛选' }), button(icon('refresh', 15), () => setRefresh(refresh + 1), { 'aria-label': '刷新文件树', title: '刷新文件树' }), button(icon('eye', 15), () => showHidden(!hidden), { 'aria-label': '显示隐藏文件', title: '显示隐藏文件', 'aria-pressed': hidden })),
+    h('details', {open:true,className:'wb-file-root'}, h('summary',null,'本机文件'),
+      button(labelled('plus','添加本机文件'),pickLocal,{'aria-label':'打开本机文件',title:'选择任意目录中的文本文件'}),
+      h('div',{role:'tree','aria-label':'本机文件'}, [...c.contents.values()].filter(i=>i.localFile && i.document.getSnapshot().path.toLowerCase().includes(filter.toLowerCase())).map(i=>h('div',{key:i.id,role:'treeitem'},button(h(React.Fragment,null,icon('document',15),h('span',null,i.document.getSnapshot().path),h('small',null,i.localWritable?'':'副本')),()=>showPanel(i.id),{className:'wb-tree-entry','aria-label':'打开本机文件 '+i.document.getSnapshot().path,'aria-current':c.getSnapshot().focusedPanelId===i.id?true:undefined})))),
+      ![...c.contents.values()].some(i=>i.localFile)&&h('p',null,'选择或拖入的文件会显示在这里。')),
+    h('strong',{className:'wb-file-root-label'},'工作区文件'),
     h('div', { role: 'tree', 'aria-label': '工作区文件', className: 'wb-file-tree' }, h(Directory, { path: '.', c, item, openDocument, workspaceFiles, filter, hidden, refresh, depth: 0 })),
     h('details', { className: 'wb-open-path' }, h('summary', null, '按路径打开文件'), h(OpenFile, { c, openDocument })));
 }

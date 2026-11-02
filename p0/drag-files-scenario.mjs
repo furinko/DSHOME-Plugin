@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
 export async function runDragFiles(page) {
   const scene=page.locator('.p0-full-scene:not([hidden])');
   await scene.getByLabel('选择本机文件',{exact:true}).setInputFiles({name:'outside.txt',mimeType:'text/plain',buffer:Buffer.from('\ufeff外部文件\r\n')});
@@ -10,12 +12,33 @@ export async function runDragFiles(page) {
   const header=editor.locator('xpath=ancestor::article').locator('.wb-panel-header');
   const target=scene.locator('[data-wb-content=WEB-01]');
   const beforeLayout=await page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout();});
-  await header.dragTo(target,{targetPosition:{x:30,y:120}});
+  const hb=await header.boundingBox(),tb=await target.boundingBox();
+  const exported=()=>page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout();});
+  await page.mouse.move(hb.x+50,hb.y+12);await page.mouse.down();await page.mouse.move(hb.x+53,hb.y+12);await page.mouse.up();
+  assert.equal(await exported(),beforeLayout);
+  await page.mouse.move(hb.x+50,hb.y+12);await page.mouse.down();await page.mouse.move(tb.x+30,tb.y+120,{steps:12});await page.keyboard.press('Escape');await page.mouse.up();
+  assert.equal(await exported(),beforeLayout);
+  await page.mouse.move(hb.x+50,hb.y+12);await page.mouse.down();await page.mouse.move(tb.x+30,tb.y+120,{steps:12});await page.mouse.up();
   assert.notEqual(await page.evaluate(()=>{const v=window.testP0.ctx.get('dualShellP0').getSnapshot();return window.testP0.ctx.get('dshomeDesktop').entries.get(v.selected).controller.exportLayout();}),beforeLayout);
   assert.equal(await scene.locator('textarea.wb-editor').evaluateAll(nodes=>nodes.includes(window.dragFileEditor)),true);
   assert.equal(await scene.locator('textarea.wb-editor').filter({visible:true}).inputValue(),'修改副本');
+  assert.equal(await scene.getByRole('tree',{name:'本机文件',exact:true}).getByRole('button',{name:'打开本机文件 outside.txt',exact:true}).count(),1);
+  // Actual SDK listeners, with synthetic intake instead of an upload.
+  const sdk=resolve(process.env.DSH_SDK_ROOT || '../audits/dshome-v2-deploy-20261028/sdk');
+  const source=readFileSync(resolve(sdk,'node_modules/@deepseek-ai/dsh-client-ui-attachment/lib/client.js'),'utf8');
+  const start=source.indexOf('function droppedDirectories('),end=source.indexOf('\n\t\t//#endregion',start);
+  await page.evaluate(code=>{const install=Function(code+';return installDocumentDropEvents')();window.nativeDrops=0;window.nativeDrag=false;window.stopNativeDrop=install(true,()=>window.nativeDrops++,{current:0},value=>window.nativeDrag=value);},source.slice(start,end));
   const dropped=await page.evaluateHandle(()=>{const d=new DataTransfer();d.items.add(new File(['拖入内容'],'drop.txt',{type:'text/plain'}));return d;});
-  await scene.locator('.dshome-v2').dispatchEvent('drop',{dataTransfer:dropped});await dropped.dispose();
+  await page.locator('body').dispatchEvent('dragenter',{dataTransfer:dropped});
+  assert.equal(await page.evaluate(()=>window.nativeDrag),true);
+  await scene.locator('.dshome-v2').dispatchEvent('dragenter',{dataTransfer:dropped});
+  assert.equal(await page.evaluate(()=>window.nativeDrag),false);
+  await scene.locator('.dshome-v2').dispatchEvent('dragover',{dataTransfer:dropped});
+  await scene.locator('.dshome-v2').dispatchEvent('drop',{dataTransfer:dropped});
+  assert.equal(await page.evaluate(()=>window.nativeDrops),0);
+  await page.locator('body').dispatchEvent('drop',{dataTransfer:dropped});
+  assert.equal(await page.evaluate(()=>window.nativeDrops),1);
+  await page.evaluate(()=>window.stopNativeDrop());await dropped.dispose();
   await scene.getByRole('tab',{name:/drop.txt/}).filter({visible:true}).waitFor();
   const panels=scene.locator('article:visible').filter({has:page.locator('textarea.wb-editor')});
   for(const name of ['outside.txt','drop.txt']) {

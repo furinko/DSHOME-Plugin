@@ -17,7 +17,7 @@
     "./client": "./lib/client.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./workbench-entry": "./lib/entry-workbench-3c95374a8795.js"
+    "./workbench-entry": "./lib/entry-workbench-de47c0056e72.js"
   },
   "dsh": {
     "bundle": {

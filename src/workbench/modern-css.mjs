@@ -73,4 +73,14 @@ body[data-ds-dark-theme] .dshome-v2 .wb-tabs .wb-tab-item:has([aria-selected=tru
 .wb-panel-header[draggable=true],.wb-tabs [draggable=true]{cursor:grab}
 .wb-dock-preview{position:absolute;inset:40px 5px 5px;z-index:8;pointer-events:none;display:grid;place-items:center;border:2px solid var(--wb-accent);background:color-mix(in srgb,var(--wb-accent) 18%,transparent);color:var(--wb-text);font-weight:600;border-radius:8px}
 .wb-dock-preview[data-edge=left]{right:50%}.wb-dock-preview[data-edge=right]{left:50%}.wb-dock-preview[data-edge=top]{bottom:50%}.wb-dock-preview[data-edge=bottom]{top:50%}
+
+[data-dock-handle]{cursor:grab;touch-action:none;user-select:none}
+.wb-drag-glass{position:fixed;inset:0;z-index:9999;cursor:grabbing;user-select:none}
+.wb-drag-glass>span{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);padding:10px 16px;background:var(--wb-surface);color:var(--wb-text);border:1px solid var(--wb-accent);border-radius:8px;pointer-events:none}
+.wb-file-drop-hint{position:absolute;inset:90px 12px 36px;z-index:30;pointer-events:none;display:grid;place-items:center;border:2px dashed var(--wb-accent);border-radius:10px;background:var(--wb-surface);opacity:.94;color:var(--wb-text)}
+.wb-file-root{padding:8px;border-bottom:1px solid var(--wb-line)}.wb-file-root summary,.wb-file-root-label{padding:8px;font-size:12px;color:var(--wb-quiet)}.wb-file-root p{font-size:12px;color:var(--wb-quiet)}.wb-file-root .wb-tree-entry{width:100%;text-align:left}.wb-file-root small{margin-left:auto;font-size:10px;color:var(--wb-quiet)}
+
+/* Compact chrome: keep the content area dominant, as in the reference workbench. */
+.wb-header{min-height:56px;padding:10px 14px 8px;gap:10px}.wb-heading-mark{width:28px;height:28px;border-radius:7px}.wb-heading strong{font-size:15px}.wb-heading{gap:8px}.wb-commandbar{padding-left:14px;padding-right:14px}
+.wb-drag-label{position:fixed;width:176px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 12px;background:var(--wb-surface);color:var(--wb-text);border:1px solid var(--wb-accent);box-shadow:0 6px 20px #0003;border-radius:6px;pointer-events:none}
 `;
